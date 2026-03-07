@@ -29,7 +29,9 @@ Unlike conventional trading bots, Actura produces a **complete audit trail** for
 | **Capital Trust Ladder** | Dynamic capital allocation based on earned trust tier (probation → limited → standard → elevated → elite) |
 | **On-chain risk enforcement** | Solidity smart contract (`ActuraRiskPolicy.sol`) enforces risk limits trustlessly at the contract level |
 | **Full audit trail** | Every decision produces an IPFS-pinned JSON artifact with AI reasoning, market snapshots, confidence intervals, and governance evidence |
-| **MCP protocol server** | Exposes 7 tools and 2 resources via the Model Context Protocol for agent-to-agent interoperability |
+| **Regime Governance** | Deterministic volatility-regime profile switching with Bayesian confidence bias and hysteresis-based transitions |
+| **Performance Analytics** | Risk-adjusted metrics (Sharpe, Sortino, max drawdown, Calmar ratio, profit factor) computed in real time |
+| **MCP protocol server** | Exposes 12 tools, 8 resources, and 4 prompts via the Model Context Protocol with visibility-tiered access control |
 
 ---
 
@@ -81,6 +83,9 @@ MODE=live npm run dev
 
 # Dashboard only
 npm run dashboard
+
+# MCP Server (port 3001)
+npm run mcp
 
 # Run all tests
 npm test
@@ -199,6 +204,8 @@ actura-gacr-agent/
 │   │   ├── state.ts                  # Persistent state (survives restarts)
 │   │   ├── supervisory-meta-agent.ts # Trust-aware capital steward
 │   │   └── validator.ts              # Config validation at startup
+│   ├── analytics/
+│   │   └── performance-metrics.ts    # Sharpe, Sortino, max drawdown, Calmar, profit factor
 │   ├── chain/
 │   │   ├── agent-mandate.ts          # Mandate enforcement engine
 │   │   ├── execution-simulator.ts    # Pre-trade simulation & cost analysis
@@ -212,14 +219,22 @@ actura-gacr-agent/
 │   │   └── validation.ts             # On-chain validation artifacts
 │   ├── dashboard/
 │   │   ├── server.ts                 # Express dashboard & REST API
-│   │   └── public/index.html         # Web UI with live charts
+│   │   ├── UI_VERSIONS.md            # Dashboard versioning guide
+│   │   ├── public/
+│   │   │   ├── index.html            # Web UI with live charts (main entry)
+│   │   │   ├── index.v1.html         # Preserved v1 dashboard
+│   │   │   ├── index.v2.html         # Browser wrapper for v2 React dashboard
+│   │   │   └── ui-switcher.html      # Switch between v1 and v2
+│   │   └── versions/
+│   │       └── ActuraDashboard.v2.jsx # Tabbed control-plane dashboard (React)
 │   ├── data/
 │   │   ├── market-state.ts           # Market state aggregation
 │   │   └── price-feed.ts             # Price feed (simulated / live)
 │   ├── mcp/
-│   │   ├── server.ts                 # MCP JSON-RPC server
-│   │   ├── tools.ts                  # 7 MCP tools for agent interrogation
-│   │   └── resources.ts              # 2 MCP resources (market state, policy)
+│   │   ├── server.ts                 # MCP JSON-RPC server with health & discovery
+│   │   ├── tools.ts                  # 12 MCP tools (public/restricted/operator)
+│   │   ├── resources.ts              # 8 MCP resources (trust, market, mandate, etc.)
+│   │   └── prompts.ts                # 4 MCP prompts (explain, summarize, report, audit)
 │   ├── risk/
 │   │   ├── engine.ts                 # Risk engine (6 checks, trailing stops)
 │   │   ├── circuit-breaker.ts        # State machine: ARMED → TRIPPED → COOLING
@@ -227,12 +242,13 @@ actura-gacr-agent/
 │   ├── security/
 │   │   └── oracle-integrity.ts       # Oracle manipulation detection
 │   ├── strategy/
-│   │   ├── adaptive-learning.ts      # Bounded self-improvement ("the cage")
+│   │   ├── adaptive-learning.ts      # Bounded self-improvement with Bayesian context bias
 │   │   ├── ai-reasoning.ts           # AI-powered trade explanations
 │   │   ├── edge-filter.ts            # Minimum edge threshold filter
 │   │   ├── indicators.ts             # SMA, EMA, EWMA, RSI, ATR
 │   │   ├── momentum.ts               # Core volatility-adjusted momentum strategy
 │   │   ├── neuro-symbolic.ts         # Symbolic rule engine over signals
+│   │   ├── regime-governance.ts      # Deterministic regime profile switching with hysteresis
 │   │   ├── signals.ts                # Signal generation & classification
 │   │   └── structure-regime.ts       # Market structure & regime detection
 │   └── trust/
@@ -241,7 +257,7 @@ actura-gacr-agent/
 │       ├── ipfs.ts                   # IPFS upload via Pinata
 │       ├── reputation-evolution.ts   # Trust tier evolution & recovery mode
 │       └── trust-policy-scorecard.ts # Four-dimensional trust scoring
-└── test/                             # Comprehensive test suite (16 test files)
+└── test/                             # Comprehensive test suite (18 test files)
 ```
 
 ---
@@ -256,6 +272,7 @@ Every trade must pass through a multi-stage validation pipeline before execution
 |---|---|---|
 | Signal Generation | `strategy/momentum.ts` | SMA crossover with volatility-adjusted sizing |
 | Symbolic Reasoning | `strategy/neuro-symbolic.ts` | Rule-based overrides (loss streaks, drawdown, balance) |
+| Regime Governance | `strategy/regime-governance.ts` | Deterministic profile switching with Bayesian confidence bias |
 | Mandate Enforcement | `chain/agent-mandate.ts` | Asset/protocol whitelisting, capital limits, human approval thresholds |
 | Oracle Integrity | `security/oracle-integrity.ts` | Median deviation, stale feed, single-bar anomaly detection |
 | Execution Simulation | `chain/execution-simulator.ts` | Slippage, gas, net edge, and worst-case analysis |
@@ -278,7 +295,27 @@ Adjustable parameters (within cage):
 | Base position size | 1% – 4% | 2% |
 | Confidence threshold | 5% – 30% | 10% |
 
+The adaptive learner also computes a **bounded Bayesian context confidence bias** per regime and direction. This uses a Beta(1,1) posterior mean over observed win rates to adjust confidence — capped at ± 12% — without ever altering stops, sizing, or risk thresholds.
+
 Every adaptation is recorded as an artifact with reasoning and before/after values.
+
+### 2b. Regime Governance
+
+The **Regime Governance Controller** provides deterministic volatility-regime profile switching with hysteresis:
+
+| Profile | Stop-Loss ATR | Position Size | Confidence Threshold |
+|---|---|---|---|
+| LOW_VOL | 1.35 | 2.2% | 8.5% |
+| NORMAL | 1.50 | 2.0% | 10% |
+| HIGH_VOL | 1.75 | 1.6% | 12% |
+| EXTREME_DEFENSIVE | 2.00 | 1.2% | 15% |
+
+Key behaviors:
+- **Hysteresis-based transitions** — separate enter/exit thresholds prevent oscillation
+- **Defensive-only fast switching** — can always escalate to a more defensive profile, but must hold for `minHoldCycles` (12) before relaxing
+- **Drawdown lock** — locks into `EXTREME_DEFENSIVE` when drawdown exceeds 6%
+- **Cooldown** — minimum 8 cycles between profile switches
+- Every profile switch emits an auditable `ProfileSwitchArtifact`
 
 ### 3. Trust Policy Scorecard
 
@@ -363,32 +400,66 @@ Each operator action creates an auditable receipt with timestamp, reason, actor,
 
 ### MCP Server (port 3001)
 
-Exposes tools and resources via the [Model Context Protocol](https://modelcontextprotocol.io):
+Exposes tools, resources, and prompts via the [Model Context Protocol](https://modelcontextprotocol.io) with **visibility-tiered access control**:
 
-**Tools:**
+**Tools (Public):**
 
 | Tool | Description |
 |---|---|
-| `get_risk_status` | Current risk engine state, volatility, exposure, drawdown |
-| `explain_last_trade` | Human-readable explanation of the most recent trade decision |
-| `get_trade_history` | Recent trade decisions with validation artifact links |
-| `get_portfolio` | Capital, positions, and performance metrics |
-| `ask_agent` | Natural language Q&A about strategy, risk, and decisions |
-| `get_risk_analysis` | Comprehensive risk analysis with confidence intervals |
-| `get_validation_quality` | Artifact completeness metrics |
+| `get_market_state` | Current market and regime state from the runtime |
+| `explain_trade` | Human-readable explanation of the most recent trade decision |
+| `get_trust_state` | Trust score, history, and capital-rights state |
+| `get_capital_rights` | Capital multiplier and tier based on current trust score |
+| `get_performance_metrics` | Risk-adjusted metrics (Sharpe, Sortino, drawdown, Calmar, profit factor) |
+| `get_validation_summary` | Recent checkpoint summaries with approval status |
+| `get_adaptive_params` | Current adaptive learning parameters and context stats |
+
+**Tools (Restricted):**
+
+| Tool | Description |
+|---|---|
+| `propose_trade` | Generate a governed trade proposal |
+| `execute_trade` | Execute a signed trade intent |
+
+**Tools (Operator):**
+
+| Tool | Description |
+|---|---|
+| `pause_agent` | Pause trading with reason and actor |
+| `resume_agent` | Resume trading after pause |
+| `emergency_stop` | Immediately halt all activity |
 
 **Resources:**
 
 | URI | Description |
 |---|---|
-| `actura://market-state` | Live market indicators (SMA, volatility, ATR, price) |
-| `actura://governance-policy` | Risk limits, strategy parameters, trust config |
+| `actura://state/trust` | Trust score, timeline, and capital-rights state |
+| `actura://state/market` | Live market indicators and pricing |
+| `actura://state/mandate` | Capital mandate, allowlists, and governance limits |
+| `actura://state/erc8004` | ERC-8004 integration state |
+| `actura://state/risk` | Risk engine configuration and status |
+| `actura://state/operator` | Operator control state and action receipts |
+| `actura://state/performance` | Risk-adjusted performance metrics |
+| `actura://state/adaptive` | Adaptive learning parameters and context stats |
+
+**Prompts:**
+
+| Prompt | Visibility | Description |
+|---|---|---|
+| `explain_current_trade` | public | Human explanation of the latest trade decision |
+| `summarize_risk_state` | public | Summary of risk, operator, and trust posture |
+| `prepare_operator_incident_report` | operator | Incident report after pause or emergency stop |
+| `audit_readiness_report` | operator | Audit readiness summary for compliance review |
 
 **Endpoints:**
+- `GET /health` — Service health, version, and surface counts
+- `GET /mcp/info` — Full discovery (tools, resources, prompts with visibility)
 - `GET /mcp/tools` — List available tools
 - `POST /mcp/tools/:toolName` — Execute a tool
 - `GET /mcp/resources` — List available resources
 - `GET /mcp/resources/:resourceUri` — Read a resource
+- `GET /mcp/prompts` — List available prompts
+- `POST /mcp/prompts/:promptName` — Execute a prompt
 - `POST /mcp` — JSON-RPC endpoint (MCP standard)
 
 ---
@@ -441,6 +512,7 @@ npm run test:artifacts    # Validation artifact generation
 npm run test:mandate      # Mandate enforcement engine
 npm run test:simulation   # Execution simulator
 npm run test:oracle       # Oracle integrity guard
+npm run test:mcp          # MCP surface tests
 ```
 
 Full test coverage includes:
@@ -462,6 +534,9 @@ Full test coverage includes:
 | `test-erc8004-adapters.ts` | ERC-8004 registration & adapter compliance |
 | `test-identity-registration.ts` | Identity registry integration |
 | `test-reputation-reviewer.ts` | External reputation feedback flow |
+| `test-regime-governance.ts` | Regime profile switching, hysteresis, drawdown lock |
+| `test-performance-metrics.ts` | Sharpe, Sortino, max drawdown, Calmar, profit factor |
+| `test-mcp-surface.ts` | MCP tools, resources, prompts validation |
 
 ---
 
