@@ -21,7 +21,11 @@
     "dashboard": "tsx src/dashboard/server.ts",
     "demo:onchain": "tsx scripts/demo-onchain-path.ts",
     "mcp": "tsx src/mcp/server.ts",
-    "test:mcp": "tsx test/test-mcp-surface.ts"
+    "test:mcp": "tsx test/test-mcp-surface.ts",
+    "prod": "NODE_ENV=production tsx src/agent/index.ts",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:stop": "pm2 stop actura-agent",
+    "pm2:logs": "pm2 logs actura-agent"
   },
   "dependencies": {
     "ethers": "^6.11.0",

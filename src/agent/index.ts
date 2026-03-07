@@ -563,8 +563,37 @@ export async function runSimulation(cycles: number = 50): Promise<void> {
 
 // ──── Entry Point ────
 import { executeTrade, preflight, claimSandboxCapital } from '../chain/executor.js';
-import { startDashboard } from '../dashboard/server.js';
-import { startMcpServer } from '../mcp/server.js';
+import { startDashboard, stopDashboard } from '../dashboard/server.js';
+import { startMcpServer, stopMcpServer } from '../mcp/server.js';
+
+// ──── Graceful Shutdown ────
+
+let shuttingDown = false;
+
+function gracefulShutdown(signal: string): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  log.info(`Received ${signal} — shutting down gracefully...`);
+
+  scheduler?.shutdown(signal);
+  persistState();
+
+  Promise.all([stopDashboard(), stopMcpServer()])
+    .then(() => {
+      log.info('All servers stopped. Goodbye.');
+      process.exit(0);
+    })
+    .catch(() => process.exit(1));
+
+  // Force exit after 10s if graceful shutdown stalls
+  setTimeout(() => {
+    log.warn('Graceful shutdown timed out — forcing exit');
+    process.exit(1);
+  }, 10_000).unref();
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 // Start servers
 startDashboard(3000);

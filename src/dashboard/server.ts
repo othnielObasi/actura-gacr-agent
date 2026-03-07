@@ -4,8 +4,10 @@
  */
 
 import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import type { Server } from 'http';
 import { getAgentState, getHealthCheck, getLogs, getErrors } from '../agent/index.js';
 import { getCheckpoints, getTradeCheckpoints } from '../trust/checkpoint.js';
 import { config } from '../agent/config.js';
@@ -13,11 +15,62 @@ import { getReputationTimeline } from '../trust/trust-policy-scorecard.js';
 import { getOperatorControlState, getOperatorActionReceipts, pauseTrading, resumeTrading, emergencyStop } from '../agent/operator-control.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DASHBOARD_PORT = 3000;
+const DASHBOARD_PORT = parseInt(process.env.PORT || '3000', 10);
+
+// Simple in-memory rate limiter
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX_REQUESTS = 120;
+
+function rateLimit(req: Request, res: Response, next: NextFunction): void {
+  const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+  const now = Date.now();
+  let entry = rateLimitMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + RATE_WINDOW_MS };
+    rateLimitMap.set(ip, entry);
+  }
+  entry.count++;
+  if (entry.count > RATE_MAX_REQUESTS) {
+    res.status(429).json({ error: 'Too many requests' });
+    return;
+  }
+  next();
+}
+
+// Periodic cleanup of stale rate-limit entries
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap) {
+    if (now > entry.resetAt) rateLimitMap.delete(ip);
+  }
+}, RATE_WINDOW_MS);
+
+let httpServer: Server | null = null;
+
+export function stopDashboard(): Promise<void> {
+  return new Promise((resolve) => {
+    if (httpServer) {
+      httpServer.close(() => resolve());
+    } else {
+      resolve();
+    }
+  });
+}
 
 export function startDashboard(port: number = DASHBOARD_PORT): void {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: '1mb' }));
+  app.use(rateLimit);
+
+  // Security headers
+  app.use((_req, res, next) => {
+    res.header('X-Content-Type-Options', 'nosniff');
+    res.header('X-Frame-Options', 'DENY');
+    res.header('X-XSS-Protection', '1; mode=block');
+    res.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+  });
 
   // Serve static files
   app.use(express.static(path.join(__dirname, 'public')));
@@ -152,7 +205,7 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
     res.json({ errors: getErrors(limit) });
   });
 
-  app.listen(port, () => {
+  httpServer = app.listen(port, () => {
     console.log(`[DASHBOARD] Running on http://localhost:${port}`);
   });
 }

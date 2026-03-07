@@ -28,7 +28,7 @@ Unlike conventional trading bots, Actura produces a **complete audit trail** for
 | **Trust Policy Scorecard** | Four-dimensional trust scoring: Policy Compliance, Risk Discipline, Validation Completeness, Outcome Quality |
 | **Capital Trust Ladder** | Dynamic capital allocation based on earned trust tier (probation → limited → standard → elevated → elite) |
 | **On-chain risk enforcement** | Solidity smart contract (`ActuraRiskPolicy.sol`) enforces risk limits trustlessly at the contract level |
-| **Full audit trail** | Every decision produces an IPFS-pinned JSON artifact with AI reasoning, market snapshots, confidence intervals, and governance evidence |
+| **Full audit trail** | Every decision produces an IPFS-pinned JSON artifact with AI reasoning, market snapshots, confidence intervals, and governance evidence. Artifacts are also saved locally to `./artifacts/` for re-pinning resilience |
 | **Regime Governance** | Deterministic volatility-regime profile switching with Bayesian confidence bias and hysteresis-based transitions |
 | **Performance Analytics** | Risk-adjusted metrics (Sharpe, Sortino, max drawdown, Calmar ratio, profit factor) computed in real time |
 | **MCP protocol server** | Exposes 12 tools, 8 resources, and 4 prompts via the Model Context Protocol with visibility-tiered access control |
@@ -254,8 +254,8 @@ actura-gacr-agent/
 │   └── trust/
 │       ├── artifact-emitter.ts       # Validation artifact builder
 │       ├── checkpoint.ts             # Strategy checkpoints & replay
-│       ├── ipfs.ts                   # IPFS upload via Pinata
-│       ├── reputation-evolution.ts   # Trust tier evolution & recovery mode
+│       ├── ipfs.ts                   # IPFS upload via Pinata + local backup
+│       ├── reputation-evolution.ts   # Trust tier evolution & regime-aware recovery
 │       └── trust-policy-scorecard.ts # Four-dimensional trust scoring
 └── test/                             # Comprehensive test suite (18 test files)
 ```
@@ -340,7 +340,11 @@ Trust score determines the agent's capital rights:
 | Elevated | 90 – 94 | 1.00x | 10% |
 | Elite | 95+ | 1.00x | 12% |
 
-When trust falls below a threshold, the agent enters **Trust Recovery Mode** and must demonstrate consecutive compliant actions before capital rights are restored.
+When trust falls below a threshold, the agent enters **Trust Recovery Mode**:
+
+- **Regime-aware streak requirements** — recovery demands fewer consecutive compliant cycles in stable markets (2 in TRENDING) and more in volatile ones (4 in STRESSED)
+- **Graduated deduction** — minor dips reduce the compliance streak by 1 instead of resetting it; only severe regressions (Δ < −5) trigger a full reset
+- **Regime-specific tier cap** — during recovery, capital tier is capped at `standard` in TRENDING markets and `limited` in all other regimes
 
 ### 5. On-Chain Risk Enforcement
 
@@ -530,7 +534,7 @@ Full test coverage includes:
 | `test-reputation-evolution.ts` | Trust tier transitions, capital ladder |
 | `test-supervisory-meta-agent.ts` | Supervisory decisions, position throttling |
 | `test-operator-control.ts` | Pause/resume/emergency stop receipts |
-| `test-trust-recovery-mode.ts` | Recovery mode entry/exit, streak tracking |
+| `test-trust-recovery-mode.ts` | Recovery mode entry/exit, regime-aware streaks, graduated deduction |
 | `test-erc8004-adapters.ts` | ERC-8004 registration & adapter compliance |
 | `test-identity-registration.ts` | Identity registry integration |
 | `test-reputation-reviewer.ts` | External reputation feedback flow |

@@ -6,12 +6,25 @@
  */
 
 import express from 'express';
+import type { Server } from 'http';
 import { ALL_TOOLS, type McpTool } from './tools.js';
 import { ALL_RESOURCES, type McpResource } from './resources.js';
 import { ALL_PROMPTS, type McpPrompt } from './prompts.js';
 import { config } from '../agent/config.js';
 
 const MCP_PORT = 3001;
+
+let mcpHttpServer: Server | null = null;
+
+export function stopMcpServer(): Promise<void> {
+  return new Promise((resolve) => {
+    if (mcpHttpServer) {
+      mcpHttpServer.close(() => resolve());
+    } else {
+      resolve();
+    }
+  });
+}
 
 async function callTool(tool: McpTool, args: Record<string, unknown>) {
   return tool.handler(args);
@@ -254,7 +267,7 @@ export function startMcpServer(port: number = MCP_PORT): void {
     }
   });
 
-  app.listen(port, () => {
+  mcpHttpServer = app.listen(port, () => {
     console.log(`[MCP] Actura MCP server listening on http://localhost:${port}`);
     console.log(`[MCP] JSON-RPC endpoint: http://localhost:${port}/mcp`);
     console.log(`[MCP] ${ALL_TOOLS.length} tools, ${ALL_RESOURCES.length} resources, ${ALL_PROMPTS.length} prompts`);
