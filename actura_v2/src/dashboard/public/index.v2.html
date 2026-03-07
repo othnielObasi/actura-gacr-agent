@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Actura Runtime Control Plane — v2</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    html, body, #root { margin: 0; width: 100%; min-height: 100%; background: #06080c; }
+    body { font-family: system-ui, -apple-system, sans-serif; color: #e8ecf4; }
+    .loading { display:flex; align-items:center; justify-content:center; min-height:100vh; color:#7a8ba8; }
+  </style>
+</head>
+<body>
+  <div id="root"><div class="loading">Loading Actura v2…</div></div>
+  <script type="text/javascript">
+    (async function () {
+      try {
+        const res = await fetch("../versions/ActuraDashboard.v2.jsx");
+        const code = await res.text();
+        const compiled = Babel.transform(code, { presets: ["react"] }).code;
+        const module = { exports: {} };
+        const exports = module.exports;
+        const require = (name) => {
+          if (name === "react") return React;
+          throw new Error("Unsupported import: " + name);
+        };
+        eval(compiled + "\nwindow.__ActuraV2 = module.exports.default || exports.default || Preview;");
+        const App = window.__ActuraV2;
+        ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+      } catch (err) {
+        document.getElementById("root").innerHTML =
+          '<div class="loading" style="padding:24px; text-align:center;">Failed to load v2 dashboard.<br><br><code style="color:#ffb84d;">' +
+          String(err).replace(/</g, "&lt;").replace(/>/g, "&gt;") +
+          "</code></div>";
+      }
+    })();
+  </script>
+</body>
+</html>

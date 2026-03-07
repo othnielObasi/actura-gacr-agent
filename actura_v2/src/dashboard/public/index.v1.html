@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Actura Runtime Control Plane</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#06080c; color:#e8ecf4; font-family:system-ui,-apple-system,sans-serif; }
+    button { font-family:inherit; }
+    ::-webkit-scrollbar{width:6px;height:6px}
+    ::-webkit-scrollbar-thumb{background:#1a2436;border-radius:4px}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+const { useEffect, useMemo, useState } = React;
+
+
+const BASE = 3247.5;
+const PIPE = [
+  { k: "sig", l: "Signal", i: "📡" },
+  { k: "rsk", l: "Risk", i: "🛡" },
+  { k: "gov", l: "Govern", i: "🏛️" },
+  { k: "sec", l: "Secure", i: "🔐" },
+  { k: "sim", l: "Simulate", i: "🧪" },
+  { k: "sgn", l: "Sign", i: "✍️" },
+  { k: "sub", l: "Submit", i: "📤" },
+  { k: "val", l: "Receipt", i: "📄" },
+];
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+function fmtPct(x, dp = 2) {
+  return `${(x * 100).toFixed(dp)}%`;
+}
+
+function fmtNum(x, dp = 2) {
+  return Number(x).toFixed(dp);
+}
+
+function shortTier(tier) {
+  return tier.replace("TIER_", "T");
+}
+
+function genPrices(n = 72) {
+  const arr = [BASE];
+  for (let i = 1; i < n; i += 1) arr.push(arr[i - 1] * (1 + (Math.random() - 0.48) * 0.018));
+  return arr;
+}
+
+function badge(bg, bd, fg) {
+  return {
+    background: bg,
+    border: `1px solid ${bd}`,
+    color: fg,
+    padding: "2px 8px",
+    borderRadius: 999,
+    fontSize: 10,
+    fontFamily: "monospace",
+    fontWeight: 700,
+    letterSpacing: 0.2,
+    whiteSpace: "nowrap",
+  };
+}
+
+function buttonStyle(bg, bd, fg) {
+  return {
+    background: bg,
+    color: fg,
+    border: `1px solid ${bd}`,
+    borderRadius: 8,
+    padding: "10px 12px",
+    cursor: "pointer",
+    fontWeight: 700,
+  };
+}
+
+function signalColor(s) {
+  return s === "LONG" ? "#00e68a" : s === "SHORT" ? "#ff4d6a" : "#7a8ba8";
+}
+function regimeColor(r) {
+  if (r === "TRENDING") return "#00e68a";
+  if (r === "RANGING") return "#ffb84d";
+  if (r === "STRESSED") return "#ff4d6a";
+  return "#7a8ba8";
+}
+function profileColor(p) {
+  if (p === "LOW_VOL") return "#00d4ff";
+  if (p === "NORMAL") return "#4d9fff";
+  if (p === "HIGH_VOL") return "#ffb84d";
+  return "#ff4d6a";
+}
+function trustColor(score) {
+  if (score >= 93) return "#00e68a";
+  if (score >= 85) return "#4d9fff";
+  if (score >= 75) return "#ffb84d";
+  return "#ff4d6a";
+}
+function oracleColor(status) {
+  if (status === "HEALTHY") return "#00e68a";
+  if (status === "WATCH") return "#ffb84d";
+  return "#ff4d6a";
+}
+
+function Spark({ prices, h = 88, colorOverride = null }) {
+  if (!prices || prices.length < 2) return null;
+  const W = 900;
+  const mn = Math.min(...prices) - 4;
+  const mx = Math.max(...prices) + 4;
+  const range = mx - mn || 1;
+  const sx = W / (prices.length - 1);
+  const pts = prices.map((p, i) => `${i * sx},${h - ((p - mn) / range) * (h - 14) - 7}`).join(" ");
+  const up = prices[prices.length - 1] >= prices[0];
+  const color = colorOverride || (up ? "#00e68a" : "#ff4d6a");
+  const ly = parseFloat(pts.split(" ").pop().split(",")[1]);
+  return (
+    <svg width="100%" height={h} viewBox={`0 0 ${W} ${h}`} preserveAspectRatio="none" style={{ display: "block" }}>
+      <defs>
+        <linearGradient id={`sparkFill-${color.replace("#", "")}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.18" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon points={`0,${h} ${pts} ${(prices.length - 1) * sx},${h}`} fill={`url(#sparkFill-${color.replace("#", "")})`} />
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" />
+      <circle cx={(prices.length - 1) * sx} cy={ly} r="3.5" fill={color} />
+    </svg>
+  );
+}
+
+function Section({ title, right, children }) {
+  return (
+    <div style={{ background: "#101620", border: "1px solid #1a2436", borderRadius: 12, overflow: "hidden" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 14px", borderBottom: "1px solid #1a2436" }}>
+        <div style={{ fontSize: 13, fontWeight: 700 }}>{title}</div>
+        {right ? <span style={{ fontSize: 9, color: "#4a5872", fontFamily: "monospace", background: "#06080c", padding: "2px 6px", borderRadius: 4 }}>{right}</span> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function MiniBar({ value, goodAt = 0.5, color = null }) {
+  const v = clamp(value, 0, 1);
+  const fill = color || (v >= goodAt ? "#00e68a" : "#ffb84d");
+  return (
+    <div style={{ height: 8, background: "#0c1018", border: "1px solid #1a2436", borderRadius: 999, overflow: "hidden" }}>
+      <div style={{ height: "100%", width: `${v * 100}%`, background: fill, opacity: 0.9 }} />
+    </div>
+  );
+}
+
+function StatCard({ label, value, sub, color }) {
+  return (
+    <div style={{ background: "#0c1018", border: "1px solid #1a2436", borderRadius: 12, padding: 12, minHeight: 86 }}>
+      <div style={{ fontSize: 9, color: "#4a5872", textTransform: "uppercase", letterSpacing: 1.1, marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, fontFamily: "monospace", color }}>{value}</div>
+      {sub ? <div style={{ fontSize: 10, color: "#7a8ba8", fontFamily: "monospace", marginTop: 4, lineHeight: 1.35 }}>{sub}</div> : null}
+    </div>
+  );
+}
+
+function getTrustTier(score) {
+  if (score < 60) return "TIER_0_BLOCKED";
+  if (score < 75) return "TIER_1_PROBATION";
+  if (score < 85) return "TIER_2_LIMITED";
+  if (score < 93) return "TIER_3_STANDARD";
+  return "TIER_4_EXPANDED";
+}
+function getCapitalMultiplier(tier) {
+  switch (tier) {
+    case "TIER_0_BLOCKED": return 0;
+    case "TIER_1_PROBATION": return 0.25;
+    case "TIER_2_LIMITED": return 0.6;
+    case "TIER_3_STANDARD": return 1.0;
+    default: return 1.25;
+  }
+}
+function trustStatus(score) {
+  if (score < 65) return "restricted";
+  if (score < 80) return "watch";
+  return "trusted";
+}
+
+export default function Preview() {
+  const [prices, setPrices] = useState(() => genPrices(72));
+  const [stage, setStage] = useState(0);
+  const [tick, setTick] = useState(0);
+  const [vol, setVol] = useState(0.0162);
+  const [volRatio, setVolRatio] = useState(0.81);
+  const [adx, setAdx] = useState(27.8);
+  const [chop, setChop] = useState(41.2);
+  const [bayesBias, setBayesBias] = useState(0.06);
+  const [edgePct, setEdgePct] = useState(0.0029);
+  const [costBps, setCostBps] = useState(18);
+  const [trustScore, setTrustScore] = useState(91);
+  const [trustHistory, setTrustHistory] = useState([74, 76, 79, 83, 85, 88, 90, 91]);
+  const [operatorState, setOperatorState] = useState("ACTIVE");
+  const [oracleStatus, setOracleStatus] = useState("HEALTHY");
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [selectedTrade, setSelectedTrade] = useState(0);
+  const [operatorLog, setOperatorLog] = useState([
+    { ts: "12:44:09", action: "resume", reason: "manual_release" },
+    { ts: "12:37:52", action: "pause", reason: "volatility_spike_review" },
+    { ts: "12:32:11", action: "resume", reason: "operator_clearance" },
+  ]);
+
+  const regime = useMemo(() => {
+    if (volRatio > 1.9) return "STRESSED";
+    if (adx > 22 && chop < 45) return "TRENDING";
+    if (chop > 52) return "RANGING";
+    return "UNCERTAIN";
+  }, [volRatio, adx, chop]);
+
+  const profile = useMemo(() => {
+    if (volRatio > 2.1) return "EXTREME_DEFENSIVE";
+    if (volRatio > 1.25) return "HIGH_VOL";
+    if (volRatio < 0.8) return "LOW_VOL";
+    return "NORMAL";
+  }, [volRatio]);
+
+  const edgeGate = useMemo(() => {
+    const costPct = (costBps / 10000) * 1.5;
+    return edgePct >= costPct ? "PASS" : "FAIL";
+  }, [edgePct, costBps]);
+
+  const tier = useMemo(() => getTrustTier(trustScore), [trustScore]);
+  const capitalMultiplier = useMemo(() => getCapitalMultiplier(tier), [tier]);
+  const adjustedConfidence = useMemo(() => clamp(0.87 + bayesBias, 0, 1), [bayesBias]);
+  const trustDelta = useMemo(() => (trustHistory.length > 1 ? trustHistory[trustHistory.length - 1] - trustHistory[trustHistory.length - 2] : 0), [trustHistory]);
+
+  const mandate = {
+    capital: "$100,000",
+    maxTrade: "5%",
+    maxDailyLoss: "8%",
+    allowedAssets: ["ETH", "BTC", "USDC"],
+    protocols: ["Uniswap", "Aave"],
+    approvalThreshold: "$20,000",
+  };
+
+  const erc8004 = {
+    agentId: 22,
+    agentRegistry: "eip155:84532:0x7420...ab19",
+    ownerWallet: "0xA91c...4D2e",
+    agentWallet: "0xB27f...91Aa",
+    tradeIntentHash: "0x7fd2...bb13",
+    validationRequestHash: "0x41ac...ff09",
+    lastFeedbackTag: "tradingYield:day",
+    registrationStatus: "READY",
+  };
+
+  const mcp = {
+    status: "ACTIVE",
+    endpoint: "/mcp",
+    mode: "governed",
+    visibility: "public + restricted + operator",
+    tools: { public: 7, restricted: 2, operator: 3, total: 12 },
+    resources: 8,
+    prompts: 4,
+    publicTools: ["get_market_state", "explain_trade", "get_trust_state", "get_capital_rights"],
+    restrictedTools: ["propose_trade", "execute_trade"],
+    operatorTools: ["pause_agent", "resume_agent", "emergency_stop"],
+  };
+
+  const simulation = useMemo(() => {
+    const slippageBps = clamp(8 + volRatio * 6 + (regime === "STRESSED" ? 8 : 0), 6, 34);
+    const gasUsd = clamp(3.8 + volRatio * 1.7, 2.2, 11.5);
+    const netEdgePct = edgePct - slippageBps / 10000 - gasUsd / 100000;
+    const status = netEdgePct > 0.001 ? "APPROVED" : netEdgePct > 0 ? "WATCH" : "BLOCKED";
+    return { slippageBps, gasUsd, netEdgePct, status };
+  }, [edgePct, volRatio, regime]);
+
+  const oracle = useMemo(() => {
+    const twapDev = clamp((volRatio - 0.8) * 0.014, 0.001, 0.041);
+    const staleSecs = oracleStatus === "HEALTHY" ? 7 : oracleStatus === "WATCH" ? 31 : 73;
+    const sources = oracleStatus === "HEALTHY" ? 3 : 2;
+    return { twapDev, staleSecs, sources };
+  }, [oracleStatus, volRatio]);
+
+  const cap = 10247.8;
+  const pnlPct = ((cap - 10000) / 10000) * 100;
+  const currentPrice = prices[prices.length - 1];
+
+  const supervisory = useMemo(() => {
+    const tradeAllowed = operatorState === "ACTIVE" && oracleStatus !== "BLOCKED" && edgeGate === "PASS" && simulation.status !== "BLOCKED" && trustScore >= 60;
+    const effectiveMultiplier = recoveryMode ? Math.min(capitalMultiplier, 0.6) : capitalMultiplier;
+    const action = tradeAllowed ? (recoveryMode ? "THROTTLE" : "ALLOW") : "BLOCK";
+    return { tradeAllowed, effectiveMultiplier, action };
+  }, [operatorState, oracleStatus, edgeGate, simulation.status, trustScore, recoveryMode, capitalMultiplier]);
+
+  const positions = useMemo(() => [
+    { id: 23, side: "LONG", size: 0.0612 * supervisory.effectiveMultiplier, entry: currentPrice - 44, stop: currentPrice - 132, pnl: 4.92, profile },
+    { id: 22, side: "LONG", size: 0.0488, entry: currentPrice - 70, stop: currentPrice - 154, pnl: 7.11, profile: "LOW_VOL" },
+    { id: 21, side: "SHORT", size: 0.0394, entry: currentPrice + 16, stop: currentPrice + 96, pnl: -1.62, profile: "HIGH_VOL" },
+  ], [currentPrice, supervisory.effectiveMultiplier, profile]);
+
+  const trades = useMemo(() => [
+    {
+      id: 47 + tick, signal: "LONG", conf: 0.87, bias: bayesBias, confAdj: adjustedConfidence,
+      regime, profile, alpha: 1.32, edgePct, costBps, edgeGate, price: currentPrice,
+      size: supervisory.tradeAllowed ? 0.0612 * supervisory.effectiveMultiplier : 0,
+      approved: supervisory.tradeAllowed, trustScore, tier, receipt: "QmActuraReceipt...9af2", tx: "0x8f1c...0a71",
+    },
+    {
+      id: 46 + tick, signal: "SHORT", conf: 0.64, bias: -0.04, confAdj: 0.60,
+      regime: "RANGING", profile: "LOW_VOL", alpha: -0.34, edgePct: 0.0013, costBps: 18, edgeGate: "FAIL",
+      price: currentPrice - 18, size: 0, approved: false, trustScore: 78, tier: "TIER_2_LIMITED", receipt: "QmActuraReceipt...7bc4", tx: "—",
+    },
+    {
+      id: 45 + tick, signal: "LONG", conf: 0.58, bias: 0.02, confAdj: 0.60,
+      regime: "UNCERTAIN", profile: "NORMAL", alpha: 0.24, edgePct: 0.0019, costBps: 17, edgeGate: "WATCH",
+      price: currentPrice - 9, size: 0, approved: false, trustScore: 84, tier: "TIER_2_LIMITED", receipt: "QmActuraReceipt...11c0", tx: "—",
+    },
+  ], [tick, bayesBias, adjustedConfidence, regime, profile, edgePct, costBps, edgeGate, currentPrice, supervisory, trustScore, tier]);
+
+  const checks = useMemo(() => [
+    { name: "circuit_breaker", passed: true, value: "ARMED" },
+    { name: "mandate_engine", passed: true, value: `${mandate.maxTrade} / ${mandate.maxDailyLoss}` },
+    { name: "structure_regime", passed: true, value: `${regime} (ADX ${adx.toFixed(1)}, CHOP ${chop.toFixed(1)})` },
+    { name: "oracle_integrity", passed: oracleStatus !== "BLOCKED", value: `${oracleStatus} (${fmtPct(oracle.twapDev, 2)} dev)` },
+    { name: "execution_simulation", passed: simulation.status !== "BLOCKED", value: `${simulation.status} (${simulation.slippageBps.toFixed(1)}bps)` },
+    { name: "trust_recovery", passed: true, value: recoveryMode ? "ACTIVE" : "OFF" },
+    { name: "supervisory", passed: supervisory.tradeAllowed, value: `${supervisory.action} @ ${supervisory.effectiveMultiplier.toFixed(2)}x` },
+    { name: "operator_state", passed: operatorState === "ACTIVE", value: operatorState },
+  ], [mandate, regime, adx, chop, oracleStatus, oracle, simulation, recoveryMode, supervisory, operatorState]);
+
+  const selected = trades[selectedTrade] || trades[0];
+
+  function addOperatorReceipt(action, reason) {
+    const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    setOperatorLog((prev) => [{ ts: stamp, action, reason }, ...prev].slice(0, 6));
+  }
+  function onPause() { setOperatorState("PAUSED"); addOperatorReceipt("pause", "manual_operator_pause"); }
+  function onResume() { setOperatorState("ACTIVE"); setOracleStatus("HEALTHY"); addOperatorReceipt("resume", "manual_operator_resume"); }
+  function onEmergencyStop() { setOperatorState("EMERGENCY_STOP"); setOracleStatus("BLOCKED"); addOperatorReceipt("emergency_stop", "manual_emergency_intervention"); }
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setStage((s) => (s + 1) % PIPE.length);
+      setTick((t) => t + 1);
+      setPrices((prev) => {
+        const last = prev[prev.length - 1];
+        return [...prev.slice(-71), last * (1 + (Math.random() - 0.48) * 0.012)];
+      });
+      setVol((v) => clamp(v + (Math.random() - 0.5) * 0.002, 0.008, 0.045));
+      setVolRatio((v) => clamp(v + (Math.random() - 0.5) * 0.15, 0.55, 2.6));
+      setAdx((v) => clamp(v + (Math.random() - 0.5) * 2.8, 8, 45));
+      setChop((v) => clamp(v + (Math.random() - 0.5) * 3.4, 25, 65));
+      setBayesBias((v) => clamp(v + (Math.random() - 0.5) * 0.04, -0.35, 0.35));
+      setEdgePct((v) => clamp(v + (Math.random() - 0.5) * 0.0005, 0.0004, 0.0055));
+      setCostBps((v) => clamp(v + (Math.random() - 0.5) * 2, 10, 40));
+      setTrustScore((s) => {
+        const next = clamp(s + (Math.random() - 0.44) * 3.2 + (operatorState === "ACTIVE" ? 0.4 : -0.8), 54, 98);
+        setTrustHistory((prev) => [...prev.slice(-27), next]);
+        return next;
+      });
+      setRecoveryMode((prev) => {
+        const latest = trustHistory[trustHistory.length - 1] ?? trustScore;
+        return latest < 78 || (prev && latest < 85);
+      });
+      setOracleStatus(() => {
+        if (operatorState === "EMERGENCY_STOP") return "BLOCKED";
+        if (volRatio > 2.0) return "WATCH";
+        return Math.random() > 0.94 ? "WATCH" : "HEALTHY";
+      });
+    }, 2500);
+    return () => clearInterval(id);
+  }, [operatorState, volRatio, trustHistory, trustScore]);
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#06080c", color: "#e8ecf4", fontFamily: "system-ui,-apple-system,sans-serif" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 24px", borderBottom: "1px solid #1a2436", background: "linear-gradient(180deg,#0a0f18,#06080c)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 8, background: "linear-gradient(135deg,#00e68a,#00d4ff)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "monospace", fontWeight: 700, fontSize: 15, color: "#06080c" }}>A</div>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>Actura Runtime Control Plane</div>
+            <div style={{ fontSize: 9, color: "#4a5872", fontFamily: "monospace", letterSpacing: 1.5, textTransform: "uppercase" }}>GACR · ERC-8004 · Trust Governed Autonomous Capital</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ padding: "3px 8px", borderRadius: 5, fontSize: 10, fontFamily: "monospace", color: "#7a8ba8", border: "1px solid #1a2436", background: "#101620" }}>Base Sepolia</div>
+          <div style={{ padding: "4px 10px", borderRadius: 14, fontSize: 10, fontWeight: 600, fontFamily: "monospace", background: operatorState === "ACTIVE" ? "rgba(0,230,138,.08)" : operatorState === "PAUSED" ? "rgba(255,184,77,.08)" : "rgba(255,77,106,.08)", color: operatorState === "ACTIVE" ? "#00e68a" : operatorState === "PAUSED" ? "#ffb84d" : "#ff4d6a", border: "1px solid #1a2436" }}>{operatorState}</div>
+        </div>
+      </div>
+
+      <div style={{ padding: 24, display: "grid", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 14 }}>
+          <StatCard label="Capital" value={`$${cap.toFixed(0)}`} sub={`+${pnlPct.toFixed(2)}%`} color="#00e68a" />
+          <StatCard label="ETH Price" value={`$${fmtNum(currentPrice, 0)}`} sub={`vol ${fmtPct(vol, 2)} · ${volRatio.toFixed(2)}x`} color="#00d4ff" />
+          <StatCard label="Trust Score" value={fmtNum(trustScore, 0)} sub={`${trustStatus(trustScore)} · ${trustDelta >= 0 ? "+" : ""}${fmtNum(trustDelta, 0)}`} color={trustColor(trustScore)} />
+          <StatCard label="Trust Tier" value={shortTier(tier)} sub={recoveryMode ? "recovery mode" : "normal"} color={trustColor(trustScore)} />
+          <StatCard label="Capital Mult" value={`${capitalMultiplier.toFixed(2)}x`} sub={`effective ${supervisory.effectiveMultiplier.toFixed(2)}x`} color="#4d9fff" />
+          <StatCard label="Oracle" value={oracleStatus} sub={`${oracle.sources} src · ${oracle.staleSecs}s`} color={oracleColor(oracleStatus)} />
+          <StatCard label="Edge Gate" value={edgeGate} sub={`edge ${fmtPct(edgePct, 2)} · ${costBps}bps`} color={edgeGate === "PASS" ? "#00e68a" : "#ffb84d"} />
+          <StatCard label="Profile" value={profile} sub={regime} color={profileColor(profile)} />
+        </div>
+
+        <Section title="📈 Market Intelligence" right={`${prices.length} pts`}>
+          <div style={{ padding: 12, display: "grid", gap: 12 }}>
+            <Spark prices={prices} h={110} />
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(8,minmax(0,1fr))", gap: 8 }}>
+              {PIPE.map((s, i) => {
+                const done = i < stage;
+                const active = i === stage;
+                const bg = done ? "rgba(0,230,138,.06)" : active ? "rgba(77,159,255,.06)" : "#0c1018";
+                const bd = done ? "rgba(0,230,138,.2)" : active ? "rgba(77,159,255,.25)" : "#1a2436";
+                const cl = done ? "#00e68a" : active ? "#4d9fff" : "#4a5872";
+                return <div key={s.k} style={{ background: bg, border: `1px solid ${bd}`, borderRadius: 8, padding: "8px 10px", textAlign: "center" }}><div style={{ fontSize: 18 }}>{s.i}</div><div style={{ fontSize: 10, fontFamily: "monospace", color: cl, marginTop: 2 }}>{s.l}</div></div>;
+              })}
+            </div>
+          </div>
+        </Section>
+
+        <Section title="📋 Decision Engine" right={`${trades.length} rows`}>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1080 }}>
+              <thead>
+                <tr style={{ background: "rgba(16,22,32,.5)" }}>
+                  {["#", "Sig", "Conf", "Bias", "Adj", "Regime", "Profile", "Edge", "Oracle", "Trust", "Tier", "Size", "Status", "Receipt"].map((h) => <th key={h} style={{ textAlign: "left", padding: "8px 10px", fontSize: 9, textTransform: "uppercase", letterSpacing: 1, color: "#4a5872" }}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {trades.map((t, idx) => (
+                  <tr key={t.id} onClick={() => setSelectedTrade(idx)} style={{ borderTop: "1px solid #1a2436", background: idx === selectedTrade ? "rgba(77,159,255,.05)" : "transparent", cursor: "pointer" }}>
+                    <td style={{ padding: "8px 10px", fontSize: 11, fontFamily: "monospace", color: "#4a5872" }}>{t.id}</td>
+                    <td style={{ padding: "8px 10px", fontSize: 11, fontFamily: "monospace", color: signalColor(t.signal), fontWeight: 800 }}>{t.signal}</td>
+                    <td style={{ padding: "8px 10px", fontSize: 11, fontFamily: "monospace" }}>{fmtNum(t.conf)}</td>
+                    <td style={{ padding: "8px 10px", fontSize: 11, fontFamily: "monospace", color: t.bias >= 0 ? "#00e68a" : "#ffb84d" }}>{t.bias >= 0 ? "+" : ""}{fmtNum(t.bias)}</td>
+                    <td style={{ padding: "8px 10px", fontSize: 11, fontFamily: "monospace", fontWeight: 700 }}>{fmtNum(t.confAdj)}</td>
+                    <td style={{ padding: "8px 10px" }}><span style={badge("rgba(74,88,114,.06)", "rgba(74,88,114,.16)", regimeColor(t.regime))}>{t.regime}</span></td>
+                    <td style={{ padding: "8px 10px" }}><span style={badge("rgba(74,88,114,.06)", "rgba(74,88,114,.16)", profileColor(t.profile))}>{t.profile}</span></td>
+                    <td style={{ padding: "8px 10px" }}><span style={badge(t.edgeGate === "PASS" ? "rgba(0,230,138,.06)" : "rgba(255,184,77,.06)", "#1a2436", t.edgeGate === "PASS" ? "#00e68a" : "#ffb84d")}>{t.edgeGate}</span></td>
+                    <td style={{ padding: "8px 10px" }}><span style={badge("rgba(74,88,114,.06)", "#1a2436", oracleColor(oracleStatus))}>{oracleStatus}</span></td>
+                    <td style={{ padding: "8px 10px", fontSize: 11, fontFamily: "monospace", color: trustColor(t.trustScore) }}>{fmtNum(t.trustScore, 0)}</td>
+                    <td style={{ padding: "8px 10px", fontSize: 11, fontFamily: "monospace", color: "#7a8ba8" }}>{shortTier(t.tier)}</td>
+                    <td style={{ padding: "8px 10px", fontSize: 11, fontFamily: "monospace" }}>{t.size > 0 ? fmtNum(t.size, 4) : "—"}</td>
+                    <td style={{ padding: "8px 10px" }}><span style={{ padding: "2px 6px", borderRadius: 4, fontSize: 10, background: t.approved ? "rgba(0,230,138,.1)" : "rgba(74,88,114,.1)", color: t.approved ? "#00e68a" : "#7a8ba8", fontWeight: 700, fontFamily: "monospace" }}>{t.approved ? "Exec" : "Skip"}</span></td>
+                    <td style={{ padding: "8px 10px", fontSize: 10, fontFamily: "monospace", color: "#4d9fff" }}>{t.receipt}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) minmax(0,360px)", gap: 14, alignItems: "start" }}>
+          <div style={{ display: "grid", gap: 14 }}>
+            <Section title="📜 Artifact Drawer" right={`trade ${selected.id}`}>
+              <div style={{ padding: 14, fontFamily: "monospace", fontSize: 11, color: "#7a8ba8", lineHeight: 1.8 }}>
+                <div>intent: <span style={{ color: "#e8ecf4" }}>signed_trade_intent</span></div>
+                <div>mandate: <span style={{ color: "#00e68a" }}>max {mandate.maxTrade}, daily loss {mandate.maxDailyLoss}</span></div>
+                <div>oracle: <span style={{ color: oracleColor(oracleStatus) }}>{oracleStatus}</span></div>
+                <div>simulation: <span style={{ color: simulation.status === "APPROVED" ? "#00e68a" : "#ffb84d" }}>{simulation.status}</span></div>
+                <div>trust: <span style={{ color: trustColor(selected.trustScore) }}>{fmtNum(selected.trustScore, 0)} / {selected.tier}</span></div>
+                <div>tx hash: <span style={{ color: "#4d9fff" }}>{selected.tx}</span></div>
+                <div>ipfs receipt: <span style={{ color: "#4d9fff" }}>{selected.receipt}</span></div>
+                <div>tradeIntentHash: <span style={{ color: "#00d4ff" }}>{erc8004.tradeIntentHash}</span></div>
+                <div>validationRequestHash: <span style={{ color: "#00d4ff" }}>{erc8004.validationRequestHash}</span></div>
+                <div>feedback tag: <span style={{ color: "#ffb84d" }}>{erc8004.lastFeedbackTag}</span></div>
+              </div>
+            </Section>
+            <Section title="🔎 Trade Trust Proof" right={`decision ${selected.approved ? "approved" : "blocked"}`}>
+              <div style={{ padding: 14, fontFamily: "monospace", fontSize: 11, lineHeight: 1.7 }}>
+                <div style={{ color: selected.approved ? "#00e68a" : "#ff4d6a", fontWeight: 800, marginBottom: 8 }}>Decision: {selected.approved ? "APPROVED" : "BLOCKED"}</div>
+                <div>Signal confidence: <span style={{ color: "#e8ecf4" }}>{fmtNum(selected.conf)}</span></div>
+                <div>Bayesian bias: <span style={{ color: selected.bias >= 0 ? "#00e68a" : "#ffb84d" }}>{selected.bias >= 0 ? "+" : ""}{fmtNum(selected.bias)}</span></div>
+                <div>Adjusted confidence: <span style={{ color: "#e8ecf4" }}>{fmtNum(selected.confAdj)}</span></div>
+                <div>Market regime: <span style={{ color: regimeColor(selected.regime) }}>{selected.regime}</span></div>
+                <div>Volatility profile: <span style={{ color: profileColor(selected.profile) }}>{selected.profile}</span></div>
+                <div>Edge estimate: <span style={{ color: selected.edgeGate === "PASS" ? "#00e68a" : "#ffb84d" }}>{fmtPct(selected.edgePct,2)}</span></div>
+                <div>Oracle integrity: <span style={{ color: oracleColor(oracleStatus) }}>{oracleStatus}</span></div>
+                <div>Trust score: <span style={{ color: trustColor(selected.trustScore) }}>{fmtNum(selected.trustScore,0)}</span></div>
+                <div>Trust tier: <span style={{ color: trustColor(selected.trustScore) }}>{selected.tier}</span></div>
+                <div>Capital multiplier: <span style={{ color: "#4d9fff" }}>{supervisory.effectiveMultiplier.toFixed(2)}x</span></div>
+                <div>Supervisory action: <span style={{ color: supervisory.tradeAllowed ? "#00e68a" : "#ff4d6a" }}>{supervisory.action}</span></div>
+                <div style={{ marginTop: 8 }}>Artifacts:</div>
+                <div style={{ color: "#4d9fff" }}>TradeIntentHash: {erc8004.tradeIntentHash}</div>
+                <div style={{ color: "#4d9fff" }}>ValidationRequestHash: {erc8004.validationRequestHash}</div>
+                <div style={{ color: "#4d9fff" }}>IPFS Receipt: {selected.receipt}</div>
+              </div>
+            </Section>
+            <Section title="💰 Capital Rights Visualizer" right={tier}>
+              <div style={{ padding: 14, display: "grid", gap: 10 }}>
+                <div style={{ fontFamily: "monospace", fontSize: 11, color: "#7a8ba8" }}>Trust score determines how much capital the agent is allowed to deploy.</div>
+                {[{t:"T0",m:0},{t:"T1",m:0.25},{t:"T2",m:0.6},{t:"T3",m:1},{t:"T4",m:1.25}].map((x)=>{
+                  const active=tier.includes(x.t.slice(1));
+                  return (
+                    <div key={x.t} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:"monospace",fontSize:11,border:"1px solid #1a2436",borderRadius:8,padding:"6px 10px",background:active?"rgba(0,230,138,.06)":"#0c1018"}}>
+                      <span style={{color:active?"#00e68a":"#7a8ba8"}}>{x.t}</span>
+                      <span style={{color:"#e8ecf4"}}>{x.m.toFixed(2)}x capital</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </Section>
+            <Section title="📊 Confidence / Risk Window" right={`${selected.signal} ${selected.approved ? "live" : "blocked"}`}>
+              <div style={{ padding: 14, display: "grid", gap: 10 }}>
+                <div><div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#7a8ba8", fontFamily: "monospace" }}><span>Adjusted confidence</span><span>{fmtNum(selected.confAdj)}</span></div><MiniBar value={selected.confAdj} goodAt={0.55} color={signalColor(selected.signal)} /></div>
+                <div><div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#7a8ba8", fontFamily: "monospace" }}><span>Expected edge</span><span>{fmtPct(selected.edgePct, 2)}</span></div><MiniBar value={selected.edgePct / 0.006} goodAt={0.35} /></div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <StatCard label="Best case" value={`+${fmtPct(selected.edgePct * 1.7, 2)}`} color="#00d4ff" />
+                  <StatCard label="Worst case" value={`-${fmtPct(selected.edgePct * 0.9, 2)}`} color="#ff4d6a" />
+                </div>
+              </div>
+            </Section>
+            <Section title="💼 Positions + Exposure" right={`${positions.length} active`}>
+              <div style={{ padding: 14 }}>
+                {positions.map((p) => (
+                  <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderTop: "1px solid #1a2436" }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontFamily: "monospace", color: p.side === "LONG" ? "#00e68a" : "#ff4d6a", fontWeight: 800 }}>#{p.id} {p.side} {fmtNum(p.size, 4)} @ ${fmtNum(p.entry)}</div>
+                      <div style={{ fontSize: 10, color: "#7a8ba8", fontFamily: "monospace" }}>stop ${fmtNum(p.stop)} · {p.profile}</div>
+                    </div>
+                    <div style={{ fontSize: 12, fontFamily: "monospace", color: p.pnl >= 0 ? "#00e68a" : "#ff4d6a", fontWeight: 800 }}>{p.pnl >= 0 ? "+" : ""}${fmtNum(p.pnl)}</div>
+                  </div>
+                ))}
+                <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                  <StatCard label="Gross exposure" value="8.2%" color="#4d9fff" />
+                  <StatCard label="Direction balance" value="63/37" color="#7a8ba8" />
+                  <StatCard label="Drawdown" value="1.8%" color="#ffb84d" />
+                </div>
+              </div>
+            </Section>
+          </div>
+
+          <div style={{ display: "grid", gap: 14 }}>
+            <Section title="🧠 Trust + Capital Ladder" right={tier}>
+              <div style={{ padding: 14, display: "grid", gap: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <StatCard label="Trust" value={fmtNum(trustScore, 0)} sub={`${trustStatus(trustScore)} · ${trustDelta >= 0 ? "+" : ""}${fmtNum(trustDelta, 0)}`} color={trustColor(trustScore)} />
+                  <StatCard label="Capital Right" value={`${supervisory.effectiveMultiplier.toFixed(2)}x`} sub={recoveryMode ? "recovery capped" : tier} color="#4d9fff" />
+                </div>
+                <Spark prices={trustHistory} h={76} colorOverride={trustColor(trustScore)} />
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6 }}>
+                  {[["T0","0.00x"],["T1","0.25x"],["T2","0.60x"],["T3","1.00x"],["T4","1.25x"]].map(([t, mult]) => (
+                    <span key={t} style={{ ...badge(tier.startsWith(`TIER_${t.slice(1)}`) ? "rgba(0,230,138,.08)" : "rgba(74,88,114,.06)", "#1a2436", tier.startsWith(`TIER_${t.slice(1)}`) ? "#00e68a" : "#7a8ba8"), textAlign: "center", padding: "6px 4px" }}>{t}<br />{mult}</span>
+                  ))}
+                </div>
+              </div>
+            </Section>
+            <Section title="🪙 Execution + Security" right={simulation.status}>
+              <div style={{ padding: 14, display: "grid", gap: 10 }}>
+                <div><div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#7a8ba8", fontFamily: "monospace" }}><span>Expected Edge</span><span>{fmtPct(edgePct, 2)}</span></div><MiniBar value={edgePct / 0.006} goodAt={0.35} /></div>
+                <div><div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#7a8ba8", fontFamily: "monospace" }}><span>Slippage</span><span>{simulation.slippageBps.toFixed(1)} bps</span></div><MiniBar value={simulation.slippageBps / 40} goodAt={0.25} color="#ffb84d" /></div>
+                <div><div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#7a8ba8", fontFamily: "monospace" }}><span>Net Edge</span><span>{fmtPct(simulation.netEdgePct, 2)}</span></div><MiniBar value={(simulation.netEdgePct + 0.005) / 0.01} goodAt={0.55} color={simulation.netEdgePct > 0 ? "#00e68a" : "#ff4d6a"} /></div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <StatCard label="Oracle TWAP Dev" value={fmtPct(oracle.twapDev, 2)} color={oracleColor(oracleStatus)} />
+                  <StatCard label="Gas Est." value={`$${fmtNum(simulation.gasUsd)}`} color="#4d9fff" />
+                </div>
+              </div>
+            </Section>
+          </div>
+
+          <div style={{ display: "grid", gap: 14 }}>
+            <Section title="🏛️ Operator Controls" right={operatorState}>
+              <div style={{ padding: 14 }}>
+                <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                  <button onClick={onPause} style={buttonStyle("#1b2230", "#2d3b55", "#ffb84d")}>Pause</button>
+                  <button onClick={onResume} style={buttonStyle("#11261d", "#214734", "#00e68a")}>Resume</button>
+                  <button onClick={onEmergencyStop} style={buttonStyle("#2a1318", "#4a1e28", "#ff4d6a")}>Emergency Stop</button>
+                </div>
+                {operatorLog.map((entry, i) => (
+                  <div key={`${entry.ts}-${i}`} style={{ display: "grid", gridTemplateColumns: "64px 88px 1fr", gap: 8, padding: "8px 0", borderTop: i === 0 ? "1px solid #1a2436" : "1px solid #121824" }}>
+                    <span style={{ fontFamily: "monospace", fontSize: 11, color: "#7a8ba8" }}>{entry.ts}</span>
+                    <span style={{ fontFamily: "monospace", fontSize: 11, color: "#e8ecf4" }}>{entry.action}</span>
+                    <span style={{ fontFamily: "monospace", fontSize: 10, color: "#4a5872" }}>{entry.reason}</span>
+                  </div>
+                ))}
+              </div>
+            </Section>
+            <Section title="📘 Mandate + Supervisory" right={supervisory.action}>
+              <div style={{ padding: 14, fontFamily: "monospace", fontSize: 11, color: "#7a8ba8", lineHeight: 1.75 }}>
+                <div>Capital: <span style={{ color: "#e8ecf4" }}>{mandate.capital}</span></div>
+                <div>Max trade size: <span style={{ color: "#e8ecf4" }}>{mandate.maxTrade}</span></div>
+                <div>Max daily loss: <span style={{ color: "#e8ecf4" }}>{mandate.maxDailyLoss}</span></div>
+                <div>Approval threshold: <span style={{ color: "#e8ecf4" }}>{mandate.approvalThreshold}</span></div>
+                <div>Allowed assets: <span style={{ color: "#e8ecf4" }}>{mandate.allowedAssets.join(", ")}</span></div>
+                <div>Protocols: <span style={{ color: "#e8ecf4" }}>{mandate.protocols.join(", ")}</span></div>
+                <div style={{ marginTop: 8 }}>Supervisory decision: <span style={{ color: supervisory.tradeAllowed ? "#00e68a" : "#ff4d6a" }}>{supervisory.action}</span></div>
+              </div>
+            </Section>
+            <Section title="🧾 ERC-8004 Protocol" right={erc8004.registrationStatus}>
+              <div style={{ padding: 14, fontFamily: "monospace", fontSize: 11, color: "#7a8ba8", lineHeight: 1.7 }}>
+                <div>agentId: <span style={{ color: "#e8ecf4" }}>{erc8004.agentId}</span></div>
+                <div>agentRegistry: <span style={{ color: "#4d9fff" }}>{erc8004.agentRegistry}</span></div>
+                <div>ownerWallet: <span style={{ color: "#e8ecf4" }}>{erc8004.ownerWallet}</span></div>
+                <div>agentWallet: <span style={{ color: "#e8ecf4" }}>{erc8004.agentWallet}</span></div>
+                <div>tradeIntentHash: <span style={{ color: "#00d4ff" }}>{erc8004.tradeIntentHash}</span></div>
+                <div>validationRequestHash: <span style={{ color: "#00d4ff" }}>{erc8004.validationRequestHash}</span></div>
+                <div>lastFeedbackTag: <span style={{ color: "#ffb84d" }}>{erc8004.lastFeedbackTag}</span></div>
+                <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <span style={badge("rgba(0,230,138,.08)", "#1a2436", "#00e68a")}>identity ready</span>
+                  <span style={badge("rgba(77,159,255,.08)", "#1a2436", "#4d9fff")}>intent signed</span>
+                  <span style={badge("rgba(255,184,77,.08)", "#1a2436", "#ffb84d")}>validation wired</span>
+                  <span style={badge("rgba(77,159,255,.08)", "#1a2436", "#4d9fff")}>reputation wired</span>
+                </div>
+              </div>
+            </Section>
+            <Section title="🧩 MCP Interface" right={mcp.status}>
+              <div style={{ padding: 14, display: "grid", gap: 10 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <StatCard label="Tools" value={String(mcp.tools.total)} sub={`public ${mcp.tools.public} · restricted ${mcp.tools.restricted} · operator ${mcp.tools.operator}`} color="#00d4ff" />
+                  <StatCard label="Resources / Prompts" value={`${mcp.resources} / ${mcp.prompts}`} sub={mcp.mode} color="#4d9fff" />
+                </div>
+                <div style={{ fontFamily: "monospace", fontSize: 11, color: "#7a8ba8", lineHeight: 1.7 }}>
+                  <div>endpoint: <span style={{ color: "#e8ecf4" }}>{mcp.endpoint}</span></div>
+                  <div>visibility: <span style={{ color: "#e8ecf4" }}>{mcp.visibility}</span></div>
+                </div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: "#4a5872", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Public tools</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {mcp.publicTools.map((tool) => <span key={tool} style={badge("rgba(0,230,138,.08)", "#1a2436", "#00e68a")}>{tool}</span>)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: "#4a5872", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Restricted tools</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {mcp.restrictedTools.map((tool) => <span key={tool} style={badge("rgba(255,184,77,.08)", "#1a2436", "#ffb84d")}>{tool}</span>)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: "#4a5872", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Operator tools</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {mcp.operatorTools.map((tool) => <span key={tool} style={badge("rgba(255,77,106,.08)", "#1a2436", "#ff4d6a")}>{tool}</span>)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Section>
+            <Section title="🛡 Full Pre-Trade Checks" right={`cycle ${47 + tick}`}>
+              {checks.map((c) => (
+                <div key={c.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 14px", borderTop: "1px solid #1a2436" }}>
+                  <span style={{ fontFamily: "monospace", fontSize: 11, color: "#7a8ba8" }}>{c.name}</span>
+                  <span style={{ fontFamily: "monospace", fontSize: 10, color: c.passed ? "#00e68a" : "#ff4d6a", fontWeight: 800 }}>{c.passed ? "PASS" : "FAIL"} {c.value}</span>
+                </div>
+              ))}
+            </Section>
+            <Section title="⚠️ Watch Items" right="live alerts">
+              <div style={{ padding: 14, fontFamily: "monospace", fontSize: 11, color: "#ffb84d", lineHeight: 1.7 }}>
+                <div>• {regime === "RANGING" ? "Whipsaw risk elevated — favour reduced size." : "Trend continuation healthy — monitor reversal signals."}</div>
+                <div>• {oracleStatus === "WATCH" ? "Oracle drift under observation." : "Oracle feeds healthy."}</div>
+                <div>• {recoveryMode ? "Trust recovery mode active — capital rights capped." : "Trust operating in standard mode."}</div>
+                <div>• {operatorState === "ACTIVE" ? "Operator state normal." : "Operator intervention currently affecting runtime."}</div>
+              </div>
+            </Section>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Preview />);
+  </script>
+</body>
+</html>

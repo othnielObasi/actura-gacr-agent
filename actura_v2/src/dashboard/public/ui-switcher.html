@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Actura UI Versions</title>
+  <style>
+    :root {
+      --bg: #06080c;
+      --panel: #101620;
+      --card: #0c1018;
+      --border: #1a2436;
+      --text: #e8ecf4;
+      --muted: #7a8ba8;
+      --blue: #4d9fff;
+      --cyan: #00d4ff;
+      --green: #00e68a;
+      --amber: #ffb84d;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 28px; }
+    .hero { display:flex; align-items:center; gap:12px; margin-bottom: 24px; }
+    .logo { width:42px; height:42px; border-radius:10px; background: linear-gradient(135deg,var(--green),var(--cyan)); color:#06080c; font-weight:800; display:flex; align-items:center; justify-content:center; font-family: monospace; }
+    .sub { color: var(--muted); font-size: 12px; letter-spacing: 1.2px; text-transform: uppercase; font-family: monospace; }
+    .grid { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+    .head { padding: 16px 18px; border-bottom: 1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
+    .body { padding: 18px; display:grid; gap: 14px; }
+    .meta { color: var(--muted); font-family: monospace; font-size: 12px; line-height: 1.6; }
+    .badge { padding: 3px 8px; border-radius: 999px; font-family: monospace; font-size: 11px; border: 1px solid var(--border); }
+    .v1 { color: var(--amber); background: rgba(255,184,77,.08); }
+    .v2 { color: var(--blue); background: rgba(77,159,255,.08); }
+    .btns { display:flex; gap: 10px; flex-wrap: wrap; }
+    .btn { display:inline-flex; align-items:center; justify-content:center; padding: 11px 14px; border-radius: 10px; text-decoration:none; font-weight:700; border:1px solid var(--border); }
+    .primary { background: rgba(77,159,255,.12); color: var(--text); }
+    .secondary { background: #0c1018; color: var(--muted); }
+    ul { margin: 0; padding-left: 18px; color: var(--muted); }
+    li { margin: 6px 0; }
+    .note { margin-top: 18px; padding: 14px 16px; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); font-size: 14px; }
+    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div class="logo">A</div>
+      <div>
+        <div style="font-size: 28px; font-weight: 800;">Actura UI Version Switcher</div>
+        <div class="sub">Choose the dashboard experience you want to open</div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="head">
+          <div style="font-size: 18px; font-weight: 800;">Dashboard v1</div>
+          <span class="badge v1">single-page</span>
+        </div>
+        <div class="body">
+          <div class="meta">
+            The earlier packaged browser dashboard preserved from the prior build.
+            Good for a fast, all-in-one hackathon demo.
+          </div>
+          <ul>
+            <li>Single-page layout</li>
+            <li>Protocol, trust, operator, and artifact sections in one flow</li>
+            <li>Best for quick side-by-side comparisons with earlier demos</li>
+          </ul>
+          <div class="btns">
+            <a class="btn primary" href="./index.v1.html">Open v1</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="head">
+          <div style="font-size: 18px; font-weight: 800;">Dashboard v2</div>
+          <span class="badge v2">tabbed control plane</span>
+        </div>
+        <div class="body">
+          <div class="meta">
+            The newer professional tabbed control-plane UI based on the latest canvas design.
+            Better information architecture for decisions, trust, protocol, and operator workflows.
+          </div>
+          <ul>
+            <li>Overview, Decisions, Trust &amp; Risk, Protocol, Operator tabs</li>
+            <li>Trade Trust Proof and Capital Rights Visualizer</li>
+            <li>ERC-8004 and MCP visibility grouped into the Protocol view</li>
+          </ul>
+          <div class="btns">
+            <a class="btn primary" href="./index.v2.html">Open v2</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      Nothing else in the project was intentionally changed for this packaging step beyond adding the v2 browser entrypoint,
+      this switcher page, and a small documentation update.
+    </div>
+  </div>
+</body>
+</html>
