@@ -1,7 +1,7 @@
 import type { StrategyOutput } from '../strategy/momentum.js';
 import type { RiskDecision, RiskCheck } from '../risk/engine.js';
 import type { ValidationArtifact } from './artifact-emitter.js';
-import { recordTrustObservation, getReputationHistory, resetReputationHistory } from './reputation-evolution.js';
+import { recordTrustObservation, getReputationHistory, resetReputationHistory, type MarketRegimeHint } from './reputation-evolution.js';
 
 export type TrustStatus = 'trusted' | 'watch' | 'restricted';
 export type TrustScoreStage = 'pre_execution' | 'post_execution' | 'daily_summary';
@@ -57,6 +57,7 @@ export interface TrustScoreInput {
   artifact?: ValidationArtifact | null;
   outcome?: TrustOutcomeContext | null;
   stage?: TrustScoreStage;
+  regime?: MarketRegimeHint;
 }
 
 const DEFAULT_WEIGHTS: TrustWeights = {
@@ -88,6 +89,7 @@ export function buildTrustPolicyScorecard(input: TrustScoreInput): TrustPolicySc
     trustScore,
     previousScore: prev,
     timestamp: input.timestamp,
+    regime: input.regime,
   });
   const trustDelta = observation.trustDelta;
   const status = observation.status;

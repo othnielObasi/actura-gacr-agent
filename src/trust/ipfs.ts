@@ -1,10 +1,15 @@
 /**
  * IPFS Upload via Pinata
  * Uploads validation artifacts and returns CID
+ * Local backup ensures artifacts survive pinning service lapses.
  */
 
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { join } from 'path';
 import { config } from '../agent/config.js';
 import type { ValidationArtifact } from './artifact-emitter.js';
+
+const ARTIFACT_DIR = join(process.cwd(), 'artifacts');
 
 export interface IpfsUploadResult {
   cid: string;
@@ -14,12 +19,33 @@ export interface IpfsUploadResult {
 }
 
 /**
+ * Save artifact JSON to local disk so it can be re-pinned if the
+ * pinning service lapses (link-rot protection).
+ */
+function saveLocalBackup(artifact: ValidationArtifact, cid: string): void {
+  try {
+    if (!existsSync(ARTIFACT_DIR)) {
+      mkdirSync(ARTIFACT_DIR, { recursive: true });
+    }
+    const filename = `${artifact.timestamp.replace(/[:.]/g, '-')}-${cid}.json`;
+    writeFileSync(
+      join(ARTIFACT_DIR, filename),
+      JSON.stringify(artifact, null, 2),
+      'utf-8',
+    );
+  } catch {
+    // Best-effort — don't let backup failures block the pipeline.
+  }
+}
+
+/**
  * Upload a validation artifact to IPFS via Pinata
  */
 export async function uploadArtifact(artifact: ValidationArtifact): Promise<IpfsUploadResult> {
   if (!config.pinataJwt) {
-    // Fallback: return local hash for testing
-    return mockUpload(artifact);
+    const result = mockUpload(artifact);
+    saveLocalBackup(artifact, result.cid);
+    return result;
   }
 
   const body = JSON.stringify(artifact, null, 2);
@@ -52,15 +78,19 @@ export async function uploadArtifact(artifact: ValidationArtifact): Promise<Ipfs
     }
 
     const data = await response.json() as { IpfsHash: string; PinSize: number };
-    return {
+    const result: IpfsUploadResult = {
       cid: data.IpfsHash,
       uri: `ipfs://${data.IpfsHash}`,
       gatewayUrl: `https://gateway.pinata.cloud/ipfs/${data.IpfsHash}`,
       size: data.PinSize,
     };
+    saveLocalBackup(artifact, result.cid);
+    return result;
   } catch (error) {
     console.error('[IPFS] Upload failed, using mock:', error);
-    return mockUpload(artifact);
+    const fallback = mockUpload(artifact);
+    saveLocalBackup(artifact, fallback.cid);
+    return fallback;
   }
 }
 
