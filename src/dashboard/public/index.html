@@ -1,19 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Actura Runtime Control Plane</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
   <style>
-    * { box-sizing: border-box; }
-    body { margin:0; background:#06080c; color:#e8ecf4; font-family:system-ui,-apple-system,sans-serif; }
-    button { font: inherit; }
-    ::-webkit-scrollbar{width:8px;height:8px}
-    ::-webkit-scrollbar-thumb{background:#1a2436;border-radius:6px}
-    ::-webkit-scrollbar-track{background:#0c1018}
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#06080c; color:#e8ecf4; font-family:system-ui,-apple-system,sans-serif; }
+    button { font-family:inherit; }
+    ::-webkit-scrollbar{width:6px;height:6px}
+    ::-webkit-scrollbar-thumb{background:#1a2436;border-radius:4px}
   </style>
 </head>
 <body>
@@ -21,10 +20,11 @@
   <script type="text/babel">
 const { useEffect, useMemo, useState } = React;
 
+
 const BASE = 3247.5;
 const PIPE = [
   { k: "sig", l: "Signal", i: "📡" },
-  { k: "rsk", l: "Risk", i: "🛡️" },
+  { k: "rsk", l: "Risk", i: "🛡" },
   { k: "gov", l: "Govern", i: "🏛️" },
   { k: "sec", l: "Secure", i: "🔐" },
   { k: "sim", l: "Simulate", i: "🧪" },
@@ -189,7 +189,7 @@ function trustStatus(score) {
   return "trusted";
 }
 
-function Preview() {
+export default function Preview() {
   const [prices, setPrices] = useState(() => genPrices(72));
   const [stage, setStage] = useState(0);
   const [tick, setTick] = useState(0);
@@ -254,6 +254,19 @@ function Preview() {
     validationRequestHash: "0x41ac...ff09",
     lastFeedbackTag: "tradingYield:day",
     registrationStatus: "READY",
+  };
+
+  const mcp = {
+    status: "ACTIVE",
+    endpoint: "/mcp",
+    mode: "governed",
+    visibility: "public + restricted + operator",
+    tools: { public: 7, restricted: 2, operator: 3, total: 12 },
+    resources: 8,
+    prompts: 4,
+    publicTools: ["get_market_state", "explain_trade", "get_trust_state", "get_capital_rights"],
+    restrictedTools: ["propose_trade", "execute_trade"],
+    operatorTools: ["pause_agent", "resume_agent", "emergency_stop"],
   };
 
   const simulation = useMemo(() => {
@@ -461,9 +474,9 @@ function Preview() {
                 <div>Adjusted confidence: <span style={{ color: "#e8ecf4" }}>{fmtNum(selected.confAdj)}</span></div>
                 <div>Market regime: <span style={{ color: regimeColor(selected.regime) }}>{selected.regime}</span></div>
                 <div>Volatility profile: <span style={{ color: profileColor(selected.profile) }}>{selected.profile}</span></div>
-                <div>Edge estimate: <span style={{ color: selected.edgeGate === "PASS" ? "#00e68a" : "#ffb84d" }}>{fmtPct(selected.edgePct, 2)}</span></div>
+                <div>Edge estimate: <span style={{ color: selected.edgeGate === "PASS" ? "#00e68a" : "#ffb84d" }}>{fmtPct(selected.edgePct,2)}</span></div>
                 <div>Oracle integrity: <span style={{ color: oracleColor(oracleStatus) }}>{oracleStatus}</span></div>
-                <div>Trust score: <span style={{ color: trustColor(selected.trustScore) }}>{fmtNum(selected.trustScore, 0)}</span></div>
+                <div>Trust score: <span style={{ color: trustColor(selected.trustScore) }}>{fmtNum(selected.trustScore,0)}</span></div>
                 <div>Trust tier: <span style={{ color: trustColor(selected.trustScore) }}>{selected.tier}</span></div>
                 <div>Capital multiplier: <span style={{ color: "#4d9fff" }}>{supervisory.effectiveMultiplier.toFixed(2)}x</span></div>
                 <div>Supervisory action: <span style={{ color: supervisory.tradeAllowed ? "#00e68a" : "#ff4d6a" }}>{supervisory.action}</span></div>
@@ -590,6 +603,38 @@ function Preview() {
                 </div>
               </div>
             </Section>
+            <Section title="🧩 MCP Interface" right={mcp.status}>
+              <div style={{ padding: 14, display: "grid", gap: 10 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <StatCard label="Tools" value={String(mcp.tools.total)} sub={`public ${mcp.tools.public} · restricted ${mcp.tools.restricted} · operator ${mcp.tools.operator}`} color="#00d4ff" />
+                  <StatCard label="Resources / Prompts" value={`${mcp.resources} / ${mcp.prompts}`} sub={mcp.mode} color="#4d9fff" />
+                </div>
+                <div style={{ fontFamily: "monospace", fontSize: 11, color: "#7a8ba8", lineHeight: 1.7 }}>
+                  <div>endpoint: <span style={{ color: "#e8ecf4" }}>{mcp.endpoint}</span></div>
+                  <div>visibility: <span style={{ color: "#e8ecf4" }}>{mcp.visibility}</span></div>
+                </div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: "#4a5872", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Public tools</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {mcp.publicTools.map((tool) => <span key={tool} style={badge("rgba(0,230,138,.08)", "#1a2436", "#00e68a")}>{tool}</span>)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: "#4a5872", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Restricted tools</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {mcp.restrictedTools.map((tool) => <span key={tool} style={badge("rgba(255,184,77,.08)", "#1a2436", "#ffb84d")}>{tool}</span>)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: "#4a5872", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Operator tools</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {mcp.operatorTools.map((tool) => <span key={tool} style={badge("rgba(255,77,106,.08)", "#1a2436", "#ff4d6a")}>{tool}</span>)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Section>
             <Section title="🛡 Full Pre-Trade Checks" right={`cycle ${47 + tick}`}>
               {checks.map((c) => (
                 <div key={c.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 14px", borderTop: "1px solid #1a2436" }}>
@@ -613,7 +658,7 @@ function Preview() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<Preview />);
+ReactDOM.createRoot(document.getElementById("root")).render(<Preview />);
   </script>
 </body>
 </html>

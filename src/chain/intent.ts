@@ -3,11 +3,11 @@
  * Router-compatible EIP-712 TradeIntent builder/signing.
  * Fields are kept minimal and adapter-friendly until the hackathon releases the final ABI.
  */
-import { ethers } from 'ethers';
+import { ethers, type TypedDataField } from 'ethers';
 import { config } from '../agent/config.js';
 import { getWallet } from './sdk.js';
 
-export const TRADE_INTENT_TYPES = {
+export const TRADE_INTENT_TYPES: Record<string, TypedDataField[]> = {
   TradeIntent: [
     { name: 'agent', type: 'address' },
     { name: 'asset', type: 'address' },

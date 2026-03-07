@@ -49,8 +49,7 @@ async function main() {
     console.log('Sandbox claimed:', claimTx);
   }
 
-  console.log('
-Next plug-in points when hackathon values are released:');
+  console.log('\nNext plug-in points when hackathon values are released:');
   console.log('- RISK_ROUTER_ADDRESS');
   console.log('- CAPITAL_VAULT_ADDRESS');
   console.log('- VALIDATOR_ADDRESS or VALIDATOR_PRIVATE_KEY');

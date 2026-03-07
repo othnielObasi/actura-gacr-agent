@@ -29,6 +29,7 @@ import { evaluateSupervisoryDecision, applySupervisorySizing, summarizeSuperviso
 import { generateReasoning } from '../strategy/ai-reasoning.js';
 import { applySymbolicReasoning, recordOutcome } from '../strategy/neuro-symbolic.js';
 import { runAdaptation, recordTradeOutcome, getAdaptiveParams, getAdaptationSummary, type AdaptationArtifact } from '../strategy/adaptive-learning.js';
+import { RegimeGovernanceController, mapVolToRegime } from '../strategy/regime-governance.js';
 import { uploadArtifact } from '../trust/ipfs.js';
 import { saveCheckpoint, getCheckpoints, getTradeCheckpoints } from '../trust/checkpoint.js';
 import { computeMarketState } from '../data/market-state.js';
@@ -51,6 +52,7 @@ let riskEngine: RiskEngine;
 let scheduler: Scheduler;
 let agentId: number | null = null;
 let cycleCount = 0;
+let regimeGovernance = new RegimeGovernanceController();
 
 // ──── Initialization ────
 
@@ -93,6 +95,7 @@ function initAgent(): void {
   // Generate initial market data
   marketData = generateSimulatedData(60, 3000, 0.02, 0.0003);
   resetStrategy();
+  regimeGovernance.reset();
 
   log.info('Agent initialized', {
     capital: riskEngine.getCapital(),
@@ -179,7 +182,56 @@ async function runCycle(): Promise<void> {
     }
   }
 
-  // Step 2c: Supervisory meta-agent — trust-aware capital steward
+  // Step 2c: Regime-governance — deterministic profile selection + bounded confidence bias
+  const volatility = strategyOutput.indicators.volatility ?? 0.02;
+  const volRegime = mapVolToRegime(volatility);
+  const regimeGov = strategyOutput.signal.direction !== 'NEUTRAL'
+    ? regimeGovernance.step({
+        cycleNumber: cycleCount,
+        volatility,
+        drawdownPct: cbState.drawdownPct,
+        direction: strategyOutput.signal.direction as 'LONG' | 'SHORT',
+        confidence: strategyOutput.signal.confidence,
+        regime: volRegime,
+      })
+    : null;
+
+  if (regimeGov) {
+    strategyOutput.signal.confidence = regimeGov.adjustedConfidence;
+    (strategyOutput.signal as any).regimeGovernance = {
+      profileName: regimeGov.profileName,
+      bayesBias: regimeGov.bayesBias,
+      baseProfileChoice: regimeGov.baseProfileChoice,
+      switched: regimeGov.switched,
+      artifacts: regimeGov.artifacts,
+    };
+
+    const sizeRatio = regimeGov.profile.basePositionPct / config.strategy.basePositionPct;
+    strategyOutput.positionSizeRaw *= sizeRatio;
+    strategyOutput.positionSize *= sizeRatio;
+
+    const atrValue = strategyOutput.indicators.atr;
+    if (atrValue !== null) {
+      if (strategyOutput.signal.direction === 'LONG') {
+        strategyOutput.stopLossPrice = strategyOutput.currentPrice - (regimeGov.profile.stopLossAtrMultiple * atrValue);
+      } else if (strategyOutput.signal.direction === 'SHORT') {
+        strategyOutput.stopLossPrice = strategyOutput.currentPrice + (regimeGov.profile.stopLossAtrMultiple * atrValue);
+      }
+    }
+
+    if (strategyOutput.signal.confidence < regimeGov.profile.confidenceThreshold) {
+      strategyOutput.signal.reason = `[REGIME GOVERNANCE BLOCK] confidence ${strategyOutput.signal.confidence.toFixed(2)} below profile threshold ${regimeGov.profile.confidenceThreshold.toFixed(2)} | ${strategyOutput.signal.reason}`;
+      strategyOutput.signal.direction = 'NEUTRAL';
+      strategyOutput.signal.confidence = 0;
+      strategyOutput.positionSizeRaw = 0;
+      strategyOutput.positionSize = 0;
+      strategyOutput.stopLossPrice = null;
+    } else if (regimeGov.switched) {
+      strategyOutput.signal.reason = `[PROFILE SWITCH → ${regimeGov.profileName}] ${strategyOutput.signal.reason}`;
+    }
+  }
+
+  // Step 2d: Supervisory meta-agent — trust-aware capital steward
   const lastTrustScore = getLastTrustScore(agentId);
   const structureRegime = (strategyOutput.signal.structureRegime ?? 'UNKNOWN') as 'TRENDING' | 'RANGING' | 'STRESSED' | 'UNCERTAIN' | 'UNKNOWN';
   const edgeAllowed = strategyOutput.signal.edge?.allowed ?? true;
@@ -283,6 +335,9 @@ async function runCycle(): Promise<void> {
 
   // Add cognitive + supervisory layer data to artifact
   (artifact as any).supervisory = supervisory;
+  if ((strategyOutput.signal as any).regimeGovernance) {
+    (artifact as any).regimeGovernance = (strategyOutput.signal as any).regimeGovernance;
+  }
 
   if (cognitive.rulesFired > 0) {
     (artifact as any).cognitive = {

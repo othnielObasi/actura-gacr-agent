@@ -1,20 +1,29 @@
+
 /**
- * MCP Server
- * Exposes Actura's tools and resources via HTTP
- * 
- * This is a lightweight JSON-RPC style server that follows
- * MCP conventions for tool calling and resource reading.
- * 
- * In production, use @modelcontextprotocol/sdk for full compliance.
- * This implementation covers the hackathon requirements.
+ * Actura MCP Server
+ * Lightweight MCP-compatible HTTP + JSON-RPC server for discovery, tools,
+ * resources, and prompts. Designed for hackathon demos and local integration.
  */
 
 import express from 'express';
 import { ALL_TOOLS, type McpTool } from './tools.js';
 import { ALL_RESOURCES, type McpResource } from './resources.js';
+import { ALL_PROMPTS, type McpPrompt } from './prompts.js';
 import { config } from '../agent/config.js';
 
 const MCP_PORT = 3001;
+
+async function callTool(tool: McpTool, args: Record<string, unknown>) {
+  return tool.handler(args);
+}
+
+async function readResource(resource: McpResource, params: Record<string, unknown>) {
+  return resource.handler(params);
+}
+
+async function getPrompt(prompt: McpPrompt, args: Record<string, unknown>) {
+  return prompt.handler(args);
+}
 
 /**
  * Start the MCP server
@@ -23,42 +32,73 @@ export function startMcpServer(port: number = MCP_PORT): void {
   const app = express();
   app.use(express.json());
 
-  // CORS for development
   app.use((_req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, X-Actura-Role');
+    res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
     next();
   });
 
-  // ── Discovery ──
+  app.get('/health', (_req, res) => {
+    res.json({
+      status: 'ok',
+      service: 'actura-mcp',
+      endpoint: config.mcpEndpoint,
+      tools: ALL_TOOLS.length,
+      resources: ALL_RESOURCES.length,
+      prompts: ALL_PROMPTS.length,
+      version: '2.0.0',
+    });
+  });
 
-  /** List available tools */
+  app.get('/mcp/info', (_req, res) => {
+    res.json({
+      name: 'Actura MCP',
+      description: 'Governed MCP interface for trust, governance, performance, and operator workflows',
+      endpoint: config.mcpEndpoint,
+      supports: ['tools', 'resources', 'prompts', 'json-rpc'],
+      tools: ALL_TOOLS.map(({ name, description, visibility, category }) => ({ name, description, visibility, category })),
+      resources: ALL_RESOURCES.map(({ uri, name, description, visibility }) => ({ uri, name, description, visibility })),
+      prompts: ALL_PROMPTS.map(({ name, description, visibility }) => ({ name, description, visibility })),
+    });
+  });
+
   app.get('/mcp/tools', (_req, res) => {
     res.json({
       tools: ALL_TOOLS.map(t => ({
         name: t.name,
         description: t.description,
+        category: t.category,
+        visibility: t.visibility,
         inputSchema: t.inputSchema,
       })),
     });
   });
 
-  /** List available resources */
   app.get('/mcp/resources', (_req, res) => {
     res.json({
       resources: ALL_RESOURCES.map(r => ({
         uri: r.uri,
         name: r.name,
         description: r.description,
+        visibility: r.visibility,
         mimeType: r.mimeType,
       })),
     });
   });
 
-  // ── Tool Execution ──
+  app.get('/mcp/prompts', (_req, res) => {
+    res.json({
+      prompts: ALL_PROMPTS.map(p => ({
+        name: p.name,
+        description: p.description,
+        visibility: p.visibility,
+        arguments: p.arguments,
+      })),
+    });
+  });
 
-  /** Call a tool */
-  app.post('/mcp/tools/:toolName', (req, res) => {
+  app.post('/mcp/tools/:toolName', async (req, res) => {
     const tool = ALL_TOOLS.find(t => t.name === req.params.toolName);
     if (!tool) {
       res.status(404).json({ error: `Tool not found: ${req.params.toolName}` });
@@ -66,17 +106,14 @@ export function startMcpServer(port: number = MCP_PORT): void {
     }
 
     try {
-      const result = tool.handler(req.body || {});
+      const result = await callTool(tool, req.body || {});
       res.json({ result });
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }
   });
 
-  // ── Resource Reading ──
-
-  /** Read a resource */
-  app.get('/mcp/resources/:resourceUri', (req, res) => {
+  app.get('/mcp/resources/:resourceUri', async (req, res) => {
     const uri = `actura://${req.params.resourceUri}`;
     const resource = ALL_RESOURCES.find(r => r.uri === uri);
     if (!resource) {
@@ -85,21 +122,35 @@ export function startMcpServer(port: number = MCP_PORT): void {
     }
 
     try {
-      const data = resource.handler();
+      const data = await readResource(resource, req.query as Record<string, unknown>);
       res.json({ data });
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }
   });
 
-  // ── JSON-RPC endpoint (MCP standard) ──
+  app.post('/mcp/prompts/:promptName', async (req, res) => {
+    const prompt = ALL_PROMPTS.find(p => p.name === req.params.promptName);
+    if (!prompt) {
+      res.status(404).json({ error: `Prompt not found: ${req.params.promptName}` });
+      return;
+    }
 
-  app.post('/mcp', (req, res) => {
-    const { method, params, id } = req.body;
+    try {
+      const data = await getPrompt(prompt, req.body || {});
+      res.json({ data });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post('/mcp', async (req, res) => {
+    const { method, params, id } = req.body || {};
+    const args = params?.arguments || params || {};
 
     try {
       switch (method) {
-        case 'tools/list': {
+        case 'tools/list':
           res.json({
             jsonrpc: '2.0',
             id,
@@ -107,12 +158,13 @@ export function startMcpServer(port: number = MCP_PORT): void {
               tools: ALL_TOOLS.map(t => ({
                 name: t.name,
                 description: t.description,
+                category: t.category,
+                visibility: t.visibility,
                 inputSchema: t.inputSchema,
               })),
             },
           });
-          break;
-        }
+          return;
 
         case 'tools/call': {
           const tool = ALL_TOOLS.find(t => t.name === params?.name);
@@ -120,16 +172,16 @@ export function startMcpServer(port: number = MCP_PORT): void {
             res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: `Tool not found: ${params?.name}` } });
             return;
           }
-          const result = tool.handler(params?.arguments || {});
+          const result = await callTool(tool, args);
           res.json({
             jsonrpc: '2.0',
             id,
             result: { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] },
           });
-          break;
+          return;
         }
 
-        case 'resources/list': {
+        case 'resources/list':
           res.json({
             jsonrpc: '2.0',
             id,
@@ -138,51 +190,77 @@ export function startMcpServer(port: number = MCP_PORT): void {
                 uri: r.uri,
                 name: r.name,
                 description: r.description,
+                visibility: r.visibility,
                 mimeType: r.mimeType,
               })),
             },
           });
-          break;
-        }
+          return;
 
         case 'resources/read': {
           const resource = ALL_RESOURCES.find(r => r.uri === params?.uri);
           if (!resource) {
-            res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: `Resource not found: ${params?.uri}` } });
+            res.json({ jsonrpc: '2.0', id, error: { code: -32602, message: `Resource not found: ${params?.uri}` } });
             return;
           }
-          const data = resource.handler();
+          const data = await readResource(resource, args);
           res.json({
             jsonrpc: '2.0',
             id,
-            result: { contents: [{ uri: resource.uri, mimeType: resource.mimeType, text: JSON.stringify(data) }] },
+            result: { contents: [{ uri: resource.uri, mimeType: resource.mimeType, text: JSON.stringify(data, null, 2) }] },
           });
-          break;
+          return;
+        }
+
+        case 'prompts/list':
+          res.json({
+            jsonrpc: '2.0',
+            id,
+            result: {
+              prompts: ALL_PROMPTS.map(p => ({
+                name: p.name,
+                description: p.description,
+                visibility: p.visibility,
+                arguments: p.arguments,
+              })),
+            },
+          });
+          return;
+
+        case 'prompts/get': {
+          const prompt = ALL_PROMPTS.find(p => p.name === params?.name);
+          if (!prompt) {
+            res.json({ jsonrpc: '2.0', id, error: { code: -32602, message: `Prompt not found: ${params?.name}` } });
+            return;
+          }
+          const promptResult = await getPrompt(prompt, args);
+          res.json({
+            jsonrpc: '2.0',
+            id,
+            result: {
+              description: prompt.description,
+              messages: [{ role: 'user', content: { type: 'text', text: promptResult.text } }],
+            },
+          });
+          return;
         }
 
         default:
-          res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: `Unknown method: ${method}` } });
+          res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } });
+          return;
       }
     } catch (error) {
-      res.json({ jsonrpc: '2.0', id, error: { code: -32603, message: String(error) } });
+      res.json({ jsonrpc: '2.0', id, error: { code: -32000, message: String(error) } });
     }
   });
 
-  // ── Server info ──
-  app.get('/mcp/info', (_req, res) => {
-    res.json({
-      name: config.agentName,
-      description: config.agentDescription,
-      version: '1.0',
-      protocol: 'MCP',
-      tools: ALL_TOOLS.length,
-      resources: ALL_RESOURCES.length,
-    });
-  });
-
   app.listen(port, () => {
-    console.log(`[MCP] Server running on http://localhost:${port}/mcp`);
-    console.log(`[MCP] Tools: ${ALL_TOOLS.map(t => t.name).join(', ')}`);
-    console.log(`[MCP] Resources: ${ALL_RESOURCES.map(r => r.uri).join(', ')}`);
+    console.log(`[MCP] Actura MCP server listening on http://localhost:${port}`);
+    console.log(`[MCP] JSON-RPC endpoint: http://localhost:${port}/mcp`);
+    console.log(`[MCP] ${ALL_TOOLS.length} tools, ${ALL_RESOURCES.length} resources, ${ALL_PROMPTS.length} prompts`);
   });
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  startMcpServer();
 }

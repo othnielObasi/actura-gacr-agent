@@ -1,7 +1,7 @@
 {
   "name": "actura",
   "version": "0.1.0",
-  "description": "Accountable Autonomous Trading Agent — ERC-8004 Trustless Agent",
+  "description": "Accountable Autonomous Trading Agent \u2014 ERC-8004 Trustless Agent",
   "type": "module",
   "main": "src/agent/index.ts",
   "scripts": {
@@ -19,7 +19,9 @@
     "test:simulation": "tsx test/test-execution-simulator.ts",
     "test:oracle": "tsx test/test-oracle-integrity.ts",
     "dashboard": "tsx src/dashboard/server.ts",
-    "demo:onchain": "tsx scripts/demo-onchain-path.ts"
+    "demo:onchain": "tsx scripts/demo-onchain-path.ts",
+    "mcp": "tsx src/mcp/server.ts",
+    "test:mcp": "tsx test/test-mcp-surface.ts"
   },
   "dependencies": {
     "ethers": "^6.11.0",
@@ -33,7 +35,13 @@
     "@types/node": "^20.0.0",
     "@types/express": "^4.17.0"
   },
-  "keywords": ["erc-8004", "trading-agent", "trustless", "ethereum", "ai-agent"],
+  "keywords": [
+    "erc-8004",
+    "trading-agent",
+    "trustless",
+    "ethereum",
+    "ai-agent"
+  ],
   "author": "Sovereign AI Lab",
   "license": "MIT"
 }

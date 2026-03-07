@@ -1,89 +1,188 @@
+
 /**
- * MCP Resource Definitions
- * Resources that Actura publishes for other agents to subscribe to
+ * MCP Resources
+ * Read-only structured snapshots for auditors, dashboards, and other agents.
  */
 
 import { getAgentState } from '../agent/index.js';
+import { getCheckpoints, getLastCheckpoint } from '../trust/checkpoint.js';
+import { getLastTrustScore, getTrustHistory } from '../trust/trust-policy-scorecard.js';
+import { getDefaultMandate } from '../chain/agent-mandate.js';
+import { getOperatorActionReceipts, getOperatorControlState } from '../agent/operator-control.js';
+import { computeRiskAdjustedMetrics } from '../analytics/performance-metrics.js';
 import { config } from '../agent/config.js';
+
+export type McpVisibility = 'public' | 'restricted' | 'operator';
 
 export interface McpResource {
   uri: string;
   name: string;
   description: string;
+  visibility: McpVisibility;
   mimeType: string;
-  handler: () => unknown;
+  handler: (params?: Record<string, unknown>) => Promise<unknown> | unknown;
 }
 
-/**
- * Resource 1: Live market state
- */
-export const marketState: McpResource = {
-  uri: 'actura://market-state',
-  name: 'Current Market State',
-  description: 'Real-time indicators: SMA20, SMA50, volatility, ATR, price change',
+function state() {
+  return getAgentState();
+}
+
+const trustResource: McpResource = {
+  uri: 'actura://state/trust',
+  name: 'Trust State',
+  description: 'Current trust score, trust timeline, and capital-rights state',
+  visibility: 'public',
   mimeType: 'application/json',
   handler: () => {
-    const state = getAgentState();
-    const market = state.market;
+    const agentState = state();
+    const score = getLastTrustScore(agentState?.agentId ?? null);
     return {
-      pair: config.tradingPair,
-      currentPrice: market?.currentPrice ?? null,
-      smaFast: market?.smaFast ?? null,
-      smaSlow: market?.smaSlow ?? null,
-      volatility: market?.volatility ?? null,
-      atr: market?.atr ?? null,
-      priceChange24h: market?.priceChange24h ?? null,
-      dataPoints: market?.dataPoints ?? 0,
-      lastUpdate: market?.lastUpdate ?? null,
+      trustScore: score,
+      trustHistory: getTrustHistory(agentState?.agentId ?? null, 20),
+      recoveryModeHint: score !== null && score < 78,
+      latestCheckpointId: getLastCheckpoint()?.id ?? null,
     };
   },
 };
 
-/**
- * Resource 2: Agent governance policy
- */
-export const governancePolicy: McpResource = {
-  uri: 'actura://governance-policy',
-  name: 'Agent Governance Policy',
-  description: 'Risk limits, circuit breaker thresholds, position sizing rules, and trading parameters',
+const marketResource: McpResource = {
+  uri: 'actura://state/market',
+  name: 'Market State',
+  description: 'Current market indicators and pricing state',
+  visibility: 'public',
+  mimeType: 'application/json',
+  handler: () => {
+    const market = state()?.market;
+    return {
+      tradingPair: config.tradingPair,
+      market,
+      mcpEndpoint: config.mcpEndpoint,
+    };
+  },
+};
+
+const mandateResource: McpResource = {
+  uri: 'actura://state/mandate',
+  name: 'Mandate State',
+  description: 'Current capital mandate, allowlists, and governance limits',
+  visibility: 'public',
   mimeType: 'application/json',
   handler: () => ({
-    agent: {
-      name: config.agentName,
-      description: config.agentDescription,
-      strategy: 'VolAdjMomentum',
-      version: '1.0',
-    },
-    riskLimits: {
-      maxPositionPct: config.maxPositionPct,
-      maxDailyLossPct: config.maxDailyLossPct,
-      maxDrawdownPct: config.maxDrawdownPct,
-      maxLeverage: 1.0,
-    },
-    strategy: {
-      smaFastPeriod: config.strategy.smaFast,
-      smaSlowPeriod: config.strategy.smaSlow,
-      ewmaSpan: config.strategy.ewmaSpan,
-      atrPeriod: config.strategy.atrPeriod,
-      basePositionPct: config.strategy.basePositionPct,
-      stopLossAtrMultiple: config.strategy.stopLossAtrMultiple,
-      baselineVolatility: config.strategy.baselineVolatility,
-    },
-    circuitBreaker: {
-      dailyLossThreshold: config.maxDailyLossPct,
-      maxDrawdownThreshold: config.maxDrawdownPct,
-      action: 'halt_all_trading',
-    },
-    trust: {
-      registries: ['ERC-8004 Identity', 'ERC-8004 Validation', 'ERC-8004 Reputation'],
-      artifactStorage: 'IPFS (Pinata)',
-      validationFrequency: 'every_trade',
+    mandate: getDefaultMandate(),
+    operator: getOperatorControlState(),
+    allowedAssets: config.allowedAssets,
+    allowedProtocols: config.allowedProtocols,
+  }),
+};
+
+const positionsResource: McpResource = {
+  uri: 'actura://state/positions',
+  name: 'Open Positions',
+  description: 'Open positions and exposure snapshot',
+  visibility: 'public',
+  mimeType: 'application/json',
+  handler: () => {
+    const risk = state()?.risk;
+    return {
+      capital: risk?.capital ?? null,
+      openPositions: risk?.openPositions ?? [],
+      totalTrades: risk?.totalTrades ?? 0,
+      recentPnl: risk?.recentPnl ?? [],
+    };
+  },
+};
+
+const operatorResource: McpResource = {
+  uri: 'actura://state/operator',
+  name: 'Operator State',
+  description: 'Current operator mode and recent operator receipts',
+  visibility: 'operator',
+  mimeType: 'application/json',
+  handler: () => ({
+    operatorControl: getOperatorControlState(),
+    receipts: getOperatorActionReceipts(10),
+  }),
+};
+
+const performanceResource: McpResource = {
+  uri: 'actura://state/performance',
+  name: 'Performance Metrics',
+  description: 'Current runtime-derived risk-adjusted metrics',
+  visibility: 'public',
+  mimeType: 'application/json',
+  handler: () => {
+    const risk = state()?.risk;
+    const recentPnl = Array.isArray(risk?.recentPnl) ? risk.recentPnl : [];
+    let rolling = Number(risk?.capital ?? 0) - recentPnl.reduce((acc: number, row: any) => acc + (Number(row?.pnl) || 0), 0);
+    const equityPoints = [{ timestamp: new Date(Date.now() - 60_000 * (recentPnl.length + 1)).toISOString(), equity: Math.max(rolling, 1) }];
+    const trades = [];
+    for (const row of recentPnl) {
+      const pnl = Number(row?.pnl) || 0;
+      rolling += pnl;
+      equityPoints.push({ timestamp: row?.timestamp || new Date().toISOString(), equity: Math.max(rolling, 1) });
+      trades.push({ pnl });
+    }
+    return {
+      metrics: computeRiskAdjustedMetrics(equityPoints, trades, 0),
+      points: equityPoints,
+      tradeCount: trades.length,
+    };
+  },
+};
+
+const erc8004Resource: McpResource = {
+  uri: 'actura://state/erc8004',
+  name: 'ERC-8004 Integration State',
+  description: 'Current registry addresses and readiness for trustless agent integration',
+  visibility: 'public',
+  mimeType: 'application/json',
+  handler: () => ({
+    identityRegistry: config.identityRegistry,
+    reputationRegistry: config.reputationRegistry,
+    validationRegistry: config.validationRegistry,
+    riskRouterAddress: config.riskRouterAddress,
+    capitalVaultAddress: config.capitalVaultAddress,
+    mcpEndpoint: config.mcpEndpoint,
+    a2aEndpoint: config.a2aEndpoint,
+    registrationUri: config.registrationUri,
+    readiness: {
+      identity: Boolean(config.identityRegistry),
+      reputation: Boolean(config.reputationRegistry),
+      validation: Boolean(config.validationRegistry),
+      router: Boolean(config.riskRouterAddress),
+      vault: Boolean(config.capitalVaultAddress),
     },
   }),
 };
 
-/** All resources */
+const artifactsResource: McpResource = {
+  uri: 'actura://state/artifacts',
+  name: 'Recent Artifacts',
+  description: 'Recent validation artifacts and receipts',
+  visibility: 'public',
+  mimeType: 'application/json',
+  handler: (params) => {
+    const limit = typeof params?.limit === 'number' ? params.limit : 10;
+    return {
+      artifacts: getCheckpoints(limit).map(cp => ({
+        id: cp.id,
+        approved: cp.riskDecision.approved,
+        explanation: cp.riskDecision.explanation,
+        receipt: cp.ipfs?.uri || null,
+        txHash: cp.onChainTxHash || null,
+        checks: cp.riskDecision.checks,
+      })),
+    };
+  },
+};
+
 export const ALL_RESOURCES: McpResource[] = [
-  marketState,
-  governancePolicy,
+  trustResource,
+  marketResource,
+  mandateResource,
+  positionsResource,
+  operatorResource,
+  performanceResource,
+  erc8004Resource,
+  artifactsResource,
 ];

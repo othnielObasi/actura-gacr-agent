@@ -3,20 +3,27 @@
  */
 
 import { spawnSync } from 'child_process';
+import path from 'path';
+
+const tsxCli = path.join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs');
+const cmdFor = (file: string) => [process.execPath, tsxCli, file];
 
 const tests = [
-  { name: 'Strategy & Indicators', cmd: ['npx', 'tsx', 'test/test-strategy.ts'] },
-  { name: 'Risk Engine', cmd: ['npx', 'tsx', 'test/test-risk.ts'] },
-  { name: 'Validation Artifacts', cmd: ['npx', 'tsx', 'test/test-artifacts.ts'] },
-  { name: 'Chain Integration', cmd: ['npx', 'tsx', 'test/test-chain.ts'] },
-  { name: 'Agent Mandate Engine', cmd: ['npx', 'tsx', 'test/test-mandate-engine.ts'] },
-  { name: 'Execution Simulator', cmd: ['npx', 'tsx', 'test/test-execution-simulator.ts'] },
-  { name: 'Oracle Integrity Guard', cmd: ['npx', 'tsx', 'test/test-oracle-integrity.ts'] },
-  { name: 'Trust Policy Scorecard', cmd: ['npx', 'tsx', 'test/test-trust-scorecard.ts'] },
-  { name: 'Reputation Evolution', cmd: ['npx', 'tsx', 'test/test-reputation-evolution.ts'] },
-  { name: 'Trust Recovery Mode', cmd: ['npx', 'tsx', 'test/test-trust-recovery-mode.ts'] },
-  { name: 'Supervisory Meta-Agent', cmd: ['npx', 'tsx', 'test/test-supervisory-meta-agent.ts'] },
-  { name: 'Operator Control', cmd: ['npx', 'tsx', 'test/test-operator-control.ts'] },
+  { name: 'Strategy & Indicators', cmd: cmdFor('test/test-strategy.ts') },
+  { name: 'Risk Engine', cmd: cmdFor('test/test-risk.ts') },
+  { name: 'Validation Artifacts', cmd: cmdFor('test/test-artifacts.ts') },
+  { name: 'Chain Integration', cmd: cmdFor('test/test-chain.ts') },
+  { name: 'Agent Mandate Engine', cmd: cmdFor('test/test-mandate-engine.ts') },
+  { name: 'Execution Simulator', cmd: cmdFor('test/test-execution-simulator.ts') },
+  { name: 'Oracle Integrity Guard', cmd: cmdFor('test/test-oracle-integrity.ts') },
+  { name: 'Trust Policy Scorecard', cmd: cmdFor('test/test-trust-scorecard.ts') },
+  { name: 'Reputation Evolution', cmd: cmdFor('test/test-reputation-evolution.ts') },
+  { name: 'Trust Recovery Mode', cmd: cmdFor('test/test-trust-recovery-mode.ts') },
+  { name: 'Supervisory Meta-Agent', cmd: cmdFor('test/test-supervisory-meta-agent.ts') },
+  { name: 'Operator Control', cmd: cmdFor('test/test-operator-control.ts') },
+  { name: 'Regime Governance', cmd: cmdFor('test/test-regime-governance.ts') },
+  { name: 'Performance Metrics', cmd: cmdFor('test/test-performance-metrics.ts') },
+  { name: 'MCP Surface', cmd: cmdFor('test/test-mcp-surface.ts') },
 ];
 
 console.log('');
@@ -55,5 +62,3 @@ if (allPassed) {
 console.log('═══════════════════════════════════════════\n');
 
 process.exit(allPassed ? 0 : 1);
-
-import './test-erc8004-adapters.js';
