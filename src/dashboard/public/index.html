@@ -16,6 +16,15 @@
 <body>
   <div id="root"><div class="loading">Loading Actura…</div></div>
   <script type="text/javascript">
+    window.onerror = function(msg, src, line, col, err) {
+      var el = document.getElementById("root");
+      if (el && el.innerHTML === "") {
+        el.innerHTML = '<div class="loading" style="padding:24px; text-align:center; flex-direction:column; gap:12px;">' +
+          '<div>Runtime error</div>' +
+          '<code style="color:#f87171;font-size:11px;">' + String(msg).replace(/</g,"&lt;") + ' (line ' + line + ')</code>' +
+          '<br/><button onclick="location.reload()" style="margin-top:12px;padding:6px 16px;background:#34d39920;color:#34d399;border:1px solid #34d39940;border-radius:4px;cursor:pointer;font-family:monospace">Reload</button></div>';
+      }
+    };
     (async function () {
       try {
         const res = await fetch("/dashboard-app.jsx");

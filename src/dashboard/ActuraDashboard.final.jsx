@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 
 /* ═══════════════════════════════════════════════════════════════════════
    ACTURA — Governed Autonomous Capital Runtime
@@ -100,8 +100,25 @@ function Metric({ label, value, sub, color = T.fg }) {
   );
 }
 
+/* ═══ ERROR BOUNDARY ═══ */
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) return (
+      <div style={{ minHeight: "100vh", background: "#080b11", color: "#f87171", fontFamily: "monospace", padding: 40 }}>
+        <h2 style={{ color: "#edf2f7", marginBottom: 12 }}>Dashboard Error</h2>
+        <pre style={{ fontSize: 12, whiteSpace: "pre-wrap", color: "#fbbf24" }}>{String(this.state.error)}</pre>
+        <button onClick={() => this.setState({ error: null })} style={{ marginTop: 16, padding: "8px 20px", background: "#34d39920", color: "#34d399", border: "1px solid #34d39940", borderRadius: 4, cursor: "pointer", fontFamily: "monospace" }}>Retry</button>
+      </div>
+    );
+    return this.props.children;
+  }
+}
+export default function ActuraWrapper() { return <ErrorBoundary><Actura /></ErrorBoundary>; }
+
 /* ═══ MAIN ═══ */
-export default function Actura() {
+function Actura() {
   /* ── Live state from API ── */
   const [prices, setPrices] = useState([]);
   const [stage, setStage] = useState(0);
@@ -201,11 +218,12 @@ export default function Actura() {
   }, [livePositions, profile]);
 
   const mandate = useMemo(() => {
-    if (!governance) return { capital: `$${fn(capital, 0)}`, maxTrade: "10%", maxDailyLoss: "2%", allowedAssets: ["WETH/USDC"], protocols: ["Uniswap"], approvalThreshold: "$20,000" };
+    const rl = governance?.riskLimits;
+    if (!rl) return { capital: `$${fn(capital, 0)}`, maxTrade: "10%", maxDailyLoss: "2%", allowedAssets: ["WETH/USDC"], protocols: ["Uniswap"], approvalThreshold: "$20,000" };
     return {
       capital: `$${fn(capital, 0)}`,
-      maxTrade: `${(governance.riskLimits.maxPositionPct * 100).toFixed(0)}%`,
-      maxDailyLoss: `${(governance.riskLimits.maxDailyLossPct * 100).toFixed(0)}%`,
+      maxTrade: `${((rl.maxPositionPct || 0.1) * 100).toFixed(0)}%`,
+      maxDailyLoss: `${((rl.maxDailyLossPct || 0.02) * 100).toFixed(0)}%`,
       allowedAssets: ["WETH/USDC", "ETH", "USDC"],
       protocols: ["Uniswap"],
       approvalThreshold: "$20,000",
@@ -226,7 +244,7 @@ export default function Actura() {
     { n: "operator_state", p: opState === "ACTIVE", v: opState },
   ], [circuitBreaker, mandate, regime, volRatio, oracleStatus, oracle, sim, recoveryMode, sup, opState]);
 
-  const sel = trades[selIdx] || trades[0];
+  const sel = trades[selIdx] || trades[0] || { id: 0, signal: "NEUTRAL", conf: 0, bias: 0, confAdj: 0, regime: "—", profile: "—", edgePct: 0, costBps: 0, edgeGate: "—", price: 0, size: 0, approved: false, trustScore: 80, tier: "TIER_3_STANDARD", receipt: "—", tx: "—" };
 
   /* ── API fetching ── */
   const fetchData = useCallback(async () => {
@@ -262,6 +280,7 @@ export default function Actura() {
 
       if (checkpointsRes?.checkpoints) {
         setLiveCheckpoints(checkpointsRes.checkpoints);
+        setSelIdx(i => Math.min(i, Math.max(0, checkpointsRes.checkpoints.length - 1)));
       }
 
       if (reputationRes?.history?.length > 0) {
@@ -282,9 +301,9 @@ export default function Actura() {
 
       if (actionsRes?.actions) {
         setOpLog(actionsRes.actions.slice(0, 6).map(a => ({
-          ts: new Date(a.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-          action: a.action,
-          reason: a.reason,
+          ts: a.timestamp ? new Date(a.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—",
+          action: a.action || "—",
+          reason: a.reason || "—",
         })));
       }
 
