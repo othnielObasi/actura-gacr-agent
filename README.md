@@ -56,6 +56,21 @@ Actura is **live on Base Sepolia** with verifiable on-chain state:
 - `checkTrade(asset, side, amount)` → simulates a risk check
 - `owner()` → `0xE8684cfbA08541C607898E55BAB58302204DdCD7`
 
+### Decision Audit Trail (Public)
+
+Every trading decision produces an immutable IPFS artifact containing the full reasoning chain — signal, risk checks, mandate compliance, neuro-symbolic adjustments, market snapshot, confidence intervals, and AI narrative.
+
+| Endpoint | Description |
+|---|---|
+| [`/api/artifacts`](http://192.248.145.196:3000/api/artifacts) | Browse all decision artifacts (73+) with IPFS CIDs |
+| [`/api/artifact/latest`](http://192.248.145.196:3000/api/artifact/latest) | Full JSON of the most recent decision |
+| [`/api/checkpoints`](http://192.248.145.196:3000/api/checkpoints) | Recent trade checkpoints with signals, confidence, IPFS links |
+
+**Example artifact on IPFS** (anyone can view, no keys needed):
+[`QmUpDErcxCVigB5fCfshKUUajCtmdH3zGGGZ4RbdYCDc6s`](https://gateway.pinata.cloud/ipfs/QmUpDErcxCVigB5fCfshKUUajCtmdH3zGGGZ4RbdYCDc6s)
+
+Each artifact records: trade details, 11 risk checks (pass/fail), mandate evidence, neuro-symbolic rule firings, market snapshot (10 price candles, trend strength), confidence interval (best/worst/max loss), and a natural-language AI reasoning summary.
+
 ---
 
 ## Quickstart
