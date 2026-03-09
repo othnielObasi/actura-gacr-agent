@@ -56,10 +56,10 @@ export function simulateExecution(input: ExecutionSimulationInput): ExecutionSim
   if (sizeUnits <= 0 || strategyOutput.signal.direction === 'NEUTRAL') {
     allowed = false;
     reason = 'no_executable_trade';
-  } else if (estimatedSlippageBps > 75) {
+  } else if (estimatedSlippageBps > 120) {
     allowed = false;
     reason = 'slippage_too_high';
-  } else if (expectedNetEdgePct <= 0.0005) {
+  } else if (expectedNetEdgePct <= 0.0001) {
     allowed = false;
     reason = 'net_edge_too_low';
   } else if (riskDecision.volatility.regime === 'extreme') {

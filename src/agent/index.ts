@@ -87,13 +87,39 @@ function initAgent(): void {
     for (const pos of savedState.openPositions) {
       riskEngine.openPosition(pos);
     }
+
+    // Generate initial market data BEFORE stop-loss reconciliation
+    // so we can compare restored positions against current price
+    marketData = generateSimulatedData(60, 3000, 0.02, 0.0003);
+    const startupPrice = marketData.prices[marketData.prices.length - 1];
+
+    // Reconcile stale stop-losses: if price gapped through stop while
+    // agent was offline, close at the stop-loss price (not the worse
+    // current price). This prevents restart-induced excess losses.
+    const restoredPositions = riskEngine.getOpenPositions();
+    for (const pos of restoredPositions) {
+      if (pos.stopLoss === null) continue;
+      const breached = (pos.side === 'LONG' && startupPrice <= pos.stopLoss) ||
+                       (pos.side === 'SHORT' && startupPrice >= pos.stopLoss);
+      if (breached) {
+        // Close at stop-loss price, not the (potentially worse) current price
+        const closePrice = pos.stopLoss;
+        const pnl = riskEngine.closePositionById(pos.id, closePrice);
+        log.warn('Restart reconciliation: stop-loss was breached while offline', {
+          positionId: pos.id, side: pos.side, entry: pos.entryPrice,
+          stopLoss: pos.stopLoss, currentPrice: startupPrice,
+          closedAt: closePrice, pnl: Math.round(pnl * 100) / 100,
+        });
+      }
+    }
   } else {
     riskEngine = new RiskEngine(INITIAL_CAPITAL);
     cycleCount = 0;
+
+    // Generate initial market data for fresh start
+    marketData = generateSimulatedData(60, 3000, 0.02, 0.0003);
   }
 
-  // Generate initial market data
-  marketData = generateSimulatedData(60, 3000, 0.02, 0.0003);
   resetStrategy();
   regimeGovernance.reset();
 
