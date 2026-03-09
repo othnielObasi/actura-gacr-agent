@@ -6,6 +6,7 @@
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import type { Server } from 'http';
 import { getAgentState, getHealthCheck, getLogs, getErrors } from '../agent/index.js';
@@ -163,15 +164,10 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
   app.get('/api/artifacts', (req, res) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
     try {
-      const fs = require('fs');
-      const path = require('path');
       const dir = path.join(process.cwd(), 'artifacts');
       if (!fs.existsSync(dir)) { res.json({ count: 0, artifacts: [] }); return; }
-      const files: string[] = fs.readdirSync(dir)
-        .filter((f: string) => f.endsWith('.json'))
-        .sort()
-        .reverse()
-        .slice(0, limit);
+      const allFiles = fs.readdirSync(dir).filter((f: string) => f.endsWith('.json'));
+      const files = allFiles.sort().reverse().slice(0, limit);
       const artifacts = files.map((f: string) => {
         const match = f.match(/^(.+Z)-(.+)\.json$/);
         return {
@@ -181,9 +177,9 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
           ipfsUrl: match ? `https://gateway.pinata.cloud/ipfs/${match[2]}` : null,
         };
       });
-      res.json({ count: artifacts.length, total: fs.readdirSync(dir).filter((f: string) => f.endsWith('.json')).length, artifacts });
-    } catch {
-      res.json({ count: 0, artifacts: [], error: 'Failed to read artifacts directory' });
+      res.json({ count: artifacts.length, total: allFiles.length, artifacts });
+    } catch (e) {
+      res.json({ count: 0, artifacts: [], error: String(e) });
     }
   });
 
