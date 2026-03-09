@@ -104,6 +104,8 @@ function initAgent(): void {
     maxDailyLoss: `${config.maxDailyLossPct * 100}%`,
     maxDrawdown: `${config.maxDrawdownPct * 100}%`,
     maxPositions: MAX_OPEN_POSITIONS,
+    agentId: agentId ?? 'not registered',
+    mode: MODE,
   });
 }
 

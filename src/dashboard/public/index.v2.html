@@ -20,7 +20,7 @@
       try {
         const res = await fetch("../versions/ActuraDashboard.v2.jsx");
         const code = await res.text();
-        const compiled = Babel.transform(code, { presets: ["react"] }).code;
+        const compiled = Babel.transform(code, { presets: ["react", ["env", { modules: "commonjs" }]] }).code;
         const module = { exports: {} };
         const exports = module.exports;
         const require = (name) => {

@@ -157,6 +157,31 @@ export function startMcpServer(port: number = MCP_PORT): void {
     }
   });
 
+  // GET /mcp — browser-friendly landing page for the JSON-RPC endpoint
+  app.get('/mcp', (_req, res) => {
+    res.json({
+      name: 'Actura MCP',
+      description: 'Governed MCP interface — JSON-RPC endpoint (use POST)',
+      version: '2.0.0',
+      endpoint: config.mcpEndpoint,
+      protocol: 'JSON-RPC 2.0 over HTTP POST',
+      discovery: {
+        health: '/health',
+        info: '/mcp/info',
+        tools: '/mcp/tools',
+        resources: '/mcp/resources',
+        prompts: '/mcp/prompts',
+      },
+      tools: ALL_TOOLS.length,
+      resources: ALL_RESOURCES.length,
+      prompts: ALL_PROMPTS.length,
+      usage: {
+        example: 'POST /mcp with { "jsonrpc": "2.0", "method": "tools/list", "id": 1 }',
+        methods: ['tools/list', 'tools/call', 'resources/list', 'resources/read', 'prompts/list', 'prompts/get'],
+      },
+    });
+  });
+
   app.post('/mcp', async (req, res) => {
     const { method, params, id } = req.body || {};
     const args = params?.arguments || params || {};
@@ -267,11 +292,22 @@ export function startMcpServer(port: number = MCP_PORT): void {
     }
   });
 
-  mcpHttpServer = app.listen(port, () => {
-    console.log(`[MCP] Actura MCP server listening on http://localhost:${port}`);
-    console.log(`[MCP] JSON-RPC endpoint: http://localhost:${port}/mcp`);
-    console.log(`[MCP] ${ALL_TOOLS.length} tools, ${ALL_RESOURCES.length} resources, ${ALL_PROMPTS.length} prompts`);
-  });
+  const tryListen = (retries = 5) => {
+    mcpHttpServer = app.listen(port, () => {
+      console.log(`[MCP] Actura MCP server listening on http://localhost:${port}`);
+      console.log(`[MCP] JSON-RPC endpoint: http://localhost:${port}/mcp`);
+      console.log(`[MCP] ${ALL_TOOLS.length} tools, ${ALL_RESOURCES.length} resources, ${ALL_PROMPTS.length} prompts`);
+    });
+    mcpHttpServer.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE' && retries > 0) {
+        console.log(`[MCP] Port ${port} in use, retrying in 3s...`);
+        setTimeout(() => tryListen(retries - 1), 3000);
+      } else {
+        console.error(`[MCP] Failed to start: ${err.message}`);
+      }
+    });
+  };
+  tryListen();
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
