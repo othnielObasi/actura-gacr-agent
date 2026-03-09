@@ -220,4 +220,16 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
   httpServer = app.listen(port, () => {
     console.log(`[DASHBOARD] Running on http://localhost:${port}`);
   });
+
+  httpServer.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`[DASHBOARD] Port ${port} in use, retrying in 3s...`);
+      setTimeout(() => {
+        httpServer?.close();
+        httpServer = app.listen(port, () => {
+          console.log(`[DASHBOARD] Running on http://localhost:${port}`);
+        });
+      }, 3000);
+    }
+  });
 }
