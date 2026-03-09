@@ -35,6 +35,29 @@ Unlike conventional trading bots, Actura produces a **complete audit trail** for
 
 ---
 
+## Live Deployment & Public Verification
+
+Actura is **live on Base Sepolia** with verifiable on-chain state:
+
+| What | Address / Link |
+|---|---|
+| **Agent ID** | **338** (ERC-8004 Identity Registry) |
+| **Registration Tx** | [`0x72ffa1b1...`](https://sepolia.basescan.org/tx/0x72ffa1b1463ce258e9223992d92996c2fbbdab86a445d8d2d85e90486279ce42) |
+| **ActuraRiskPolicy** | [`0x08cfD473718e523FDD5F9921F1e0BACc6d529AE9`](https://sepolia.basescan.org/address/0x08cfD473718e523FDD5F9921F1e0BACc6d529AE9) |
+| **Risk Policy Deploy Tx** | [`0xc3c484e2...`](https://sepolia.basescan.org/tx/0xc3c484e22603215a04cb64ff4a689c8ddf8b47d55da4b0382782a3233600dfec) |
+| **Identity Registry** | [`0x7177a686...Dd09A`](https://sepolia.basescan.org/address/0x7177a6867296406881E20d6647232314736Dd09A) |
+| **Owner Wallet** | [`0xE8684cfb...DdCD7`](https://sepolia.basescan.org/address/0xE8684cfbA08541C607898E55BAB58302204DdCD7) |
+| **Agent Metadata (IPFS)** | [`QmXUkbkBTw5H...`](https://gateway.pinata.cloud/ipfs/QmXUkbkBTw5HcjxvMwKSE3CnR1hJEtckc4xUHx4U82dbJt) |
+| **Live Dashboard** | [http://192.248.145.196:3000](http://192.248.145.196:3000) |
+| **MCP Endpoint** | `http://192.248.145.196:3001/mcp` (JSON-RPC) |
+
+**Verify on-chain yourself** — call any of these read functions on the Risk Policy contract (no keys needed):
+- `getRiskState()` → capital, drawdown, circuit breaker status
+- `checkTrade(asset, side, amount)` → simulates a risk check
+- `owner()` → `0xE8684cfbA08541C607898E55BAB58302204DdCD7`
+
+---
+
 ## Quickstart
 
 ### Prerequisites

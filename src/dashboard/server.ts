@@ -149,6 +149,44 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
     res.json(checkpoints[0].artifact);
   });
 
+  /** Full artifact by checkpoint index (1-based from most recent) */
+  app.get('/api/artifact/:idx', (req, res) => {
+    const idx = parseInt(req.params.idx);
+    if (isNaN(idx) || idx < 1) { res.json({ error: 'Invalid index' }); return; }
+    const checkpoints = getCheckpoints(idx);
+    const cp = checkpoints[idx - 1];
+    if (!cp) { res.json({ error: 'Checkpoint not found' }); return; }
+    res.json(cp.artifact || { error: 'No artifact for this checkpoint' });
+  });
+
+  /** List on-disk artifacts with IPFS CIDs */
+  app.get('/api/artifacts', (req, res) => {
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const dir = path.join(process.cwd(), 'artifacts');
+      if (!fs.existsSync(dir)) { res.json({ count: 0, artifacts: [] }); return; }
+      const files: string[] = fs.readdirSync(dir)
+        .filter((f: string) => f.endsWith('.json'))
+        .sort()
+        .reverse()
+        .slice(0, limit);
+      const artifacts = files.map((f: string) => {
+        const match = f.match(/^(.+Z)-(.+)\.json$/);
+        return {
+          file: f,
+          timestamp: match ? match[1].replace(/-/g, ':').replace(/T(\d+):(\d+):(\d+):(\d+)/, 'T$1:$2:$3.$4') : f,
+          cid: match ? match[2] : null,
+          ipfsUrl: match ? `https://gateway.pinata.cloud/ipfs/${match[2]}` : null,
+        };
+      });
+      res.json({ count: artifacts.length, total: fs.readdirSync(dir).filter((f: string) => f.endsWith('.json')).length, artifacts });
+    } catch {
+      res.json({ count: 0, artifacts: [], error: 'Failed to read artifacts directory' });
+    }
+  });
+
   /** Positions */
   app.get('/api/positions', (_req, res) => {
     const state = getAgentState();
