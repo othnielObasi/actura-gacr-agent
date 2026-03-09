@@ -93,6 +93,8 @@ export async function fetchLivePrice(): Promise<{ price: number; source: string 
   consecutiveFailures++;
   if (consecutiveFailures <= 2) {
     log.warn('All live price sources failed', { consecutiveFailures });
+  } else if (consecutiveFailures === MAX_CONSECUTIVE_FAILURES) {
+    log.error(`Live feed failed ${MAX_CONSECUTIVE_FAILURES} consecutive times — data is stale, trading should halt`);
   }
   return null;
 }
@@ -177,11 +179,13 @@ export function buildLiveCandle(
 // ──── Status ────
 
 export function getLiveFeedStatus() {
+  const staleMs = lastFetchTime ? Date.now() - lastFetchTime : null;
   return {
     lastPrice: lastFetchedPrice,
     lastFetchTime: lastFetchTime ? new Date(lastFetchTime).toISOString() : null,
     consecutiveFailures,
     healthy: consecutiveFailures < MAX_CONSECUTIVE_FAILURES,
-    staleMs: lastFetchTime ? Date.now() - lastFetchTime : null,
+    staleMs,
+    shouldHaltTrading: consecutiveFailures >= MAX_CONSECUTIVE_FAILURES,
   };
 }

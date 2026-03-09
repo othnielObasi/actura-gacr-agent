@@ -167,6 +167,18 @@ export function generateSignal(input: SignalInput): TradingSignal {
   const rawConf = clamp(sigmoid(Math.abs(alphaScore) * 2.2) - 0.5, 0, 0.5) * 2; // maps to ~[0..1]
   let confidence = clamp(rawConf * volConfidence * structure.confidenceMultiplier, 0, 1);
 
+  // Guard against NaN propagation from indicator calculations
+  if (!Number.isFinite(confidence) || !Number.isFinite(alphaScore)) {
+    return {
+      direction: 'NEUTRAL',
+      confidence: 0,
+      name: 'NAN_GUARD',
+      smaFast, smaSlow, volatility, atr,
+      timestamp,
+      reason: 'Indicator calculation produced NaN — signal rejected for safety'
+    };
+  }
+
   // If structure is RANGING or STRESSED, require stronger signals
   if (structure.regime === 'RANGING') confidence = clamp(confidence - 0.08, 0, 1);
   if (structure.regime === 'STRESSED') confidence = clamp(confidence - 0.15, 0, 1);

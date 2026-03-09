@@ -50,6 +50,8 @@ export class Scheduler {
     this.maxConsecutiveErrors = maxConsecutiveErrors;
   }
 
+  private signalHandlersRegistered = false;
+
   /**
    * Start the scheduler
    */
@@ -64,13 +66,16 @@ export class Scheduler {
     this.running = true;
     this.startedAt = Date.now();
 
-    // Register shutdown handlers
-    process.on('SIGINT', () => this.shutdown('SIGINT'));
-    process.on('SIGTERM', () => this.shutdown('SIGTERM'));
-    process.on('uncaughtException', (err) => {
-      log.fatal('Uncaught exception', { error: err.message, stack: err.stack });
-      this.shutdown('uncaughtException');
-    });
+    // Register shutdown handlers (only once to prevent duplicate stacking)
+    if (!this.signalHandlersRegistered) {
+      this.signalHandlersRegistered = true;
+      process.on('SIGINT', () => this.shutdown('SIGINT'));
+      process.on('SIGTERM', () => this.shutdown('SIGTERM'));
+      process.on('uncaughtException', (err) => {
+        log.fatal('Uncaught exception', { error: err.message, stack: err.stack });
+        this.shutdown('uncaughtException');
+      });
+    }
 
     log.info(`Scheduler started (interval: ${this.intervalMs}ms)`);
 

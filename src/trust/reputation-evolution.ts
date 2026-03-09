@@ -164,7 +164,7 @@ function updateRecoveryState(key: number | 'anon', trustScore: number, trustDelt
   }
 
   if (state.active) {
-    if (trustScore >= RECOVERY_EXIT_SCORE && trustDelta >= 0) {
+    if (trustScore >= RECOVERY_EXIT_SCORE && trustDelta > 0) {
       state.streak += 1;
     } else if (trustDelta < -5) {
       // Hard reset only on severe regression (was -2).

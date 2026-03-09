@@ -114,6 +114,12 @@ async function initAgent(): Promise<void> {
         });
       }
     }
+
+    // Reset circuit breaker daily state AFTER reconciliation so offline
+    // stop-loss losses don't immediately trip the daily loss limit and
+    // lock out trading on the new session.
+    riskEngine.resetDaily();
+    log.info('Post-reconciliation: circuit breaker daily state reset to allow recovery');
   } else {
     riskEngine = new RiskEngine(INITIAL_CAPITAL);
     cycleCount = 0;
@@ -166,6 +172,13 @@ async function runCycle(): Promise<void> {
   cycleCount++;
   const cycleStart = Date.now();
   const operatorControl = getOperatorControlState();
+
+  // Step 0: Check if live feed is too stale to trade safely
+  const feedStatus = getLiveFeedStatus();
+  if (DATA_SOURCE === 'live' && feedStatus.shouldHaltTrading) {
+    log.warn(`Live feed stale (${feedStatus.consecutiveFailures} failures) — skipping cycle to prevent trading on outdated data`);
+    return;
+  }
 
   // Step 1: Update market data (live or simulated)
   const lastPrice = marketData.prices[marketData.prices.length - 1];
@@ -471,6 +484,9 @@ async function runCycle(): Promise<void> {
       stopLoss: riskDecision.stopLossPrice,
       openedAt: new Date().toISOString(),
     });
+
+    // Persist immediately after opening a position so it survives crashes
+    persistState();
   }
 
   // Step 9: Update trailing stops and check stop-losses

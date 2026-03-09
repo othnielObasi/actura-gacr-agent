@@ -43,18 +43,22 @@ export class CircuitBreaker {
   private readonly maxDailyLossPct: number;
   private readonly maxDrawdownPct: number;
   private readonly cooldownLength: number;
+  private readonly maxCooldownExtensions: number;
+  private cooldownExtensions: number = 0;
 
   constructor(
     initialCapital: number,
     maxDailyLossPct: number = 0.02,
     maxDrawdownPct: number = 0.08,
-    cooldownLength: number = 5        // 5 cycles before resuming
+    cooldownLength: number = 5,        // 5 cycles before resuming
+    maxCooldownExtensions: number = 3  // max extensions before forced re-arm
   ) {
     this.peakCapital = initialCapital;
     this.dayStartCapital = initialCapital;
     this.maxDailyLossPct = maxDailyLossPct;
     this.maxDrawdownPct = maxDrawdownPct;
     this.cooldownLength = cooldownLength;
+    this.maxCooldownExtensions = maxCooldownExtensions;
   }
 
   /**
@@ -62,8 +66,9 @@ export class CircuitBreaker {
    * Call BEFORE every trade decision
    */
   check(currentCapital: number): CircuitBreakerState {
-    // Update peak (only when armed — don't update during trip)
-    if (this.state === 'ARMED' && currentCapital > this.peakCapital) {
+    // Update peak when capital recovers (in ARMED or COOLING)
+    // Keeping peak frozen during COOLING inflates drawdown and prevents recovery
+    if (this.state !== 'TRIPPED' && currentCapital > this.peakCapital) {
       this.peakCapital = currentCapital;
     }
 
@@ -101,11 +106,21 @@ export class CircuitBreaker {
           if (dailyPnlPct >= -this.maxDailyLossPct && drawdownPct <= this.maxDrawdownPct) {
             this.state = 'ARMED';
             this.reason = null;
+            this.cooldownExtensions = 0;
             log.info('Cooldown complete — trading resumed');
+          } else if (this.cooldownExtensions >= this.maxCooldownExtensions) {
+            // Force re-arm after max extensions to prevent deadlock:
+            // system can't recover capital without trading, can't trade
+            // without recovering capital.
+            this.state = 'ARMED';
+            this.reason = null;
+            this.cooldownExtensions = 0;
+            log.warn(`Cooldown extended ${this.maxCooldownExtensions} times — force re-arming to allow recovery trades`);
           } else {
-            // Still breached — stay cooling, re-check next cycle
+            // Still breached — extend cooldown, but track extensions
             this.cooldownCycles = 1;
-            log.warn('Cooldown expired but limits still breached — extending');
+            this.cooldownExtensions++;
+            log.warn(`Cooldown expired but limits still breached — extension ${this.cooldownExtensions}/${this.maxCooldownExtensions}`);
           }
         }
         break;
@@ -148,6 +163,7 @@ export class CircuitBreaker {
     this.state = 'ARMED';
     this.reason = null;
     this.cooldownCycles = 0;
+    this.cooldownExtensions = 0;
     log.info('Daily reset complete', { capital: currentCapital });
   }
 
@@ -156,6 +172,7 @@ export class CircuitBreaker {
     this.state = 'ARMED';
     this.reason = null;
     this.cooldownCycles = 0;
+    this.cooldownExtensions = 0;
     log.warn('Force reset triggered');
   }
 

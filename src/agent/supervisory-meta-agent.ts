@@ -94,11 +94,30 @@ export function evaluateSupervisoryDecision(input: SupervisoryInput): Supervisor
     reason.push(`position limit reached (${input.currentOpenPositions}/${input.maxOpenPositions})`);
   }
 
-  if (input.drawdownPct >= 0.06) {
+  // Drawdown guard: pause at 6%, throttle at 4%.
+  // But if there are NO open positions, all losses are realized — the only
+  // way out is to trade. Allow heavily throttled recovery trades up to 8%.
+  const hasOpenPositions = (input.currentOpenPositions ?? 0) > 0;
+  if (input.drawdownPct >= 0.08) {
+    // Hard pause — no recovery path at 8%+, always block
     canTrade = false;
     status = 'paused';
-    restrictions.push('drawdown_pause');
-    reason.push(`drawdown ${pct(input.drawdownPct)} breached supervisory pause threshold`);
+    restrictions.push('drawdown_hard_pause');
+    reason.push(`drawdown ${pct(input.drawdownPct)} breached hard pause threshold`);
+  } else if (input.drawdownPct >= 0.06) {
+    if (hasOpenPositions) {
+      // Open positions still at risk — full pause
+      canTrade = false;
+      status = 'paused';
+      restrictions.push('drawdown_pause');
+      reason.push(`drawdown ${pct(input.drawdownPct)} breached supervisory pause threshold`);
+    } else {
+      // All positions closed, losses realized — allow recovery trades at minimum size
+      tier = downgradeTier(downgradeTier(tier.name).name);
+      status = 'throttled';
+      restrictions.push('drawdown_recovery_throttle');
+      reason.push(`drawdown ${pct(input.drawdownPct)} — recovery mode (no open positions, heavily throttled)`);
+    }
   } else if (input.drawdownPct >= 0.04) {
     tier = downgradeTier(tier.name);
     status = 'throttled';
