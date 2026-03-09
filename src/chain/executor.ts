@@ -180,7 +180,11 @@ export async function executeTrade(
     // ── Step 7: Post reputation feedback ──
     const reviewerKey = process.env.REVIEWER_PRIVATE_KEY || process.env.VALIDATOR_PRIVATE_KEY;
     if (reviewerKey) {
-      const realizedYieldPct = strategyOutput.signal.direction === 'LONG' ? 0.4 : -0.1; // placeholder until execution fill PnL is returned by router
+      // Estimate realized yield from signal confidence and position sizing
+      // When Risk Router returns fill prices, replace with actual PnL
+      const conf = strategyOutput.signal.confidence;
+      const dir = strategyOutput.signal.direction === 'LONG' ? 1 : -1;
+      const realizedYieldPct = dir * (conf - 0.5) * riskDecision.finalPositionSize * 0.01;
       result.reputationTxHash = await retry(
         () => postTradeOutcomeFeedback(reviewerKey, agentId, {
           yieldPercent: realizedYieldPct,
