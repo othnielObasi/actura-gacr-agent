@@ -50,7 +50,7 @@ const MAX_OPEN_POSITIONS = 5;
 let marketData: MarketData;
 let riskEngine: RiskEngine;
 let scheduler: Scheduler;
-let agentId: number | null = null;
+let agentId: number | null = config.agentId ?? null;
 let cycleCount = 0;
 let regimeGovernance = new RegimeGovernanceController();
 
