@@ -134,7 +134,9 @@ export function createRegistrationDataUri(registration: AgentRegistrationFile): 
 export async function registerAgent(agentURI: string, metadata: Array<{ metadataKey: string; metadataValue: string | Uint8Array }> = []): Promise<number> {
   const registry = getContract();
   const encodedMetadata = metadata.map(m => ({ metadataKey: m.metadataKey, metadataValue: typeof m.metadataValue === 'string' ? ethers.toUtf8Bytes(m.metadataValue) : m.metadataValue }));
-  const tx = encodedMetadata.length > 0 ? await registry.register(agentURI, encodedMetadata) : await registry.register(agentURI);
+  const tx = encodedMetadata.length > 0
+    ? await registry['register(string,tuple(string,bytes)[])'](agentURI, encodedMetadata)
+    : await registry['register(string)'](agentURI);
   const receipt = await waitForTx(tx);
   const parsed = receipt.logs.map((log: any) => { try { return registry.interface.parseLog({ topics: [...log.topics], data: log.data }); } catch { return null; } });
   const registered = parsed.find((e: any) => e?.name === 'Registered');
