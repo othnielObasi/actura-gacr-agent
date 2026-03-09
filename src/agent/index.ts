@@ -175,8 +175,20 @@ async function runCycle(): Promise<void> {
 
   // Step 0: Check if live feed is too stale to trade safely
   const feedStatus = getLiveFeedStatus();
-  if (DATA_SOURCE === 'live' && feedStatus.shouldHaltTrading) {
-    log.warn(`Live feed stale (${feedStatus.consecutiveFailures} failures) — skipping cycle to prevent trading on outdated data`);
+  const feedStale = DATA_SOURCE === 'live' && feedStatus.shouldHaltTrading;
+  if (feedStale) {
+    // Feed is stale — skip trading but STILL check stop-losses.
+    // Returning early here was a bug: open positions with stop-losses
+    // were never checked during outages, so when the feed recovered
+    // prices had gapped through stops and positions closed at much
+    // worse prices.
+    const stalePrice = marketData.prices[marketData.prices.length - 1];
+    const staleClosed = riskEngine.updateStops(stalePrice);
+    if (staleClosed.length > 0) {
+      log.warn(`Feed stale but ${staleClosed.length} stop-losses triggered at last known price $${stalePrice.toFixed(2)}`);
+      persistState();
+    }
+    log.warn(`Live feed stale (${feedStatus.consecutiveFailures} failures) — skipping trading but stop-losses checked`);
     return;
   }
 
@@ -492,6 +504,14 @@ async function runCycle(): Promise<void> {
   // Step 9: Update trailing stops and check stop-losses
   const currentPrice = strategyOutput.currentPrice;
   const closedPositions = riskEngine.updateStops(currentPrice);
+
+  // Persist immediately after stop-loss closes so state survives crashes.
+  // Without this, a crash between stop-close and the next persist (up to
+  // 10 cycles later) replays the close on restart with a potentially
+  // different price.
+  if (closedPositions.length > 0) {
+    persistState();
+  }
 
   // Step 9b: Record outcomes for neuro-symbolic + adaptive learning
   for (const closed of closedPositions) {

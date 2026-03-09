@@ -335,11 +335,19 @@ export class RiskEngine {
         const stopped = (pos.side === 'LONG' && currentPrice <= pos.stopLoss) ||
                         (pos.side === 'SHORT' && currentPrice >= pos.stopLoss);
         if (stopped) {
-          const pnl = this.closeAtIndex(i, currentPrice);
+          // If price gapped through the stop (e.g. after feed outage or
+          // fast move), close at the stop price rather than the worse
+          // current price.  This matches restart reconciliation behavior
+          // and prevents feed-recovery gaps from inflating losses.
+          const gapped = (pos.side === 'LONG' && currentPrice < pos.stopLoss) ||
+                         (pos.side === 'SHORT' && currentPrice > pos.stopLoss);
+          const closePrice = gapped ? pos.stopLoss : currentPrice;
+          const pnl = this.closeAtIndex(i, closePrice);
           closed.push({ id: pos.id, pnl });
           log.info(`Stop-loss hit: position #${pos.id}`, {
-            side: pos.side, entry: pos.entryPrice, exit: currentPrice,
+            side: pos.side, entry: pos.entryPrice, exit: closePrice,
             pnl: Math.round(pnl * 100) / 100,
+            ...(gapped ? { gapProtection: true, actualPrice: currentPrice } : {}),
           });
         }
       }
