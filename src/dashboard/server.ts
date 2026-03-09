@@ -72,8 +72,20 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
     next();
   });
 
+  // Default route → final production dashboard
+  app.get('/', (_req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  // Serve the final dashboard JSX
+  app.get('/dashboard-app.jsx', (_req, res) => {
+    res.type('application/javascript');
+    res.sendFile(path.join(__dirname, 'ActuraDashboard.final.jsx'));
+  });
+
   // Serve static files
   app.use(express.static(path.join(__dirname, 'public')));
+  app.use('/versions', express.static(path.join(__dirname, 'versions')));
 
   // CORS
   app.use((_req, res, next) => {

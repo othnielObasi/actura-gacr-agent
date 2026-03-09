@@ -424,7 +424,7 @@ export default function Actura() {
               <div><div style={{ fontSize: 8, color: T.fg3 }}>TRUST SCORE</div><div style={{ fontSize: 18, fontWeight: 700, color: truC(trustScore) }}>{fn(trustScore, 0)}</div><div style={{ fontSize: 9, color: T.fg2 }}>{trustLabel(trustScore)} · {tDelta >= 0 ? "+" : ""}{fn(tDelta, 0)}</div></div>
               <div><div style={{ fontSize: 8, color: T.fg3 }}>CAPITAL RIGHT</div><div style={{ fontSize: 18, fontWeight: 700, color: T.info }}>{sup.eff.toFixed(2)}x</div><div style={{ fontSize: 9, color: T.fg2 }}>{recoveryMode ? "recovery capped" : shortTier(tier)}</div></div>
             </div>
-            <Spark prices={trustHistory} h={48} colorOverride={truC(trustScore)} />
+            <Spark prices={trustHistory} h={48} color={truC(trustScore)} />
             <div style={{ marginTop: 8, display: "grid", gap: 3 }}>
               {[{ t: "T0", m: 0 }, { t: "T1", m: 0.25 }, { t: "T2", m: 0.6 }, { t: "T3", m: 1 }, { t: "T4", m: 1.25 }].map((x) => {
                 const a = tier.includes(x.t.slice(1));
