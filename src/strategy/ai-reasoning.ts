@@ -1,14 +1,14 @@
 /**
  * AI Reasoning Engine
  * 
- * Uses Claude API to provide intelligent market analysis alongside
- * the quantitative SMA/volatility signals. This makes Actura's
- * decision-making explainable and auditable at a level no other
- * trading agent achieves.
- * 
+ * Provides intelligent, human-readable explanations for every trade
+ * decision using a 3-tier LLM failover chain:
+ *
+ *   Claude (Anthropic) → Gemini (Google) → GPT-4o (OpenAI) → deterministic fallback
+ *
  * The AI doesn't MAKE the trade decision — the risk engine does.
  * The AI EXPLAINS and ENRICHES the decision with context.
- * 
+ *
  * This is Actura's differentiator: "Not the smartest trader.
  * The most accountable." — and the AI makes accountability *readable*.
  */
@@ -21,7 +21,12 @@ import type { RiskDecision } from '../risk/engine.js';
 const log = createLogger('AI-REASON');
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-sonnet-4-20250514';
+const ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
+
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+
+const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
+const OPENAI_MODEL = 'gpt-4o-mini';
 
 interface AIReasoning {
   marketContext: string;       // What's happening in the market
@@ -42,7 +47,8 @@ const FALLBACK_REASONING: AIReasoning = {
 };
 
 /**
- * Generate AI reasoning for a trade decision
+ * Generate AI reasoning for a trade decision.
+ * Cascade: Claude → Gemini → OpenAI → deterministic fallback.
  */
 export async function generateReasoning(
   strategyOutput: StrategyOutput,
@@ -51,22 +57,54 @@ export async function generateReasoning(
   capitalUsd: number,
   openPositionCount: number,
 ): Promise<AIReasoning> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const openaiKey = process.env.OPENAI_API_KEY;
 
-  if (!apiKey) {
-    log.debug('ANTHROPIC_API_KEY not set — using fallback reasoning');
-    return buildFallbackReasoning(strategyOutput, riskDecision);
+  // Try Claude first (best structured JSON output)
+  if (anthropicKey) {
+    try {
+      const result = await retry(
+        () => callClaudeAPI(anthropicKey, strategyOutput, riskDecision, recentPrices, capitalUsd, openPositionCount),
+        { maxRetries: 1, baseDelayMs: 500, label: 'Claude reasoning' }
+      );
+      return result;
+    } catch (error) {
+      log.warn('Claude API failed — trying Gemini', { error: String(error) });
+    }
   }
 
-  try {
-    return await retry(
-      () => callClaudeAPI(apiKey, strategyOutput, riskDecision, recentPrices, capitalUsd, openPositionCount),
-      { maxRetries: 1, baseDelayMs: 500, label: 'AI reasoning' }
-    );
-  } catch (error) {
-    log.warn('AI reasoning failed — using fallback', { error: String(error) });
-    return buildFallbackReasoning(strategyOutput, riskDecision);
+  // Try Gemini as second option (free tier, fast)
+  if (geminiKey) {
+    try {
+      const result = await retry(
+        () => callGeminiAPI(geminiKey, strategyOutput, riskDecision, recentPrices, capitalUsd, openPositionCount),
+        { maxRetries: 1, baseDelayMs: 500, label: 'Gemini reasoning' }
+      );
+      return result;
+    } catch (error) {
+      log.warn('Gemini API failed — trying OpenAI', { error: String(error) });
+    }
   }
+
+  // Try OpenAI as third option
+  if (openaiKey) {
+    try {
+      const result = await retry(
+        () => callOpenAIAPI(openaiKey, strategyOutput, riskDecision, recentPrices, capitalUsd, openPositionCount),
+        { maxRetries: 1, baseDelayMs: 500, label: 'OpenAI reasoning' }
+      );
+      return result;
+    } catch (error) {
+      log.warn('OpenAI API failed — using deterministic fallback', { error: String(error) });
+    }
+  }
+
+  if (!anthropicKey && !geminiKey && !openaiKey) {
+    log.debug('No LLM API keys set (ANTHROPIC_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY) — using deterministic fallback');
+  }
+
+  return buildFallbackReasoning(strategyOutput, riskDecision);
 }
 
 async function callClaudeAPI(
@@ -77,13 +115,55 @@ async function callClaudeAPI(
   capital: number,
   posCount: number,
 ): Promise<AIReasoning> {
-  // Build a compact market snapshot
+  const prompt = buildReasoningPrompt(strategy, risk, prices, capital, posCount);
+
+  const response = await fetch(ANTHROPIC_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: ANTHROPIC_MODEL,
+      max_tokens: 500,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Claude API returned ${response.status}`);
+  }
+
+  const data = await response.json() as { content: Array<{ type: string; text?: string }> };
+  const text = data.content
+    .filter((c: { type: string }) => c.type === 'text')
+    .map((c: { text?: string }) => c.text || '')
+    .join('');
+
+  const cleaned = text.replace(/```json|```/g, '').trim();
+  const parsed = JSON.parse(cleaned) as AIReasoning;
+
+  log.info('AI reasoning generated [Claude]', { summary: parsed.summary.slice(0, 80) });
+  return parsed;
+}
+
+/**
+ * Build the shared prompt used by both Claude and Gemini.
+ */
+function buildReasoningPrompt(
+  strategy: StrategyOutput,
+  risk: RiskDecision,
+  prices: number[],
+  capital: number,
+  posCount: number,
+): string {
   const last10 = prices.slice(-10);
   const priceChange = last10.length >= 2
     ? ((last10[last10.length - 1] - last10[0]) / last10[0] * 100).toFixed(2)
     : '0';
 
-  const prompt = `You are the reasoning engine for Actura, an accountable autonomous trading agent. Analyze this trade decision and provide structured reasoning.
+  return `You are the reasoning engine for Actura, an accountable autonomous trading agent. Analyze this trade decision and provide structured reasoning.
 
 MARKET SNAPSHOT:
 - Current price: $${strategy.currentPrice.toFixed(2)}
@@ -113,35 +193,88 @@ PORTFOLIO:
 
 Respond ONLY with valid JSON (no markdown, no backticks):
 {"marketContext":"1-2 sentences on market conditions","tradeRationale":"why this decision makes sense","riskNarrative":"plain English risk assessment","confidenceFactors":["factor1","factor2","factor3"],"watchItems":["risk1","risk2"],"summary":"one sentence summary"}`;
+}
 
-  const response = await fetch(ANTHROPIC_API_URL, {
+/**
+ * Call Gemini API (failover when Claude is unavailable)
+ */
+async function callGeminiAPI(
+  apiKey: string,
+  strategy: StrategyOutput,
+  risk: RiskDecision,
+  prices: number[],
+  capital: number,
+  posCount: number,
+): Promise<AIReasoning> {
+  const prompt = buildReasoningPrompt(strategy, risk, prices, capital, posCount);
+
+  const url = `${GEMINI_API_URL}?key=${apiKey}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        maxOutputTokens: 500,
+        temperature: 0.3,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gemini API returned ${response.status}`);
+  }
+
+  const data = await response.json() as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const cleaned = text.replace(/```json|```/g, '').trim();
+  const parsed = JSON.parse(cleaned) as AIReasoning;
+
+  log.info('AI reasoning generated [Gemini]', { summary: parsed.summary.slice(0, 80) });
+  return parsed;
+}
+
+/**
+ * Call OpenAI API (third failover)
+ */
+async function callOpenAIAPI(
+  apiKey: string,
+  strategy: StrategyOutput,
+  risk: RiskDecision,
+  prices: number[],
+  capital: number,
+  posCount: number,
+): Promise<AIReasoning> {
+  const prompt = buildReasoningPrompt(strategy, risk, prices, capital, posCount);
+
+  const response = await fetch(OPENAI_API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
+      'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: MODEL,
+      model: OPENAI_MODEL,
       max_tokens: 500,
+      temperature: 0.3,
       messages: [{ role: 'user', content: prompt }],
     }),
   });
 
   if (!response.ok) {
-    throw new Error(`Claude API returned ${response.status}`);
+    throw new Error(`OpenAI API returned ${response.status}`);
   }
 
-  const data = await response.json() as { content: Array<{ type: string; text?: string }> };
-  const text = data.content
-    .filter((c: { type: string }) => c.type === 'text')
-    .map((c: { text?: string }) => c.text || '')
-    .join('');
-
+  const data = await response.json() as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const text = data?.choices?.[0]?.message?.content || '';
   const cleaned = text.replace(/```json|```/g, '').trim();
   const parsed = JSON.parse(cleaned) as AIReasoning;
 
-  log.info('AI reasoning generated', { summary: parsed.summary.slice(0, 80) });
+  log.info('AI reasoning generated [OpenAI]', { summary: parsed.summary.slice(0, 80) });
   return parsed;
 }
 

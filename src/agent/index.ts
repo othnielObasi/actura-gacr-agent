@@ -37,11 +37,13 @@ import { evaluateOracleIntegrity } from '../security/oracle-integrity.js';
 import { evaluateMandate, getDefaultMandate, buildMandateRiskChecks } from '../chain/agent-mandate.js';
 import { simulateExecution } from '../chain/execution-simulator.js';
 import { generateSimulatedData, appendCandle } from '../data/price-feed.js';
+import { fetchLivePrice, fetchOHLCHistory, buildLiveCandle, getLiveFeedStatus } from '../data/live-price-feed.js';
 import { getOperatorControlState, getLatestOperatorAction } from './operator-control.js';
 
 const log = createLogger('AGENT');
 
 const MODE = process.env.MODE || 'simulation';
+const DATA_SOURCE = process.env.DATA_SOURCE || 'live'; // 'live' | 'simulated'
 
 // ──── Agent State ────
 const INITIAL_CAPITAL = 10000;
@@ -56,7 +58,7 @@ let regimeGovernance = new RegimeGovernanceController();
 
 // ──── Initialization ────
 
-function initAgent(): void {
+async function initAgent(): Promise<void> {
   console.log('');
   console.log('═══════════════════════════════════════════');
   console.log('  ACTURA — Accountable Autonomous Trading Agent');
@@ -90,7 +92,7 @@ function initAgent(): void {
 
     // Generate initial market data BEFORE stop-loss reconciliation
     // so we can compare restored positions against current price
-    marketData = generateSimulatedData(60, 3000, 0.02, 0.0003);
+    marketData = await loadInitialMarketData();
     const startupPrice = marketData.prices[marketData.prices.length - 1];
 
     // Reconcile stale stop-losses: if price gapped through stop while
@@ -117,7 +119,7 @@ function initAgent(): void {
     cycleCount = 0;
 
     // Generate initial market data for fresh start
-    marketData = generateSimulatedData(60, 3000, 0.02, 0.0003);
+    marketData = await loadInitialMarketData();
   }
 
   resetStrategy();
@@ -132,31 +134,72 @@ function initAgent(): void {
     maxPositions: MAX_OPEN_POSITIONS,
     agentId: agentId ?? 'not registered',
     mode: MODE,
+    dataSource: DATA_SOURCE,
+    latestPrice: `$${marketData.prices[marketData.prices.length - 1].toFixed(2)}`,
   });
 }
 
 // ──── Trading Cycle ────
+
+/**
+ * Load initial market data — tries live OHLC history first, falls back to simulation.
+ */
+async function loadInitialMarketData(): Promise<MarketData> {
+  if (DATA_SOURCE === 'live') {
+    log.info('Fetching live OHLC history from CoinGecko...');
+    const liveData = await fetchOHLCHistory();
+    if (liveData) {
+      log.info(`Loaded ${liveData.prices.length} live candles — latest $${liveData.prices[liveData.prices.length - 1].toFixed(2)}`);
+      return liveData;
+    }
+    log.warn('Live OHLC fetch failed — falling back to simulated seed data around current price');
+    // Try to at least get the current price for a better seed
+    const livePrice = await fetchLivePrice();
+    const seedPrice = livePrice?.price ?? 3000;
+    log.info(`Seeding simulation at $${seedPrice.toFixed(2)} (${livePrice ? livePrice.source : 'default'})`);
+    return generateSimulatedData(60, seedPrice, 0.02, 0.0003);
+  }
+  return generateSimulatedData(60, 3000, 0.02, 0.0003);
+}
 
 async function runCycle(): Promise<void> {
   cycleCount++;
   const cycleStart = Date.now();
   const operatorControl = getOperatorControlState();
 
-  // Step 1: Update market data
+  // Step 1: Update market data (live or simulated)
   const lastPrice = marketData.prices[marketData.prices.length - 1];
-  const vol = 0.02;
-  const shock = vol * (Math.random() * 2 - 1);
-  const newPrice = lastPrice * (1 + 0.0002 + shock);
-  const range = newPrice * vol * 0.3;
 
-  marketData = appendCandle(marketData, {
-    timestamp: new Date().toISOString(),
-    open: lastPrice,
-    high: newPrice + Math.abs(Math.random() * range),
-    low: newPrice - Math.abs(Math.random() * range),
-    close: Math.round(newPrice * 100) / 100,
-    volume: Math.round(Math.random() * 1000),
-  });
+  if (DATA_SOURCE === 'live') {
+    const liveFetch = await fetchLivePrice();
+    if (liveFetch) {
+      const candle = buildLiveCandle(liveFetch.price, lastPrice);
+      marketData = appendCandle(marketData, candle);
+      if (cycleCount % 10 === 1) {
+        log.info(`Live price: $${liveFetch.price.toFixed(2)} [${liveFetch.source}]`);
+      }
+    } else {
+      // Live fetch failed — use last known price with tiny noise to avoid stale data
+      const noise = lastPrice * 0.0005 * (Math.random() * 2 - 1);
+      const fallbackPrice = lastPrice + noise;
+      marketData = appendCandle(marketData, buildLiveCandle(fallbackPrice, lastPrice));
+      log.warn('Live feed unavailable — using last known price with noise');
+    }
+  } else {
+    // Original simulation path
+    const vol = 0.02;
+    const shock = vol * (Math.random() * 2 - 1);
+    const newPrice = lastPrice * (1 + 0.0002 + shock);
+    const range = newPrice * vol * 0.3;
+    marketData = appendCandle(marketData, {
+      timestamp: new Date().toISOString(),
+      open: lastPrice,
+      high: newPrice + Math.abs(Math.random() * range),
+      low: newPrice - Math.abs(Math.random() * range),
+      close: Math.round(newPrice * 100) / 100,
+      volume: Math.round(Math.random() * 1000),
+    });
+  }
 
   // Trim data window
   if (marketData.prices.length > 200) {
@@ -520,6 +563,7 @@ export function getAgentState() {
     agentId,
     risk: riskEngine?.getStatus() ?? null,
     market: marketData ? computeMarketState(marketData) : null,
+    liveFeed: getLiveFeedStatus(),
     recentCheckpoints: getCheckpoints(10),
     scheduler: scheduler?.getState() ?? null,
     maxPositions: MAX_OPEN_POSITIONS,
@@ -552,13 +596,13 @@ export function getErrors(limit?: number) {
 
 export { getCheckpoints, getTradeCheckpoints };
 
-export function initAgent_export(): void { initAgent(); }
+export function initAgent_export(): Promise<void> { return initAgent(); }
 export function stopAgent(): void { scheduler?.shutdown('manual'); }
 
 // ──── Simulation Mode (for testing) ────
 
 export async function runSimulation(cycles: number = 50): Promise<void> {
-  initAgent();
+  await initAgent();
 
   log.info(`Running ${cycles} trading cycles (simulation mode)`);
 
@@ -631,9 +675,10 @@ startMcpServer(3001);
 // Run in selected mode
 if (MODE === 'live') {
   // Production: preflight → claim sandbox → scheduler
-  initAgent();
 
   (async () => {
+    await initAgent();
+
     // Preflight checks
     const flight = await preflight();
     if (!flight.ready) {
