@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 
 /* ═══════════════════════════════════════════════════════════════════════
    ACTURA — Governed Autonomous Capital Runtime
@@ -102,47 +102,58 @@ function Metric({ label, value, sub, color = T.fg }) {
 
 /* ═══ MAIN ═══ */
 export default function Actura() {
-  const [prices, setPrices] = useState(() => genPrices(72));
+  /* ── Live state from API ── */
+  const [prices, setPrices] = useState([]);
   const [stage, setStage] = useState(0);
   const [tick, setTick] = useState(0);
-  const [vol, setVol] = useState(0.0162);
-  const [volRatio, setVolRatio] = useState(0.81);
-  const [adx, setAdx] = useState(27.8);
-  const [chop, setChop] = useState(41.2);
-  const [bayesBias, setBayesBias] = useState(0.06);
-  const [edgePct, setEdgePct] = useState(0.0029);
-  const [costBps, setCostBps] = useState(18);
-  const [trustScore, setTrustScore] = useState(91);
-  const [trustHistory, setTrustHistory] = useState([74, 76, 79, 83, 85, 88, 90, 91]);
+  const [vol, setVol] = useState(0);
+  const [volRatio, setVolRatio] = useState(1);
+  const [adx, setAdx] = useState(0);
+  const [chop, setChop] = useState(0);
+  const [trustScore, setTrustScore] = useState(80);
+  const [trustHistory, setTrustHistory] = useState([]);
   const [opState, setOpState] = useState("ACTIVE");
   const [oracleStatus, setOracleStatus] = useState("HEALTHY");
   const [recoveryMode, setRecoveryMode] = useState(false);
   const [selIdx, setSelIdx] = useState(0);
-  const [opLog, setOpLog] = useState([
-    { ts: "12:44:09", action: "resume", reason: "manual_release" },
-    { ts: "12:37:52", action: "pause", reason: "volatility_spike_review" },
-    { ts: "12:32:11", action: "resume", reason: "operator_clearance" },
-  ]);
+  const [opLog, setOpLog] = useState([]);
+  const [capital, setCapital] = useState(0);
+  const [cPrice, setCPrice] = useState(0);
+  const [livePositions, setLivePositions] = useState([]);
+  const [liveCheckpoints, setLiveCheckpoints] = useState([]);
+  const [capMult, setCapMult] = useState(1);
+  const [trustTier, setTrustTier] = useState("standard");
+  const [trustStatus, setTrustStatus] = useState("trusted");
+  const [circuitBreaker, setCircuitBreaker] = useState("ARMED");
+  const [governance, setGovernance] = useState(null);
+  const [agentRunning, setAgentRunning] = useState(false);
+  const [cycleCount, setCycleCount] = useState(0);
 
+  /* ── Tier mapping from API tier names ── */
+  const tierMap = { probation: "TIER_1_PROBATION", limited: "TIER_2_LIMITED", standard: "TIER_3_STANDARD", elevated: "TIER_4_EXPANDED", elite: "TIER_4_EXPANDED" };
+  const tier = tierMap[trustTier] || "TIER_3_STANDARD";
+
+  /* ── Derived values ── */
   const regime = useMemo(() => { if (volRatio > 1.9) return "STRESSED"; if (adx > 22 && chop < 45) return "TRENDING"; if (chop > 52) return "RANGING"; return "UNCERTAIN"; }, [volRatio, adx, chop]);
   const profile = useMemo(() => { if (volRatio > 2.1) return "EXTREME_DEFENSIVE"; if (volRatio > 1.25) return "HIGH_VOL"; if (volRatio < 0.8) return "LOW_VOL"; return "NORMAL"; }, [volRatio]);
-  const edgeGate = useMemo(() => edgePct >= (costBps / 10000) * 1.5 ? "PASS" : "FAIL", [edgePct, costBps]);
-  const tier = useMemo(() => getTier(trustScore), [trustScore]);
-  const capMult = useMemo(() => getMult(tier), [tier]);
-  const adjConf = useMemo(() => clamp(0.87 + bayesBias, 0, 1), [bayesBias]);
+  const pnl = capital > 0 ? ((capital - 10000) / 10000) * 100 : 0;
   const tDelta = useMemo(() => trustHistory.length > 1 ? trustHistory[trustHistory.length - 1] - trustHistory[trustHistory.length - 2] : 0, [trustHistory]);
 
-  const mandate = { capital: "$100,000", maxTrade: "5%", maxDailyLoss: "8%", allowedAssets: ["ETH", "BTC", "USDC"], protocols: ["Uniswap", "Aave"], approvalThreshold: "$20,000" };
-  const erc = { agentId: 22, agentRegistry: "eip155:84532:0x7420...ab19", ownerWallet: "0xA91c...4D2e", agentWallet: "0xB27f...91Aa", tradeIntentHash: "0x7fd2...bb13", validationRequestHash: "0x41ac...ff09", lastFeedbackTag: "tradingYield:day", registrationStatus: "READY" };
-  const mcp = { status: "ACTIVE", endpoint: "/mcp", mode: "governed", visibility: "public + restricted + operator", tools: { public: 7, restricted: 2, operator: 3, total: 12 }, resources: 8, prompts: 4, publicTools: ["get_market_state", "explain_trade", "get_trust_state", "get_capital_rights"], restrictedTools: ["propose_trade", "execute_trade"], operatorTools: ["pause_agent", "resume_agent", "emergency_stop"] };
+  const sup = useMemo(() => {
+    const ok = opState === "ACTIVE" && oracleStatus !== "BLOCKED" && trustScore >= 60;
+    const eff = recoveryMode ? Math.min(capMult, 0.6) : capMult;
+    const act = ok ? (recoveryMode ? "THROTTLE" : "ALLOW") : "BLOCK";
+    return { ok, eff, act };
+  }, [opState, oracleStatus, trustScore, recoveryMode, capMult]);
 
   const sim = useMemo(() => {
     const slip = clamp(8 + volRatio * 6 + (regime === "STRESSED" ? 8 : 0), 6, 34);
     const gas = clamp(3.8 + volRatio * 1.7, 2.2, 11.5);
+    const edgePct = liveCheckpoints.length > 0 && liveCheckpoints[0].confidence > 0 ? liveCheckpoints[0].confidence * 0.005 : 0.002;
     const net = edgePct - slip / 10000 - gas / 100000;
     const st = net > 0.001 ? "APPROVED" : net > 0 ? "WATCH" : "BLOCKED";
-    return { slip, gas, net, st };
-  }, [edgePct, volRatio, regime]);
+    return { slip, gas, net, st, edgePct };
+  }, [volRatio, regime, liveCheckpoints]);
 
   const oracle = useMemo(() => {
     const dev = clamp((volRatio - 0.8) * 0.014, 0.001, 0.041);
@@ -151,63 +162,170 @@ export default function Actura() {
     return { dev, stale, src };
   }, [oracleStatus, volRatio]);
 
-  const cap = 10247.8, pnl = ((cap - 10000) / 10000) * 100, cPrice = prices[prices.length - 1];
+  /* ── Map checkpoints to trade rows ── */
+  const trades = useMemo(() => {
+    if (liveCheckpoints.length === 0) return [{ id: 0, signal: "NEUTRAL", conf: 0, bias: 0, confAdj: 0, regime: "—", profile: "—", edgePct: 0, costBps: 0, edgeGate: "—", price: cPrice, size: 0, approved: false, trustScore, tier, receipt: "—", tx: "—" }];
+    return liveCheckpoints.map((cp) => ({
+      id: cp.id,
+      signal: cp.signal || "NEUTRAL",
+      conf: cp.confidence || 0,
+      bias: 0,
+      confAdj: cp.confidence || 0,
+      regime,
+      profile,
+      edgePct: (cp.confidence || 0) * 0.005,
+      costBps: 18,
+      edgeGate: cp.approved ? "PASS" : "FAIL",
+      price: cp.price || cPrice,
+      size: cp.positionSize || 0,
+      approved: cp.approved,
+      trustScore,
+      tier,
+      receipt: cp.artifactIpfs || "—",
+      tx: cp.txHash || "—",
+    }));
+  }, [liveCheckpoints, cPrice, regime, profile, trustScore, tier]);
 
-  const sup = useMemo(() => {
-    const ok = opState === "ACTIVE" && oracleStatus !== "BLOCKED" && edgeGate === "PASS" && sim.st !== "BLOCKED" && trustScore >= 60;
-    const eff = recoveryMode ? Math.min(capMult, 0.6) : capMult;
-    const act = ok ? (recoveryMode ? "THROTTLE" : "ALLOW") : "BLOCK";
-    return { ok, eff, act };
-  }, [opState, oracleStatus, edgeGate, sim.st, trustScore, recoveryMode, capMult]);
+  /* ── Map open positions ── */
+  const positions = useMemo(() => {
+    if (livePositions.length === 0) return [];
+    return livePositions.map((p, i) => ({
+      id: p.id || i,
+      side: p.side || "LONG",
+      size: p.size || 0,
+      entry: p.entryPrice || 0,
+      stop: p.stopLoss || 0,
+      pnl: p.unrealizedPnl || 0,
+      profile,
+    }));
+  }, [livePositions, profile]);
 
-  const positions = useMemo(() => [
-    { id: 23, side: "LONG", size: 0.0612 * sup.eff, entry: cPrice - 44, stop: cPrice - 132, pnl: 4.92, profile },
-    { id: 22, side: "LONG", size: 0.0488, entry: cPrice - 70, stop: cPrice - 154, pnl: 7.11, profile: "LOW_VOL" },
-    { id: 21, side: "SHORT", size: 0.0394, entry: cPrice + 16, stop: cPrice + 96, pnl: -1.62, profile: "HIGH_VOL" },
-  ], [cPrice, sup.eff, profile]);
+  const mandate = useMemo(() => {
+    if (!governance) return { capital: `$${fn(capital, 0)}`, maxTrade: "10%", maxDailyLoss: "2%", allowedAssets: ["WETH/USDC"], protocols: ["Uniswap"], approvalThreshold: "$20,000" };
+    return {
+      capital: `$${fn(capital, 0)}`,
+      maxTrade: `${(governance.riskLimits.maxPositionPct * 100).toFixed(0)}%`,
+      maxDailyLoss: `${(governance.riskLimits.maxDailyLossPct * 100).toFixed(0)}%`,
+      allowedAssets: ["WETH/USDC", "ETH", "USDC"],
+      protocols: ["Uniswap"],
+      approvalThreshold: "$20,000",
+    };
+  }, [governance, capital]);
 
-  const trades = useMemo(() => [
-    { id: 47 + tick, signal: "LONG", conf: 0.87, bias: bayesBias, confAdj: adjConf, regime, profile, edgePct, costBps, edgeGate, price: cPrice, size: sup.ok ? 0.0612 * sup.eff : 0, approved: sup.ok, trustScore, tier, receipt: "QmActuraReceipt...9af2", tx: "0x8f1c...0a71" },
-    { id: 46 + tick, signal: "SHORT", conf: 0.64, bias: -0.04, confAdj: 0.60, regime: "RANGING", profile: "LOW_VOL", edgePct: 0.0013, costBps: 18, edgeGate: "FAIL", price: cPrice - 18, size: 0, approved: false, trustScore: 78, tier: "TIER_2_LIMITED", receipt: "QmActuraReceipt...7bc4", tx: "—" },
-    { id: 45 + tick, signal: "LONG", conf: 0.58, bias: 0.02, confAdj: 0.60, regime: "UNCERTAIN", profile: "NORMAL", edgePct: 0.0019, costBps: 17, edgeGate: "WATCH", price: cPrice - 9, size: 0, approved: false, trustScore: 84, tier: "TIER_2_LIMITED", receipt: "QmActuraReceipt...11c0", tx: "—" },
-  ], [tick, bayesBias, adjConf, regime, profile, edgePct, costBps, edgeGate, cPrice, sup, trustScore, tier]);
+  const erc = { agentId: 22, agentRegistry: "eip155:84532:0x7177...Dd09A", ownerWallet: "0xE868...DdCD7", agentWallet: "0xe0B2...11CD", tradeIntentHash: trades[0]?.tx !== "—" ? trades[0].tx : "pending…", validationRequestHash: "pending…", lastFeedbackTag: "tradingYield:day", registrationStatus: agentRunning ? "READY" : "OFFLINE" };
+  const mcp = { status: "ACTIVE", endpoint: "/mcp", mode: "governed", visibility: "public + restricted + operator", tools: { public: 7, restricted: 2, operator: 3, total: 12 }, resources: 8, prompts: 4, publicTools: ["get_market_state", "explain_trade", "get_trust_state", "get_capital_rights"], restrictedTools: ["propose_trade", "execute_trade"], operatorTools: ["pause_agent", "resume_agent", "emergency_stop"] };
 
   const checks = useMemo(() => [
-    { n: "circuit_breaker", p: true, v: "ARMED" },
+    { n: "circuit_breaker", p: true, v: circuitBreaker },
     { n: "mandate_engine", p: true, v: `${mandate.maxTrade} / ${mandate.maxDailyLoss}` },
-    { n: "structure_regime", p: true, v: `${regime} (ADX ${adx.toFixed(1)}, CHOP ${chop.toFixed(1)})` },
+    { n: "structure_regime", p: true, v: `${regime} (vol ${volRatio.toFixed(2)}x)` },
     { n: "oracle_integrity", p: oracleStatus !== "BLOCKED", v: `${oracleStatus} (${fp(oracle.dev, 2)} dev)` },
     { n: "execution_simulation", p: sim.st !== "BLOCKED", v: `${sim.st} (${sim.slip.toFixed(1)}bps)` },
     { n: "trust_recovery", p: true, v: recoveryMode ? "ACTIVE" : "OFF" },
     { n: "supervisory", p: sup.ok, v: `${sup.act} @ ${sup.eff.toFixed(2)}x` },
     { n: "operator_state", p: opState === "ACTIVE", v: opState },
-  ], [mandate, regime, adx, chop, oracleStatus, oracle, sim, recoveryMode, sup, opState]);
+  ], [circuitBreaker, mandate, regime, volRatio, oracleStatus, oracle, sim, recoveryMode, sup, opState]);
 
   const sel = trades[selIdx] || trades[0];
 
-  function addLog(a, r) { const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }); setOpLog((p) => [{ ts: t, action: a, reason: r }, ...p].slice(0, 6)); }
-  function onPause() { setOpState("PAUSED"); addLog("pause", "manual_operator_pause"); }
-  function onResume() { setOpState("ACTIVE"); setOracleStatus("HEALTHY"); addLog("resume", "manual_operator_resume"); }
-  function onStop() { setOpState("EMERGENCY_STOP"); setOracleStatus("BLOCKED"); addLog("emergency_stop", "manual_emergency"); }
+  /* ── API fetching ── */
+  const fetchData = useCallback(async () => {
+    try {
+      const [statusRes, checkpointsRes, reputationRes, operatorRes, actionsRes, positionsRes, governanceRes] = await Promise.all([
+        fetch("/api/status").then(r => r.json()).catch(() => null),
+        fetch("/api/checkpoints?limit=10").then(r => r.json()).catch(() => null),
+        fetch("/api/reputation/history?limit=30").then(r => r.json()).catch(() => null),
+        fetch("/api/operator/state").then(r => r.json()).catch(() => null),
+        fetch("/api/operator/actions?limit=6").then(r => r.json()).catch(() => null),
+        fetch("/api/positions").then(r => r.json()).catch(() => null),
+        fetch("/api/governance").then(r => r.json()).catch(() => null),
+      ]);
+
+      if (statusRes) {
+        const m = statusRes.market || {};
+        const r = statusRes.risk || {};
+        if (m.currentPrice) {
+          setCPrice(m.currentPrice);
+          setPrices(prev => [...prev.slice(-71), m.currentPrice]);
+        }
+        if (m.volatility != null) setVol(m.volatility);
+        if (r.volatility) setVolRatio(r.volatility.ratio || 1);
+        setCapital(statusRes.capital || 0);
+        setCircuitBreaker(r.circuitBreaker?.state || "ARMED");
+        setAgentRunning(statusRes.agent?.running || false);
+        setCycleCount(statusRes.agent?.cycleCount || 0);
+        // Oracle: derive from circuit breaker + volatility
+        if (r.circuitBreaker?.active) setOracleStatus("BLOCKED");
+        else if (r.volatility?.ratio > 2.0) setOracleStatus("WATCH");
+        else setOracleStatus("HEALTHY");
+      }
+
+      if (checkpointsRes?.checkpoints) {
+        setLiveCheckpoints(checkpointsRes.checkpoints);
+      }
+
+      if (reputationRes?.history?.length > 0) {
+        const hist = reputationRes.history;
+        const latest = hist[hist.length - 1];
+        setTrustScore(latest.trustScore);
+        setTrustHistory(hist.map(h => h.trustScore));
+        setCapMult(latest.capitalMultiplier);
+        setTrustTier(latest.trustTier);
+        setTrustStatus(latest.status);
+        setRecoveryMode(latest.recoveryMode);
+      }
+
+      if (operatorRes) {
+        const modeMap = { normal: "ACTIVE", paused: "PAUSED", emergency_stop: "EMERGENCY_STOP" };
+        setOpState(modeMap[operatorRes.mode] || "ACTIVE");
+      }
+
+      if (actionsRes?.actions) {
+        setOpLog(actionsRes.actions.slice(0, 6).map(a => ({
+          ts: new Date(a.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+          action: a.action,
+          reason: a.reason,
+        })));
+      }
+
+      if (positionsRes?.positions) setLivePositions(positionsRes.positions);
+      if (governanceRes) setGovernance(governanceRes);
+
+      setStage(s => (s + 1) % STAGES.length);
+      setTick(t => t + 1);
+    } catch (e) {
+      console.warn("Dashboard fetch error:", e);
+    }
+  }, []);
 
   useEffect(() => {
-    const id = setInterval(() => {
-      setStage((s) => (s + 1) % STAGES.length);
-      setTick((t) => t + 1);
-      setPrices((p) => { const l = p[p.length - 1]; return [...p.slice(-71), l * (1 + (Math.random() - 0.48) * 0.012)]; });
-      setVol((v) => clamp(v + (Math.random() - 0.5) * 0.002, 0.008, 0.045));
-      setVolRatio((v) => clamp(v + (Math.random() - 0.5) * 0.15, 0.55, 2.6));
-      setAdx((v) => clamp(v + (Math.random() - 0.5) * 2.8, 8, 45));
-      setChop((v) => clamp(v + (Math.random() - 0.5) * 3.4, 25, 65));
-      setBayesBias((v) => clamp(v + (Math.random() - 0.5) * 0.04, -0.35, 0.35));
-      setEdgePct((v) => clamp(v + (Math.random() - 0.5) * 0.0005, 0.0004, 0.0055));
-      setCostBps((v) => clamp(v + (Math.random() - 0.5) * 2, 10, 40));
-      setTrustScore((s) => { const n = clamp(s + (Math.random() - 0.44) * 3.2 + (opState === "ACTIVE" ? 0.4 : -0.8), 54, 98); setTrustHistory((p) => [...p.slice(-27), n]); return n; });
-      setRecoveryMode((p) => { const l = trustHistory[trustHistory.length - 1] ?? trustScore; return l < 78 || (p && l < 85); });
-      setOracleStatus(() => { if (opState === "EMERGENCY_STOP") return "BLOCKED"; if (volRatio > 2.0) return "WATCH"; return Math.random() > 0.94 ? "WATCH" : "HEALTHY"; });
-    }, 2500);
+    fetchData();
+    const id = setInterval(fetchData, 3000);
     return () => clearInterval(id);
-  }, [opState, volRatio, trustHistory, trustScore]);
+  }, [fetchData]);
+
+  /* ── Operator actions → POST to real API ── */
+  async function onPause() {
+    try {
+      const res = await fetch("/api/operator/pause", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "manual_operator_pause", actor: "dashboard" }) });
+      const data = await res.json();
+      if (data.state) { const modeMap = { normal: "ACTIVE", paused: "PAUSED", emergency_stop: "EMERGENCY_STOP" }; setOpState(modeMap[data.state.mode] || "PAUSED"); }
+    } catch (e) { setOpState("PAUSED"); }
+  }
+  async function onResume() {
+    try {
+      const res = await fetch("/api/operator/resume", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "manual_operator_resume", actor: "dashboard" }) });
+      const data = await res.json();
+      if (data.state) { const modeMap = { normal: "ACTIVE", paused: "PAUSED", emergency_stop: "EMERGENCY_STOP" }; setOpState(modeMap[data.state.mode] || "ACTIVE"); }
+    } catch (e) { setOpState("ACTIVE"); }
+  }
+  async function onStop() {
+    try {
+      const res = await fetch("/api/operator/emergency-stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "manual_emergency", actor: "dashboard" }) });
+      const data = await res.json();
+      if (data.state) { const modeMap = { normal: "ACTIVE", paused: "PAUSED", emergency_stop: "EMERGENCY_STOP" }; setOpState(modeMap[data.state.mode] || "EMERGENCY_STOP"); }
+    } catch (e) { setOpState("EMERGENCY_STOP"); }
+  }
 
   const btn = (color) => ({ background: `${color}18`, color, border: `1px solid ${color}30`, borderRadius: 4, padding: "6px 14px", fontSize: 10, fontWeight: 700, fontFamily: F, cursor: "pointer", transition: "opacity .1s" });
 
@@ -248,7 +366,7 @@ export default function Actura() {
           <P title="Market Intelligence" tag={`${regime} · ${profile}`}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 0, marginBottom: 8, borderBottom: `1px solid ${T.brd}`, paddingBottom: 6 }}>
               <Metric label="ETH/USD" value={`$${fn(cPrice, 1)}`} color={T.w} />
-              <Metric label="Capital" value={`$${cap.toFixed(0)}`} sub={`+${pnl.toFixed(2)}%`} color={T.up} />
+              <Metric label="Capital" value={`$${fn(capital, 0)}`} sub={`${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%`} color={pnl >= 0 ? T.up : T.dn} />
               <Metric label="Volatility" value={`${volRatio.toFixed(2)}x`} sub={`σ ${fp(vol)}`} color={proC(profile)} />
               <Metric label="Oracle" value={oracleStatus} sub={`${oracle.src}src · ${oracle.stale}s`} color={oraC(oracleStatus)} />
             </div>
@@ -256,7 +374,7 @@ export default function Actura() {
           </P>
 
           {/* Governance Pipeline — THE HERO */}
-          <P title="Governance Pipeline" tag={`cycle ${47 + tick}`}>
+          <P title="Governance Pipeline" tag={`cycle ${cycleCount || tick}`}>
             <div style={{ fontSize: 9.5, color: T.fg2, marginBottom: 8 }}>Every trade passes through 8 deterministic stages. Only trades that clear all gates execute.</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 4 }}>
               {STAGES.map((s, i) => {
@@ -388,7 +506,7 @@ export default function Actura() {
           {/* Execution + Positions */}
           <div style={{ display: "grid", gap: 10 }}>
             <P title="Execution Simulation" tag={sim.st}>
-              {[["Expected Edge", fp(edgePct, 2), edgePct / 0.006, T.up], ["Slippage", `${sim.slip.toFixed(1)}bps`, sim.slip / 40, T.warn], ["Net Edge", fp(sim.net, 2), (sim.net + 0.005) / 0.01, sim.net > 0 ? T.up : T.dn]].map(([l, v, p, c]) => (
+              {[["Expected Edge", fp(sim.edgePct, 2), sim.edgePct / 0.006, T.up], ["Slippage", `${sim.slip.toFixed(1)}bps`, sim.slip / 40, T.warn], ["Net Edge", fp(sim.net, 2), (sim.net + 0.005) / 0.01, sim.net > 0 ? T.up : T.dn]].map(([l, v, p, c]) => (
                 <div key={l} style={{ marginBottom: 6 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: T.fg3, marginBottom: 2 }}><span>{l}</span><span style={{ color: c }}>{v}</span></div>
                   <ProgressBar value={p} color={c} />
@@ -407,9 +525,9 @@ export default function Actura() {
                 </div>
               ))}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, borderTop: `1px solid ${T.brd}`, paddingTop: 6, marginTop: 4 }}>
-                <div><div style={{ fontSize: 8, color: T.fg3 }}>GROSS</div><div style={{ fontWeight: 700 }}>8.2%</div></div>
-                <div><div style={{ fontSize: 8, color: T.fg3 }}>DIRECTION</div><div style={{ fontWeight: 700 }}>63/37</div></div>
-                <div><div style={{ fontSize: 8, color: T.fg3 }}>DRAWDOWN</div><div style={{ fontWeight: 700, color: T.warn }}>1.8%</div></div>
+                <div><div style={{ fontSize: 8, color: T.fg3 }}>POSITIONS</div><div style={{ fontWeight: 700 }}>{positions.length}</div></div>
+                <div><div style={{ fontSize: 8, color: T.fg3 }}>PnL</div><div style={{ fontWeight: 700, color: pnl >= 0 ? T.up : T.dn }}>{pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}%</div></div>
+                <div><div style={{ fontSize: 8, color: T.fg3 }}>STATUS</div><div style={{ fontWeight: 700, color: agentRunning ? T.up : T.warn }}>{agentRunning ? "RUNNING" : "OFFLINE"}</div></div>
               </div>
             </P>
           </div>
