@@ -666,6 +666,17 @@ npm start         # Run built version
 
 ---
 
+## Operational Observations & Tuning Log
+
+See [OBSERVATIONS.md](OBSERVATIONS.md) for detailed analysis of live trading behavior, root causes of identified issues, and the exact code changes made — written for reproducibility.
+
+**Summary of findings (March 9, 2026):**
+
+1. **Execution simulator was too conservative** — slippage gate (75 bps) and net-edge gate (0.05%) blocked ~99.7% of cycles. Raised to 120 bps / 0.01% respectively. Trade execution rate went from ~0.3% to ~40% of cycles.
+2. **Restart-induced losses** — positions survived PM2 restarts but stop-losses evaluated at stale prices, causing excess losses during price gaps. Fixed with offline stop-loss reconciliation: breached positions now close at the stop-loss price, not the current (worse) price.
+
+---
+
 ## License
 
 MIT © Sovereign AI Lab
