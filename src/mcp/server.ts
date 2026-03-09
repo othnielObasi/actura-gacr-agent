@@ -7,6 +7,7 @@
 
 import express from 'express';
 import type { Server } from 'http';
+import { execSync } from 'child_process';
 import { ALL_TOOLS, type McpTool } from './tools.js';
 import { ALL_RESOURCES, type McpResource } from './resources.js';
 import { ALL_PROMPTS, type McpPrompt } from './prompts.js';
@@ -292,7 +293,10 @@ export function startMcpServer(port: number = MCP_PORT): void {
     }
   });
 
-  const tryListen = (retries = 5) => {
+  // Kill any orphan process holding the port before binding
+  try { execSync(`fuser -k ${port}/tcp 2>/dev/null`, { timeout: 3000 }); } catch {}
+  
+  const tryListen = (retries = 3) => {
     mcpHttpServer = app.listen(port, () => {
       console.log(`[MCP] Actura MCP server listening on http://localhost:${port}`);
       console.log(`[MCP] JSON-RPC endpoint: http://localhost:${port}/mcp`);
@@ -301,6 +305,7 @@ export function startMcpServer(port: number = MCP_PORT): void {
     mcpHttpServer.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'EADDRINUSE' && retries > 0) {
         console.log(`[MCP] Port ${port} in use, retrying in 3s...`);
+        try { execSync(`fuser -k ${port}/tcp 2>/dev/null`, { timeout: 3000 }); } catch {}
         setTimeout(() => tryListen(retries - 1), 3000);
       } else {
         console.error(`[MCP] Failed to start: ${err.message}`);
