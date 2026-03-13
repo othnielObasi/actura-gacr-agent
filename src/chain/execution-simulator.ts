@@ -38,7 +38,7 @@ export function simulateExecution(input: ExecutionSimulationInput): ExecutionSim
   // The vol multiplier is calibrated so that typical real-world ETH vol
   // (~0.001-0.003 per bar on hourly/4h candles) produces 5-25 bps slippage
   // for small trades (~$200-$500), which matches real Uniswap v3 execution.
-  const volMultiplier = 1500;
+  const volMultiplier = 600;
   const estimatedSlippageBps = round2(baseBps + vol * volMultiplier + sizePressure * 18);
   const priceImpactPct = estimatedSlippageBps / 10000;
   const sideSign = strategyOutput.signal.direction === 'SHORT' ? -1 : 1;

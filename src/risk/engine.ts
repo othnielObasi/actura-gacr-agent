@@ -54,6 +54,11 @@ export interface Position {
 // Slippage model
 const SLIPPAGE_BPS = 10;  // 0.1% average slippage
 
+// Minimum profit threshold before trailing stops activate.
+// Covers estimated round-trip cost (entry slippage + exit slippage) so that
+// break-even trailing-stop exits don't silently become losses after fees.
+const MIN_PROFIT_FOR_TRAIL_PCT = (SLIPPAGE_BPS * 2) / 10000; // 2× one-way slippage = 0.20%
+
 function applySlippage(price: number, side: 'LONG' | 'SHORT'): number {
   const slip = price * (SLIPPAGE_BPS / 10000);
   return side === 'LONG' ? price + slip : price - slip;
@@ -180,16 +185,29 @@ export class RiskEngine {
       detail: volOk ? 'Acceptable' : 'Extreme — rejected',
     });
 
-    // Check 6: Position conflict
-    const hasConflict = this.openPositions.some(p =>
+    // Check 6: Position conflict — auto-close opposing positions
+    // Previously this blocked the trade and said "close opposing position
+    // first" but there was no mechanism to do so, trapping the agent in a
+    // losing position until stop-loss fired.
+    const opposingPositions = this.openPositions.filter(p =>
       p.side !== strategyOutput.signal.direction && strategyOutput.signal.direction !== 'NEUTRAL'
     );
+    if (opposingPositions.length > 0) {
+      for (const opp of opposingPositions) {
+        const pnl = this.closePositionById(opp.id, currentPrice);
+        log.info(`Auto-closed opposing position #${opp.id} (${opp.side}) for direction flip`, {
+          entry: opp.entryPrice, exit: currentPrice, pnl: Math.round(pnl * 100) / 100,
+        });
+      }
+    }
     checks.push({
       name: 'position_conflict',
-      passed: !hasConflict,
-      value: hasConflict ? 'CONFLICT' : 'CLEAR',
-      limit: 'no opposing',
-      detail: hasConflict ? 'Close opposing position first' : `${this.openPositions.length} open`,
+      passed: true,
+      value: opposingPositions.length > 0 ? `FLIPPED (closed ${opposingPositions.length})` : 'CLEAR',
+      limit: 'auto-close opposing',
+      detail: opposingPositions.length > 0
+        ? `Closed ${opposingPositions.length} opposing position(s) to allow direction change`
+        : `${this.openPositions.length} open`,
     });
 
     // Decision
@@ -285,9 +303,13 @@ export class RiskEngine {
     return this.closeAtIndex(idx, exitPrice);
   }
 
-  private closeAtIndex(idx: number, exitPrice: number): number {
+  private closeAtIndex(idx: number, exitPrice: number, skipSlippage = false): number {
     const pos = this.openPositions[idx];
-    const executionPrice = applySlippage(exitPrice, pos.side === 'LONG' ? 'SHORT' : 'LONG');
+    // Stop-loss and gap-protected closes already account for adverse price;
+    // applying exit slippage on top double-penalizes the trader.
+    const executionPrice = skipSlippage
+      ? exitPrice
+      : applySlippage(exitPrice, pos.side === 'LONG' ? 'SHORT' : 'LONG');
 
     const pnl = pos.side === 'LONG'
       ? (executionPrice - pos.entryPrice) * pos.size
@@ -319,14 +341,23 @@ export class RiskEngine {
     for (let i = this.openPositions.length - 1; i >= 0; i--) {
       const pos = this.openPositions[i];
 
-      // Update trailing stop
+      // Update trailing stop — but only after position has moved beyond
+      // the cost dead-zone. Below that threshold the initial ATR stop stays
+      // fixed so we don't exit near break-even where fees make it a loss.
       if (pos.trailingStopDistance !== null) {
-        if (pos.side === 'LONG' && currentPrice > pos.highWaterMark) {
-          pos.highWaterMark = currentPrice;
-          pos.stopLoss = currentPrice - pos.trailingStopDistance;
-        } else if (pos.side === 'SHORT' && currentPrice < pos.highWaterMark) {
-          pos.highWaterMark = currentPrice;
-          pos.stopLoss = currentPrice + pos.trailingStopDistance;
+        const unrealizedPct = pos.side === 'LONG'
+          ? (currentPrice - pos.entryPrice) / pos.entryPrice
+          : (pos.entryPrice - currentPrice) / pos.entryPrice;
+        const beyondCostZone = unrealizedPct > MIN_PROFIT_FOR_TRAIL_PCT;
+
+        if (beyondCostZone) {
+          if (pos.side === 'LONG' && currentPrice > pos.highWaterMark) {
+            pos.highWaterMark = currentPrice;
+            pos.stopLoss = currentPrice - pos.trailingStopDistance;
+          } else if (pos.side === 'SHORT' && currentPrice < pos.highWaterMark) {
+            pos.highWaterMark = currentPrice;
+            pos.stopLoss = currentPrice + pos.trailingStopDistance;
+          }
         }
       }
 
@@ -342,7 +373,9 @@ export class RiskEngine {
           const gapped = (pos.side === 'LONG' && currentPrice < pos.stopLoss) ||
                          (pos.side === 'SHORT' && currentPrice > pos.stopLoss);
           const closePrice = gapped ? pos.stopLoss : currentPrice;
-          const pnl = this.closeAtIndex(i, closePrice);
+          // Stop-loss closes skip exit slippage: the stop price already
+          // represents the intended risk boundary.
+          const pnl = this.closeAtIndex(i, closePrice, /* skipSlippage */ true);
           closed.push({ id: pos.id, pnl });
           log.info(`Stop-loss hit: position #${pos.id}`, {
             side: pos.side, entry: pos.entryPrice, exit: closePrice,

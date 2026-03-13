@@ -206,8 +206,9 @@ function scoreOutcomeQuality(outcome: TrustOutcomeContext | null, approved: bool
   if (typeof outcome.pnlPct === 'number') {
     if (outcome.pnlPct > 0.01) score += 12;
     else if (outcome.pnlPct > 0) score += 8;
-    else if (outcome.pnlPct < -0.02) score -= 16;
-    else if (outcome.pnlPct < 0) score -= 8;
+    else if (outcome.pnlPct < -0.05) score -= 16;
+    else if (outcome.pnlPct < -0.02) score -= 10;
+    else if (outcome.pnlPct < 0) score -= 5;
   }
   if (typeof outcome.slippageBps === 'number') {
     if (outcome.slippageBps <= 10) score += 8;

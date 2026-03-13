@@ -95,9 +95,35 @@ async function initAgent(): Promise<void> {
     marketData = await loadInitialMarketData();
     const startupPrice = marketData.prices[marketData.prices.length - 1];
 
+    // ── Reconnect diagnostics ──
+    // Log structured before/after snapshot so we can debug offline drift.
+    const preReconPositions = riskEngine.getOpenPositions();
+    const preReconCapital = riskEngine.getCapital();
+    const preReconCBState = riskEngine.getStatus().circuitBreaker;
+    const savedPrice = savedState.openPositions.length > 0
+      ? savedState.openPositions[0].entryPrice
+      : startupPrice;
+    log.info('Reconnect diagnostics — pre-reconciliation snapshot', {
+      savedCapital: savedState.capital,
+      currentCapital: preReconCapital,
+      savedPositions: savedState.openPositions.length,
+      livePositions: preReconPositions.length,
+      lastSavedPrice: savedPrice,
+      currentPrice: startupPrice,
+      priceDeltaPct: savedPrice > 0
+        ? ((startupPrice - savedPrice) / savedPrice * 100).toFixed(3) + '%'
+        : 'N/A',
+      circuitBreakerState: preReconCBState.state,
+      drawdownPct: (preReconCBState.drawdownPct * 100).toFixed(2) + '%',
+      lastSavedAt: savedState.lastSavedAt,
+      offlineDurationMs: Date.now() - new Date(savedState.lastSavedAt).getTime(),
+    });
+
     // Reconcile stale stop-losses: if price gapped through stop while
     // agent was offline, close at the stop-loss price (not the worse
     // current price). This prevents restart-induced excess losses.
+    let reconPnlTotal = 0;
+    let reconClosedCount = 0;
     const restoredPositions = riskEngine.getOpenPositions();
     for (const pos of restoredPositions) {
       if (pos.stopLoss === null) continue;
@@ -107,6 +133,8 @@ async function initAgent(): Promise<void> {
         // Close at stop-loss price, not the (potentially worse) current price
         const closePrice = pos.stopLoss;
         const pnl = riskEngine.closePositionById(pos.id, closePrice);
+        reconPnlTotal += pnl;
+        reconClosedCount++;
         log.warn('Restart reconciliation: stop-loss was breached while offline', {
           positionId: pos.id, side: pos.side, entry: pos.entryPrice,
           stopLoss: pos.stopLoss, currentPrice: startupPrice,
@@ -114,6 +142,17 @@ async function initAgent(): Promise<void> {
         });
       }
     }
+
+    // Post-reconciliation diagnostics
+    const postReconCapital = riskEngine.getCapital();
+    log.info('Reconnect diagnostics — post-reconciliation snapshot', {
+      positionsClosed: reconClosedCount,
+      totalReconPnl: Math.round(reconPnlTotal * 100) / 100,
+      capitalBefore: preReconCapital,
+      capitalAfter: postReconCapital,
+      capitalDelta: Math.round((postReconCapital - preReconCapital) * 100) / 100,
+      remainingPositions: riskEngine.getOpenPositions().length,
+    });
 
     // Reset circuit breaker daily state AFTER reconciliation so offline
     // stop-loss losses don't immediately trip the daily loss limit and
@@ -194,6 +233,7 @@ async function runCycle(): Promise<void> {
 
   // Step 1: Update market data (live or simulated)
   const lastPrice = marketData.prices[marketData.prices.length - 1];
+  let livePriceAvailable = true;  // Track whether this cycle has a real price
 
   if (DATA_SOURCE === 'live') {
     const liveFetch = await fetchLivePrice();
@@ -204,11 +244,14 @@ async function runCycle(): Promise<void> {
         log.info(`Live price: $${liveFetch.price.toFixed(2)} [${liveFetch.source}]`);
       }
     } else {
-      // Live fetch failed — use last known price with tiny noise to avoid stale data
+      // Live fetch failed — use last known price with tiny noise to avoid stale data.
+      // Mark this cycle as noise-injected so we skip stop-loss checks: false
+      // noise should never trigger a real stop.
+      livePriceAvailable = false;
       const noise = lastPrice * 0.0005 * (Math.random() * 2 - 1);
       const fallbackPrice = lastPrice + noise;
       marketData = appendCandle(marketData, buildLiveCandle(fallbackPrice, lastPrice));
-      log.warn('Live feed unavailable — using last known price with noise');
+      log.warn('Live feed unavailable — using last known price with noise (stops skipped)');
     }
   } else {
     // Original simulation path
@@ -502,8 +545,12 @@ async function runCycle(): Promise<void> {
   }
 
   // Step 9: Update trailing stops and check stop-losses
+  // Skip stop-loss checks when price is noise-injected from a feed failure
+  // — synthetic noise should never trigger real position closures.
   const currentPrice = strategyOutput.currentPrice;
-  const closedPositions = riskEngine.updateStops(currentPrice);
+  const closedPositions = livePriceAvailable
+    ? riskEngine.updateStops(currentPrice)
+    : [];
 
   // Persist immediately after stop-loss closes so state survives crashes.
   // Without this, a crash between stop-close and the next persist (up to
