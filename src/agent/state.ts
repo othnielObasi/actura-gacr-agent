@@ -23,6 +23,8 @@ export interface PersistedState {
     trailingStopDistance?: number | null;
     highWaterMark?: number;
     openedAt: string;
+    ipfsCid?: string | null;
+    txHash?: string | null;
   }>;
   peakCapital: number;
   totalTrades: number;

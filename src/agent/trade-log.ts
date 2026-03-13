@@ -26,6 +26,8 @@ export interface ClosedTrade {
   openedAt: string;
   closedAt: string;
   durationMs: number;
+  ipfsCid?: string | null;
+  txHash?: string | null;
 }
 
 /**

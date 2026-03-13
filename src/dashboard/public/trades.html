@@ -106,6 +106,8 @@
               <th>Duration</th>
               <th>Opened</th>
               <th>Closed</th>
+              <th>Receipt</th>
+              <th>Tx</th>
             </tr>
           </thead>
           <tbody id="trades-body">
@@ -120,6 +122,16 @@
     function fmt(n, d) { return Number(n).toFixed(d ?? 2); }
     function pnlClass(n) { return n >= 0 ? 'pnl-up' : 'pnl-dn'; }
     function sideBadge(s) { return '<span class="badge ' + (s === 'LONG' ? 'badge-up' : 'badge-dn') + '">' + s + '</span>'; }
+    function ipfsLink(cid) {
+      if (!cid) return '<span style="color:var(--fg3)">—</span>';
+      var short = cid.length > 12 ? cid.slice(0, 6) + '…' + cid.slice(-4) : cid;
+      return '<a href="https://gateway.pinata.cloud/ipfs/' + encodeURIComponent(cid) + '" target="_blank" rel="noopener" style="color:var(--cyan);text-decoration:none" title="' + cid + '">📄 ' + short + '</a>';
+    }
+    function txLink(hash) {
+      if (!hash) return '<span style="color:var(--fg3)">—</span>';
+      var short = hash.length > 12 ? hash.slice(0, 6) + '…' + hash.slice(-4) : hash;
+      return '<a href="https://sepolia.basescan.org/tx/' + encodeURIComponent(hash) + '" target="_blank" rel="noopener" style="color:var(--info);text-decoration:none" title="' + hash + '">🔗 ' + short + '</a>';
+    }
     function reasonBadge(r) {
       var m = { stop_loss: 'badge-dn', direction_flip: 'badge-warn', reconciliation: 'badge-info', manual: 'badge-info' };
       return '<span class="badge ' + (m[r] || 'badge-info') + '">' + r + '</span>';
@@ -155,7 +167,7 @@
     function renderTrades(trades) {
       var tbody = document.getElementById('trades-body');
       if (!trades || trades.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="12" class="empty">No closed trades yet. Trades will appear here when positions are closed.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="14" class="empty">No closed trades yet. Trades will appear here when positions are closed.</td></tr>';
         return;
       }
       tbody.innerHTML = trades.map(function(t) {
@@ -172,6 +184,8 @@
           '<td style="color:var(--fg2)">' + duration(t.durationMs) + '</td>' +
           '<td style="color:var(--fg2);font-size:9.5px">' + tsShort(t.openedAt) + '</td>' +
           '<td style="color:var(--fg2);font-size:9.5px">' + tsShort(t.closedAt) + '</td>' +
+          '<td style="font-size:9px">' + ipfsLink(t.ipfsCid) + '</td>' +
+          '<td style="font-size:9px">' + txLink(t.txHash) + '</td>' +
           '</tr>';
       }).join('');
     }

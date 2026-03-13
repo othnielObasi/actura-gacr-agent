@@ -143,6 +143,7 @@ async function initAgent(): Promise<void> {
           stopHit: true, reason: 'reconciliation',
           openedAt: pos.openedAt, closedAt: new Date().toISOString(),
           durationMs: Date.now() - new Date(pos.openedAt).getTime(),
+          ipfsCid: pos.ipfsCid, txHash: pos.txHash,
         });
         log.warn('Restart reconciliation: stop-loss was breached while offline', {
           positionId: pos.id, side: pos.side, entry: pos.entryPrice,
@@ -594,6 +595,8 @@ async function runCycle(): Promise<void> {
       entryPrice: strategyOutput.currentPrice,
       stopLoss: riskDecision.stopLossPrice,
       openedAt: new Date().toISOString(),
+      ipfsCid: ipfsResult?.cid ?? null,
+      txHash: checkpoint.onChainTxHash ?? null,
     });
 
     // Persist immediately after opening a position so it survives crashes
@@ -627,6 +630,7 @@ async function runCycle(): Promise<void> {
         stopHit: true, reason: 'stop_loss',
         openedAt: pos.openedAt, closedAt: new Date().toISOString(),
         durationMs: Date.now() - new Date(pos.openedAt).getTime(),
+        ipfsCid: pos.ipfsCid, txHash: pos.txHash,
       });
       recordOutcome({
         direction: pos.side,

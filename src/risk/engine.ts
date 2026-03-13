@@ -49,6 +49,8 @@ export interface Position {
   trailingStopDistance: number | null;
   highWaterMark: number;       // Highest price since open (for trailing)
   openedAt: string;
+  ipfsCid?: string | null;     // IPFS artifact CID from opening checkpoint
+  txHash?: string | null;      // On-chain tx hash from opening checkpoint
 }
 
 // Slippage model
@@ -258,6 +260,8 @@ export class RiskEngine {
     entryPrice: number;
     stopLoss: number | null;
     openedAt: string;
+    ipfsCid?: string | null;
+    txHash?: string | null;
   }): Position {
     const executionPrice = applySlippage(params.entryPrice, params.side);
     const trailingDist = params.stopLoss !== null ? Math.abs(executionPrice - params.stopLoss) : null;
@@ -272,6 +276,8 @@ export class RiskEngine {
       trailingStopDistance: trailingDist,
       highWaterMark: executionPrice,
       openedAt: params.openedAt,
+      ipfsCid: params.ipfsCid ?? null,
+      txHash: params.txHash ?? null,
     };
 
     this.openPositions.push(position);
@@ -301,6 +307,8 @@ export class RiskEngine {
     openedAt: string;
     trailingStopDistance?: number | null;
     highWaterMark?: number;
+    ipfsCid?: string | null;
+    txHash?: string | null;
   }): Position {
     const trailingDist = pos.trailingStopDistance
       ?? (pos.stopLoss !== null ? Math.abs(pos.entryPrice - pos.stopLoss) : null);
@@ -315,6 +323,8 @@ export class RiskEngine {
       trailingStopDistance: trailingDist,
       highWaterMark: pos.highWaterMark ?? pos.entryPrice,
       openedAt: pos.openedAt,
+      ipfsCid: pos.ipfsCid ?? null,
+      txHash: pos.txHash ?? null,
     };
 
     this.openPositions.push(position);
