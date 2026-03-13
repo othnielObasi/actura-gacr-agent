@@ -22,7 +22,7 @@ const DASHBOARD_PORT = parseInt(process.env.PORT || '3000', 10);
 // Simple in-memory rate limiter
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_WINDOW_MS = 60_000;
-const RATE_MAX_REQUESTS = 120;
+const RATE_MAX_REQUESTS = 600;
 
 function rateLimit(req: Request, res: Response, next: NextFunction): void {
   const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
