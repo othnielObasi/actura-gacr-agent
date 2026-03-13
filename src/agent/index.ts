@@ -458,7 +458,8 @@ async function runCycle(): Promise<void> {
     riskDecision,
     // Paper trading has no real gas cost — don't let fictional gas
     // eat into net edge and block trades that would be profitable.
-    gasUsd: MODE === 'live' ? 0.35 : 0,
+    // Only charge gas when Risk Router is configured for real on-chain execution.
+    gasUsd: config.riskRouterAddress ? 0.35 : 0,
   });
   if (shouldExecute && !executionSimulation.allowed) {
     shouldExecute = false;
