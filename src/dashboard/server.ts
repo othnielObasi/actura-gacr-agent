@@ -10,6 +10,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import type { Server } from 'http';
 import { getAgentState, getHealthCheck, getLogs, getErrors } from '../agent/index.js';
+import { getRecentTrades, getTradeStats } from '../agent/trade-log.js';
 import { getCheckpoints, getTradeCheckpoints } from '../trust/checkpoint.js';
 import { config } from '../agent/config.js';
 import { getReputationTimeline } from '../trust/trust-policy-scorecard.js';
@@ -76,6 +77,11 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
   // Default route → final production dashboard
   app.get('/', (_req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  // Trade history page — separate tab
+  app.get('/trades', (_req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'trades.html'));
   });
 
   // Serve the final dashboard JSX
@@ -235,6 +241,17 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
   app.post('/api/operator/emergency-stop', (req, res) => {
     const receipt = emergencyStop(req.body?.reason || 'emergency stop from dashboard', req.body?.actor || 'dashboard');
     res.json({ ok: true, receipt, state: getOperatorControlState() });
+  });
+
+  /** Closed trade history (persistent — survives restarts) */
+  app.get('/api/trades', (req, res) => {
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
+    res.json({ trades: getRecentTrades(limit) });
+  });
+
+  /** Trade statistics */
+  app.get('/api/trades/stats', (_req, res) => {
+    res.json(getTradeStats());
   });
 
   /** Health check — for monitoring / uptime checks */

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Actura — Trade History</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { background: #080b11; color: #c9d1dc; font-family: 'JetBrains Mono','SF Mono','Cascadia Code',monospace; font-size: 12px; line-height: 1.4; }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-thumb { background: #1c2536; border-radius: 2px; }
+
+    /* Tokens */
+    :root {
+      --bg: #080b11; --s1: #0c1018; --s2: #111621; --s3: #161c29;
+      --brd: #1c2536; --fg: #c9d1dc; --fg2: #7c8a9e; --fg3: #4b5668; --w: #edf2f7;
+      --up: #34d399; --dn: #f87171; --warn: #fbbf24; --info: #60a5fa; --cyan: #22d3ee;
+    }
+
+    /* Header */
+    header { display: flex; align-items: center; height: 40px; padding: 0 16px; border-bottom: 1px solid var(--brd); background: var(--s2); gap: 16px; }
+    header .logo { width: 22px; height: 22px; border-radius: 4px; background: linear-gradient(135deg, var(--up), var(--cyan)); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; color: var(--bg); }
+    header .brand { font-size: 13px; font-weight: 800; color: var(--w); letter-spacing: 1px; }
+    header .sub { font-size: 8px; color: var(--fg3); letter-spacing: 1.5px; }
+    header nav { margin-left: auto; display: flex; gap: 12px; }
+    header nav a { color: var(--fg2); text-decoration: none; font-size: 10px; font-weight: 600; padding: 4px 10px; border-radius: 4px; transition: all .15s; }
+    header nav a:hover { color: var(--fg); background: #ffffff08; }
+    header nav a.active { color: var(--cyan); background: #22d3ee10; }
+
+    .container { padding: 12px 16px 40px; max-width: 1400px; margin: 0 auto; }
+
+    /* Stats bar */
+    .stats-bar { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 14px; }
+    .stat-card { background: var(--s1); border: 1px solid var(--brd); border-radius: 6px; padding: 10px 14px; }
+    .stat-label { font-size: 8px; color: var(--fg3); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+    .stat-value { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .stat-sub { font-size: 9px; color: var(--fg2); margin-top: 2px; }
+
+    /* Table */
+    .panel { background: var(--s1); border: 1px solid var(--brd); border-radius: 6px; overflow: hidden; }
+    .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 7px 12px; border-bottom: 1px solid var(--brd); background: var(--s2); }
+    .panel-title { font-size: 10.5px; font-weight: 700; letter-spacing: 0.3px; }
+    .panel-tag { font-size: 8.5px; color: var(--fg3); font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; padding: 6px 10px; font-size: 8px; letter-spacing: 1.2px; color: var(--fg3); font-weight: 600; border-bottom: 1px solid var(--brd); background: var(--s2); }
+    td { padding: 6px 10px; font-size: 10.5px; border-bottom: 1px solid #1c253620; }
+    tr:hover { background: #60a5fa08; }
+    .badge { font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 2px; white-space: nowrap; }
+    .badge-up { color: var(--up); background: #34d39914; }
+    .badge-dn { color: var(--dn); background: #f8717114; }
+    .badge-warn { color: var(--warn); background: #fbbf2414; }
+    .badge-info { color: var(--info); background: #60a5fa14; }
+    .pnl-up { color: var(--up); font-weight: 700; }
+    .pnl-dn { color: var(--dn); font-weight: 700; }
+    .empty { padding: 40px 20px; text-align: center; color: var(--fg3); }
+    .loading { padding: 40px 20px; text-align: center; color: var(--fg3); }
+
+    /* Refresh indicator */
+    .refresh { display: flex; align-items: center; gap: 6px; font-size: 9px; color: var(--fg3); }
+    .refresh .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--up); box-shadow: 0 0 6px #34d39940; }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="logo">A</div>
+      <span class="brand">ACTURA</span>
+      <span class="sub">Trade History · Audit Log</span>
+    </div>
+    <nav>
+      <a href="/">Dashboard</a>
+      <a href="/trades" class="active">Trade History</a>
+    </nav>
+  </header>
+
+  <div class="container">
+    <!-- Stats -->
+    <div class="stats-bar" id="stats">
+      <div class="stat-card"><div class="stat-label">Total Trades</div><div class="stat-value" id="s-total">—</div></div>
+      <div class="stat-card"><div class="stat-label">Total PnL</div><div class="stat-value" id="s-pnl">—</div><div class="stat-sub" id="s-pnl-sub"></div></div>
+      <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value" id="s-winrate">—</div><div class="stat-sub" id="s-winrate-sub"></div></div>
+      <div class="stat-card"><div class="stat-label">Best Trade</div><div class="stat-value" id="s-best">—</div></div>
+      <div class="stat-card"><div class="stat-label">Worst Trade</div><div class="stat-value" id="s-worst">—</div></div>
+    </div>
+
+    <!-- Table -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Closed Trades</span>
+        <div class="refresh"><div class="dot"></div><span id="refresh-time">—</span></div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Asset</th>
+              <th>Side</th>
+              <th>Size</th>
+              <th>Entry</th>
+              <th>Exit</th>
+              <th>PnL ($)</th>
+              <th>PnL (%)</th>
+              <th>Reason</th>
+              <th>Duration</th>
+              <th>Opened</th>
+              <th>Closed</th>
+            </tr>
+          </thead>
+          <tbody id="trades-body">
+            <tr><td colspan="12" class="loading">Loading trade history…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function fmt(n, d) { return Number(n).toFixed(d ?? 2); }
+    function pnlClass(n) { return n >= 0 ? 'pnl-up' : 'pnl-dn'; }
+    function sideBadge(s) { return '<span class="badge ' + (s === 'LONG' ? 'badge-up' : 'badge-dn') + '">' + s + '</span>'; }
+    function reasonBadge(r) {
+      var m = { stop_loss: 'badge-dn', direction_flip: 'badge-warn', reconciliation: 'badge-info', manual: 'badge-info' };
+      return '<span class="badge ' + (m[r] || 'badge-info') + '">' + r + '</span>';
+    }
+    function duration(ms) {
+      if (ms < 60000) return Math.round(ms / 1000) + 's';
+      if (ms < 3600000) return Math.round(ms / 60000) + 'm';
+      return fmt(ms / 3600000, 1) + 'h';
+    }
+    function tsShort(iso) {
+      if (!iso) return '—';
+      var d = new Date(iso);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    }
+
+    function renderStats(s) {
+      document.getElementById('s-total').textContent = s.totalTrades;
+      var pnlEl = document.getElementById('s-pnl');
+      pnlEl.textContent = (s.totalPnl >= 0 ? '+' : '') + '$' + fmt(s.totalPnl);
+      pnlEl.style.color = s.totalPnl >= 0 ? 'var(--up)' : 'var(--dn)';
+      document.getElementById('s-pnl-sub').textContent = s.wins + 'W / ' + s.losses + 'L';
+      document.getElementById('s-winrate').textContent = s.winRate + '%';
+      document.getElementById('s-winrate').style.color = s.winRate >= 50 ? 'var(--up)' : 'var(--warn)';
+      document.getElementById('s-winrate-sub').textContent = 'avg win $' + fmt(s.avgWin) + ' / avg loss $' + fmt(s.avgLoss);
+      var bestEl = document.getElementById('s-best');
+      bestEl.textContent = '+$' + fmt(s.bestTrade);
+      bestEl.style.color = 'var(--up)';
+      var worstEl = document.getElementById('s-worst');
+      worstEl.textContent = '$' + fmt(s.worstTrade);
+      worstEl.style.color = 'var(--dn)';
+    }
+
+    function renderTrades(trades) {
+      var tbody = document.getElementById('trades-body');
+      if (!trades || trades.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="12" class="empty">No closed trades yet. Trades will appear here when positions are closed.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = trades.map(function(t) {
+        return '<tr>' +
+          '<td style="color:var(--fg3)">' + t.id + '</td>' +
+          '<td>' + (t.asset || 'WETH/USDC') + '</td>' +
+          '<td>' + sideBadge(t.side) + '</td>' +
+          '<td>' + fmt(t.size, 4) + '</td>' +
+          '<td>$' + fmt(t.entryPrice) + '</td>' +
+          '<td>$' + fmt(t.exitPrice) + '</td>' +
+          '<td class="' + pnlClass(t.pnl) + '">' + (t.pnl >= 0 ? '+' : '') + '$' + fmt(t.pnl) + '</td>' +
+          '<td class="' + pnlClass(t.pnlPct) + '">' + (t.pnlPct >= 0 ? '+' : '') + fmt(t.pnlPct) + '%</td>' +
+          '<td>' + reasonBadge(t.reason) + '</td>' +
+          '<td style="color:var(--fg2)">' + duration(t.durationMs) + '</td>' +
+          '<td style="color:var(--fg2);font-size:9.5px">' + tsShort(t.openedAt) + '</td>' +
+          '<td style="color:var(--fg2);font-size:9.5px">' + tsShort(t.closedAt) + '</td>' +
+          '</tr>';
+      }).join('');
+    }
+
+    async function fetchAll() {
+      try {
+        var r1 = fetch('/api/trades?limit=200').then(function(r) { return r.json(); });
+        var r2 = fetch('/api/trades/stats').then(function(r) { return r.json(); });
+        var results = await Promise.all([r1, r2]);
+        renderTrades(results[0].trades);
+        renderStats(results[1]);
+        document.getElementById('refresh-time').textContent = 'Updated ' + new Date().toLocaleTimeString();
+      } catch (e) {
+        console.warn('Fetch error:', e);
+      }
+    }
+
+    fetchAll();
+    setInterval(fetchAll, 10000);
+  </script>
+</body>
+</html>

@@ -360,6 +360,10 @@ function Actura() {
           <span style={{ fontSize: 13, fontWeight: 800, color: T.w, letterSpacing: 1 }}>ACTURA</span>
           <span style={{ fontSize: 8, color: T.fg3, letterSpacing: 1.5 }}>ERC-8004 · GACR · Base Sepolia</span>
         </div>
+        <div style={{ display: "flex", gap: 10, marginLeft: 16 }}>
+          <a href="/" style={{ color: T.cyan, fontSize: 10, fontWeight: 600, textDecoration: "none", padding: "4px 10px", borderRadius: 4, background: `${T.cyan}10` }}>Dashboard</a>
+          <a href="/trades" style={{ color: T.fg2, fontSize: 10, fontWeight: 600, textDecoration: "none", padding: "4px 10px", borderRadius: 4 }}>Trade History</a>
+        </div>
         <div style={{ flex: 1 }} />
         <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 10 }}>
           <span style={{ color: T.fg2 }}>Trust</span><span style={{ color: truC(trustScore), fontWeight: 700 }}>{fn(trustScore, 0)}</span>

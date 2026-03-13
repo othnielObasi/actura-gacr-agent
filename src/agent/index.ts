@@ -39,6 +39,7 @@ import { simulateExecution } from '../chain/execution-simulator.js';
 import { generateSimulatedData, appendCandle } from '../data/price-feed.js';
 import { fetchLivePrice, fetchOHLCHistory, buildLiveCandle, getLiveFeedStatus } from '../data/live-price-feed.js';
 import { getOperatorControlState, getLatestOperatorAction } from './operator-control.js';
+import { recordClosedTrade, getRecentTrades, getTradeStats, loadClosedTrades } from './trade-log.js';
 
 const log = createLogger('AGENT');
 
@@ -135,6 +136,14 @@ async function initAgent(): Promise<void> {
         const pnl = riskEngine.closePositionById(pos.id, closePrice);
         reconPnlTotal += pnl;
         reconClosedCount++;
+        const pnlPct = pos.entryPrice > 0 ? (pnl / (pos.entryPrice * pos.size)) * 100 : 0;
+        recordClosedTrade({
+          id: pos.id, asset: pos.asset, side: pos.side, size: pos.size,
+          entryPrice: pos.entryPrice, exitPrice: closePrice, pnl, pnlPct,
+          stopHit: true, reason: 'reconciliation',
+          openedAt: pos.openedAt, closedAt: new Date().toISOString(),
+          durationMs: Date.now() - new Date(pos.openedAt).getTime(),
+        });
         log.warn('Restart reconciliation: stop-loss was breached while offline', {
           positionId: pos.id, side: pos.side, entry: pos.entryPrice,
           stopLoss: pos.stopLoss, currentPrice: startupPrice,
@@ -572,6 +581,13 @@ async function runCycle(): Promise<void> {
     const pos = positions.find(p => p.id === closed.id);
     if (pos) {
       const pnlPct = pos.entryPrice > 0 ? closed.pnl / (pos.entryPrice * pos.size) * 100 : 0;
+      recordClosedTrade({
+        id: pos.id, asset: pos.asset, side: pos.side, size: pos.size,
+        entryPrice: pos.entryPrice, exitPrice: currentPrice, pnl: closed.pnl, pnlPct,
+        stopHit: true, reason: 'stop_loss',
+        openedAt: pos.openedAt, closedAt: new Date().toISOString(),
+        durationMs: Date.now() - new Date(pos.openedAt).getTime(),
+      });
       recordOutcome({
         direction: pos.side,
         confidence: strategyOutput.signal.confidence,
@@ -631,11 +647,12 @@ async function runCycle(): Promise<void> {
 
 function persistState(): void {
   const status = riskEngine.getStatus();
+  const stats = getTradeStats();
   const state: PersistedState = {
     capital: status.capital,
     openPositions: status.openPositions,
     peakCapital: status.circuitBreaker.peakCapital,
-    totalTrades: status.totalTrades,
+    totalTrades: stats.totalTrades,
     totalPnl: status.capital - INITIAL_CAPITAL,
     agentId,
     lastCycle: cycleCount,

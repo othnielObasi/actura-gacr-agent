@@ -176,6 +176,19 @@ const artifactsResource: McpResource = {
   },
 };
 
+const tradeHistoryResource: McpResource = {
+  uri: 'actura://state/trade-history',
+  name: 'Trade History',
+  description: 'Persistent closed trade log with per-trade PnL and aggregate stats',
+  visibility: 'public',
+  mimeType: 'application/json',
+  handler: (params) => {
+    const { getRecentTrades, getTradeStats } = require('../agent/trade-log.js') as typeof import('../agent/trade-log.js');
+    const limit = typeof params?.limit === 'number' ? params.limit : 20;
+    return { stats: getTradeStats(), trades: getRecentTrades(limit) };
+  },
+};
+
 export const ALL_RESOURCES: McpResource[] = [
   trustResource,
   marketResource,
@@ -185,4 +198,5 @@ export const ALL_RESOURCES: McpResource[] = [
   performanceResource,
   erc8004Resource,
   artifactsResource,
+  tradeHistoryResource,
 ];

@@ -14,6 +14,7 @@ import { getDefaultMandate } from '../chain/agent-mandate.js';
 import { computeRiskAdjustedMetrics, type EquityPoint, type TradeOutcome } from '../analytics/performance-metrics.js';
 import { getAdaptiveParams, getAdaptationSummary, getContextStats } from '../strategy/adaptive-learning.js';
 import { emergencyStop, getLatestOperatorAction, getOperatorActionReceipts, getOperatorControlState, pauseTrading, resumeTrading } from '../agent/operator-control.js';
+import { getRecentTrades, getTradeStats } from '../agent/trade-log.js';
 import { config } from '../agent/config.js';
 import { buildTradeIntent, hashTradeIntent, signTradeIntent } from '../chain/intent.js';
 import { initChain } from '../chain/sdk.js';
@@ -450,6 +451,26 @@ const emergencyStopAgent: McpTool = {
   handler: (args) => emergencyStop(String(args.reason || 'mcp emergency stop'), String(args.actor || 'mcp-operator')),
 };
 
+const getTradeHistory: McpTool = {
+  name: 'get_trade_history',
+  description: 'Return closed trade history and aggregate statistics from the persistent trade log.',
+  category: 'performance',
+  visibility: 'public',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      limit: { type: 'number', description: 'Max trades to return (default 50)' },
+    },
+  },
+  handler: (args) => {
+    const limit = typeof args.limit === 'number' ? Math.min(args.limit, 500) : 50;
+    return {
+      stats: getTradeStats(),
+      trades: getRecentTrades(limit),
+    };
+  },
+};
+
 export const ALL_TOOLS: McpTool[] = [
   getMarketState,
   getTrustState,
@@ -457,6 +478,7 @@ export const ALL_TOOLS: McpTool[] = [
   getMandateState,
   getPositions,
   getPerformanceMetrics,
+  getTradeHistory,
   explainTrade,
   getValidationStatusTool,
   getReputationSummaryTool,
