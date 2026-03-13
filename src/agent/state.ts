@@ -20,6 +20,8 @@ export interface PersistedState {
     size: number;
     entryPrice: number;
     stopLoss: number | null;
+    trailingStopDistance?: number | null;
+    highWaterMark?: number;
     openedAt: string;
   }>;
   peakCapital: number;

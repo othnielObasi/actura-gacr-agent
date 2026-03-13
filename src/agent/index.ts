@@ -86,9 +86,9 @@ async function initAgent(): Promise<void> {
     riskEngine = new RiskEngine(savedState.capital);
     cycleCount = savedState.lastCycle;
 
-    // Restore positions
+    // Restore positions (without re-applying slippage)
     for (const pos of savedState.openPositions) {
-      riskEngine.openPosition(pos);
+      riskEngine.restorePosition(pos);
     }
 
     // Generate initial market data BEFORE stop-loss reconciliation
@@ -133,7 +133,7 @@ async function initAgent(): Promise<void> {
       if (breached) {
         // Close at stop-loss price, not the (potentially worse) current price
         const closePrice = pos.stopLoss;
-        const pnl = riskEngine.closePositionById(pos.id, closePrice);
+        const pnl = riskEngine.closePositionById(pos.id, closePrice, /* skipSlippage */ true);
         reconPnlTotal += pnl;
         reconClosedCount++;
         const pnlPct = pos.entryPrice > 0 ? (pnl / (pos.entryPrice * pos.size)) * 100 : 0;
@@ -817,6 +817,16 @@ function gracefulShutdown(signal: string): void {
 
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
+// Prevent ancillary server errors (EADDRINUSE on dashboard/MCP) from
+// crashing the trading loop.  Log and continue.
+process.on('uncaughtException', (err) => {
+  log.error('Uncaught exception (non-fatal)', { message: err.message, stack: err.stack });
+  // Only re-throw if this is something truly fatal (OOM, etc.)
+  if (err.message.includes('out of memory') || err.message.includes('ENOMEM')) {
+    process.exit(1);
+  }
+});
 
 // Start servers
 startDashboard(3000);

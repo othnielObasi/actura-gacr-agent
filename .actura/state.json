@@ -1,10 +1,66 @@
 {
   "capital": 9991.032042471272,
-  "openPositions": [],
-  "peakCapital": 9991.032042471272,
+  "openPositions": [
+    {
+      "id": 1,
+      "asset": "WETH/USDC",
+      "side": "LONG",
+      "size": 0.06584528,
+      "entryPrice": 2126.413871534638,
+      "stopLoss": 2091.1933703300315,
+      "trailingStopDistance": 35.220501204606535,
+      "highWaterMark": 2126.413871534638,
+      "openedAt": "2026-03-13T11:20:06.052Z"
+    },
+    {
+      "id": 2,
+      "asset": "WETH/USDC",
+      "side": "LONG",
+      "size": 0.09406469,
+      "entryPrice": 2126.413871534638,
+      "stopLoss": 2093.3954398618494,
+      "trailingStopDistance": 33.018431672788665,
+      "highWaterMark": 2126.413871534638,
+      "openedAt": "2026-03-13T11:20:13.785Z"
+    },
+    {
+      "id": 3,
+      "asset": "WETH/USDC",
+      "side": "LONG",
+      "size": 0.08465822,
+      "entryPrice": 2126.413871534638,
+      "stopLoss": 2095.3411546004263,
+      "trailingStopDistance": 31.072716934211712,
+      "highWaterMark": 2126.413871534638,
+      "openedAt": "2026-03-13T11:20:19.577Z"
+    },
+    {
+      "id": 4,
+      "asset": "WETH/USDC",
+      "side": "LONG",
+      "size": 0.09406469,
+      "entryPrice": 2126.413871534638,
+      "stopLoss": 2096.9658339607536,
+      "trailingStopDistance": 29.44803757388445,
+      "highWaterMark": 2126.413871534638,
+      "openedAt": "2026-03-13T11:20:28.144Z"
+    },
+    {
+      "id": 5,
+      "asset": "WETH/USDC",
+      "side": "LONG",
+      "size": 0.06578559,
+      "entryPrice": 2128.3434300772356,
+      "stopLoss": 2101.791750242434,
+      "trailingStopDistance": 26.55167983480169,
+      "highWaterMark": 2128.3434300772356,
+      "openedAt": "2026-03-13T11:20:41.742Z"
+    }
+  ],
+  "peakCapital": 9991.235162749392,
   "totalTrades": 0,
   "totalPnl": -8.96795752872822,
   "agentId": null,
-  "lastCycle": 290,
-  "lastSavedAt": "2026-03-12T12:13:22.461Z"
+  "lastCycle": 340,
+  "lastSavedAt": "2026-03-13T11:24:35.741Z"
 }

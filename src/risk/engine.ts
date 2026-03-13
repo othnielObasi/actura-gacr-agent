@@ -286,14 +286,55 @@ export class RiskEngine {
     return position;
   }
 
+  /**
+   * Restore a position from persisted state WITHOUT applying slippage.
+   * The entry price was already slippage-adjusted when the position was
+   * originally opened, so re-applying slippage on restart would inflate
+   * the entry and guarantee phantom losses.
+   */
+  restorePosition(pos: {
+    asset: string;
+    side: 'LONG' | 'SHORT';
+    size: number;
+    entryPrice: number;
+    stopLoss: number | null;
+    openedAt: string;
+    trailingStopDistance?: number | null;
+    highWaterMark?: number;
+  }): Position {
+    const trailingDist = pos.trailingStopDistance
+      ?? (pos.stopLoss !== null ? Math.abs(pos.entryPrice - pos.stopLoss) : null);
+
+    const position: Position = {
+      id: nextPositionId++,
+      asset: pos.asset,
+      side: pos.side,
+      size: pos.size,
+      entryPrice: pos.entryPrice,
+      stopLoss: pos.stopLoss,
+      trailingStopDistance: trailingDist,
+      highWaterMark: pos.highWaterMark ?? pos.entryPrice,
+      openedAt: pos.openedAt,
+    };
+
+    this.openPositions.push(position);
+
+    log.debug(`Position restored (no slippage)`, {
+      id: position.id, side: pos.side, size: pos.size,
+      entryPrice: pos.entryPrice,
+    });
+
+    return position;
+  }
+
   /** Close a specific position by ID */
-  closePositionById(positionId: number, exitPrice: number): number {
+  closePositionById(positionId: number, exitPrice: number, skipSlippage = false): number {
     const idx = this.openPositions.findIndex(p => p.id === positionId);
     if (idx === -1) {
       log.warn(`Position ${positionId} not found for close`);
       return 0;
     }
-    return this.closeAtIndex(idx, exitPrice);
+    return this.closeAtIndex(idx, exitPrice, skipSlippage);
   }
 
   /** Close first matching position by asset (backward compat) */
