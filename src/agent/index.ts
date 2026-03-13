@@ -20,7 +20,7 @@ import { createLogger, getRecentLogs, getErrorLogs } from './logger.js';
 import { validateConfig } from './validator.js';
 import { Scheduler } from './scheduler.js';
 import { retry } from './retry.js';
-import { saveState, loadState, type PersistedState } from './state.js';
+import { saveState, loadState, savePriceHistory, loadPriceHistory, type PersistedState } from './state.js';
 import { runStrategy, resetStrategy, type MarketData } from '../strategy/momentum.js';
 import { RiskEngine } from '../risk/engine.js';
 import { buildTradeArtifact, enrichArtifact, attachGovernanceEvidence } from '../trust/artifact-emitter.js';
@@ -168,6 +168,12 @@ async function initAgent(): Promise<void> {
     // lock out trading on the new session.
     riskEngine.resetDaily();
     log.info('Post-reconciliation: circuit breaker daily state reset to allow recovery');
+
+    // Persist state immediately after reconciliation so totalTrades and
+    // capital reflect closed positions right away (not 10 cycles later).
+    if (reconClosedCount > 0) {
+      persistState();
+    }
   } else {
     riskEngine = new RiskEngine(INITIAL_CAPITAL);
     cycleCount = 0;
@@ -199,13 +205,47 @@ async function initAgent(): Promise<void> {
  * Load initial market data — tries live OHLC history first, falls back to simulation.
  */
 async function loadInitialMarketData(): Promise<MarketData> {
+  // Try to restore persisted price history first — avoids SMA50 cold-start.
+  const cached = loadPriceHistory();
+
   if (DATA_SOURCE === 'live') {
     log.info('Fetching live OHLC history from CoinGecko...');
     const liveData = await fetchOHLCHistory();
     if (liveData) {
+      // Merge: prepend any cached candles that predate the OHLC response
+      // so we have more data points for SMA50.
+      if (cached && cached.prices.length > 0) {
+        const oldestLiveTs = liveData.timestamps[0];
+        const olderPrices: number[] = [];
+        const olderHighs: number[] = [];
+        const olderLows: number[] = [];
+        const olderTimestamps: string[] = [];
+        for (let i = 0; i < cached.timestamps.length; i++) {
+          if (cached.timestamps[i] < oldestLiveTs) {
+            olderPrices.push(cached.prices[i]);
+            olderHighs.push(cached.highs[i]);
+            olderLows.push(cached.lows[i]);
+            olderTimestamps.push(cached.timestamps[i]);
+          }
+        }
+        if (olderPrices.length > 0) {
+          liveData.prices = [...olderPrices, ...liveData.prices];
+          liveData.highs = [...olderHighs, ...liveData.highs];
+          liveData.lows = [...olderLows, ...liveData.lows];
+          liveData.timestamps = [...olderTimestamps, ...liveData.timestamps];
+          log.info(`Merged ${olderPrices.length} cached candles with ${liveData.prices.length - olderPrices.length} live candles → ${liveData.prices.length} total`);
+        }
+      }
       log.info(`Loaded ${liveData.prices.length} live candles — latest $${liveData.prices[liveData.prices.length - 1].toFixed(2)}`);
       return liveData;
     }
+
+    // CoinGecko failed — try cached price history.
+    if (cached && cached.prices.length >= 20) {
+      log.warn(`Live OHLC fetch failed — using ${cached.prices.length} cached candles from disk`);
+      return cached;
+    }
+
     log.warn('Live OHLC fetch failed — falling back to simulated seed data around current price');
     // Try to at least get the current price for a better seed
     const livePrice = await fetchLivePrice();
@@ -659,6 +699,10 @@ function persistState(): void {
     lastSavedAt: new Date().toISOString(),
   };
   saveState(state);
+  // Persist price history alongside state so SMA50 survives restarts
+  if (marketData) {
+    savePriceHistory(marketData);
+  }
 }
 
 // ──── Public Accessors (for Dashboard/MCP) ────
