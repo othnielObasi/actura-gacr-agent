@@ -49,7 +49,7 @@ export function simulateExecution(input: ExecutionSimulationInput): ExecutionSim
     : Math.max(vol * 1.2, 0.01);
 
   const confidence = strategyOutput.signal.confidence;
-  const expectedGrossEdgePct = Math.max(0, confidence * Math.max(stopDistPct * 0.75, vol * 0.6));
+  const expectedGrossEdgePct = Math.max(0, confidence * Math.max(stopDistPct * 0.85, vol * 0.8));
   const explicitCostPct = price > 0 && sizeUnits > 0 ? (gasUsd / Math.max(notionalUsd, 1e-9)) : 0;
   const totalCostPct = priceImpactPct + explicitCostPct;
   const expectedNetEdgePct = expectedGrossEdgePct - totalCostPct;

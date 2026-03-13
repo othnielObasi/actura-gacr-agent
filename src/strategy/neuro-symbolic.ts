@@ -230,13 +230,13 @@ const meanReversionRule: SymbolicRule = (signal, confidence, ctx) => {
   const distFromSma = Math.abs(ctx.currentPrice - ctx.smaSlow);
   const atrMultiple = distFromSma / ctx.atr;
 
-  if (atrMultiple > 2.0) {
+  if (atrMultiple > 2.5) {
     const overextendedDir = ctx.currentPrice > ctx.smaSlow ? 'LONG' : 'SHORT';
     if (signal === overextendedDir) {
       result.fired = true;
       result.action = 'reduce_confidence';
       result.reason = `Price ${atrMultiple.toFixed(1)}x ATR from SMA50 — trend overextended, reducing ${signal} confidence`;
-      result.confidenceAdjustment = -0.2;
+      result.confidenceAdjustment = -0.10;
     }
   }
 

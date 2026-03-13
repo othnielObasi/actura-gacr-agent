@@ -453,7 +453,13 @@ async function runCycle(): Promise<void> {
   let shouldExecute = riskDecision.approved && !positionLimitHit;
 
   // Step 4b: Execution simulation — required pre-trade safety stage
-  const executionSimulation = simulateExecution({ strategyOutput, riskDecision });
+  const executionSimulation = simulateExecution({
+    strategyOutput,
+    riskDecision,
+    // Paper trading has no real gas cost — don't let fictional gas
+    // eat into net edge and block trades that would be profitable.
+    gasUsd: MODE === 'live' ? 0.35 : 0,
+  });
   if (shouldExecute && !executionSimulation.allowed) {
     shouldExecute = false;
     strategyOutput.signal.reason = `[SIMULATION BLOCK] ${executionSimulation.reason} | ${strategyOutput.signal.reason}`;
