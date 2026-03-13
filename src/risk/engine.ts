@@ -61,6 +61,11 @@ const SLIPPAGE_BPS = 10;  // 0.1% average slippage
 // break-even trailing-stop exits don't silently become losses after fees.
 const MIN_PROFIT_FOR_TRAIL_PCT = (SLIPPAGE_BPS * 2) / 10000; // 2× one-way slippage = 0.20%
 
+// Take-profit: close position when unrealized PnL reaches this percentage.
+// Prevents the "runs up 5%, comes back to stop-loss" pattern.
+// Configurable via TAKE_PROFIT_PCT env var (default 3% for 4h candles).
+const TAKE_PROFIT_PCT = parseFloat(process.env.TAKE_PROFIT_PCT || '3') / 100;
+
 function applySlippage(price: number, side: 'LONG' | 'SHORT'): number {
   const slip = price * (SLIPPAGE_BPS / 10000);
   return side === 'LONG' ? price + slip : price - slip;
@@ -382,11 +387,11 @@ export class RiskEngine {
   }
 
   /**
-   * Update trailing stops and check all stop-losses
-   * Returns array of closed position IDs
+   * Update trailing stops and check all stop-losses / take-profits
+   * Returns array of closed position IDs with reason
    */
-  updateStops(currentPrice: number): Array<{ id: number; pnl: number }> {
-    const closed: Array<{ id: number; pnl: number }> = [];
+  updateStops(currentPrice: number): Array<{ id: number; pnl: number; reason: 'stop_loss' | 'take_profit' }> {
+    const closed: Array<{ id: number; pnl: number; reason: 'stop_loss' | 'take_profit' }> = [];
 
     // Iterate in reverse so splicing doesn't skip elements
     for (let i = this.openPositions.length - 1; i >= 0; i--) {
@@ -412,6 +417,21 @@ export class RiskEngine {
         }
       }
 
+      // Check take-profit before stop-loss
+      const unrealizedPctForTP = pos.side === 'LONG'
+        ? (currentPrice - pos.entryPrice) / pos.entryPrice
+        : (pos.entryPrice - currentPrice) / pos.entryPrice;
+      if (TAKE_PROFIT_PCT > 0 && unrealizedPctForTP >= TAKE_PROFIT_PCT) {
+        const pnl = this.closeAtIndex(i, currentPrice, /* skipSlippage */ false);
+        closed.push({ id: pos.id, pnl, reason: 'take_profit' });
+        log.info(`Take-profit hit: position #${pos.id}`, {
+          side: pos.side, entry: pos.entryPrice, exit: currentPrice,
+          unrealizedPct: (unrealizedPctForTP * 100).toFixed(2) + '%',
+          pnl: Math.round(pnl * 100) / 100,
+        });
+        continue;
+      }
+
       // Check stop-loss
       if (pos.stopLoss !== null) {
         const stopped = (pos.side === 'LONG' && currentPrice <= pos.stopLoss) ||
@@ -427,7 +447,7 @@ export class RiskEngine {
           // Stop-loss closes skip exit slippage: the stop price already
           // represents the intended risk boundary.
           const pnl = this.closeAtIndex(i, closePrice, /* skipSlippage */ true);
-          closed.push({ id: pos.id, pnl });
+          closed.push({ id: pos.id, pnl, reason: 'stop_loss' });
           log.info(`Stop-loss hit: position #${pos.id}`, {
             side: pos.side, entry: pos.entryPrice, exit: closePrice,
             pnl: Math.round(pnl * 100) / 100,

@@ -17,7 +17,7 @@ const log = createLogger('LIVE-FEED');
 // ──── Configuration ────
 
 const COINGECKO_PRICE_URL = 'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd&include_24hr_change=true';
-const COINGECKO_OHLC_URL = 'https://api.coingecko.com/api/v3/coins/ethereum/ohlc?vs_currency=usd&days=7';
+const COINGECKO_OHLC_URL = 'https://api.coingecko.com/api/v3/coins/ethereum/ohlc?vs_currency=usd&days=30';
 const DEFILLAMA_PRICE_URL = 'https://coins.llama.fi/prices/current/coingecko:ethereum';
 
 const FETCH_TIMEOUT_MS = 8000;

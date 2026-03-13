@@ -48,7 +48,7 @@ const DATA_SOURCE = process.env.DATA_SOURCE || 'live'; // 'live' | 'simulated'
 
 // ──── Agent State ────
 const INITIAL_CAPITAL = 10000;
-const MAX_OPEN_POSITIONS = 5;
+const MAX_OPEN_POSITIONS = 2;
 
 let marketData: MarketData;
 let riskEngine: RiskEngine;
@@ -627,7 +627,7 @@ async function runCycle(): Promise<void> {
       recordClosedTrade({
         id: pos.id, asset: pos.asset, side: pos.side, size: pos.size,
         entryPrice: pos.entryPrice, exitPrice: currentPrice, pnl: closed.pnl, pnlPct,
-        stopHit: true, reason: 'stop_loss',
+        stopHit: closed.reason === 'stop_loss', reason: closed.reason,
         openedAt: pos.openedAt, closedAt: new Date().toISOString(),
         durationMs: Date.now() - new Date(pos.openedAt).getTime(),
         ipfsCid: pos.ipfsCid, txHash: pos.txHash,
@@ -644,7 +644,7 @@ async function runCycle(): Promise<void> {
         entryPrice: pos.entryPrice,
         exitPrice: currentPrice,
         pnlPct,
-        stopHit: true,
+        stopHit: closed.reason === 'stop_loss',
         regime: riskDecision.volatility.regime as any,
         confidence: strategyOutput.signal.confidence,
         timestamp: new Date().toISOString(),

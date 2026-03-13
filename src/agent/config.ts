@@ -46,7 +46,7 @@ export const config = {
   maxPositionPct: parseFloat(process.env.MAX_POSITION_PCT || '10') / 100,
   maxDailyLossPct: parseFloat(process.env.MAX_DAILY_LOSS_PCT || '2') / 100,
   maxDrawdownPct: parseFloat(process.env.MAX_DRAWDOWN_PCT || '8') / 100,
-  tradingIntervalMs: parseInt(process.env.TRADING_INTERVAL_MS || '60000'),
+  tradingIntervalMs: parseInt(process.env.TRADING_INTERVAL_MS || '300000'),
   
   // Strategy parameters
   strategy: {
