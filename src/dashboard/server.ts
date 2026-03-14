@@ -15,6 +15,7 @@ import { getCheckpoints, getTradeCheckpoints } from '../trust/checkpoint.js';
 import { config } from '../agent/config.js';
 import { getReputationTimeline } from '../trust/trust-policy-scorecard.js';
 import { getOperatorControlState, getOperatorActionReceipts, pauseTrading, resumeTrading, emergencyStop } from '../agent/operator-control.js';
+import { buildRegistrationJson } from '../chain/identity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_PORT = parseInt(process.env.PORT || '3000', 10);
@@ -103,6 +104,18 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
     res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type');
     next();
+  });
+
+  // ── A2A Agent Discovery ──
+  app.get('/.well-known/agent-card.json', (_req, res) => {
+    const registration = buildRegistrationJson({
+      agentId: config.agentId ?? undefined,
+      dashboardUrl: config.dashboardUrl,
+      mcpEndpoint: config.mcpEndpoint,
+      a2aEndpoint: config.a2aEndpoint,
+      imageUrl: config.agentImageUrl,
+    });
+    res.json(registration);
   });
 
   // ── API Routes ──
