@@ -36,6 +36,7 @@ import { computeMarketState } from '../data/market-state.js';
 import { evaluateOracleIntegrity } from '../security/oracle-integrity.js';
 import { evaluateMandate, getDefaultMandate, buildMandateRiskChecks } from '../chain/agent-mandate.js';
 import { simulateExecution } from '../chain/execution-simulator.js';
+import { routeTrade, getDexFeeBps, type RoutingDecision, type DexId } from '../chain/dex-router.js';
 import { generateSimulatedData, appendCandle } from '../data/price-feed.js';
 import { fetchLivePrice, fetchOHLCHistory, buildLiveCandle, getLiveFeedStatus } from '../data/live-price-feed.js';
 import { getOperatorControlState, getLatestOperatorAction } from './operator-control.js';
@@ -502,7 +503,22 @@ async function runCycle(): Promise<void> {
 
   let shouldExecute = riskDecision.approved && !positionLimitHit;
 
-  // Step 4b: Execution simulation — required pre-trade safety stage
+  // Step 4a: DEX routing — governed best-execution venue selection
+  const routingInput = {
+    asset: config.tradingPair,
+    side: strategyOutput.signal.direction as 'LONG' | 'SHORT',
+    notionalUsd: riskDecision.finalPositionSize * strategyOutput.currentPrice,
+    volatility: strategyOutput.indicators.volatility ?? 0.02,
+    isTestnet: config.chainId === 84532,
+    enabledDexes: config.allowedProtocols.filter(
+      (p): p is DexId => p === 'aerodrome' || p === 'uniswap'
+    ),
+  };
+  const dexRouting: RoutingDecision = shouldExecute
+    ? routeTrade(routingInput)
+    : { selectedDex: 'uniswap' as DexId, quotes: [], savingsBps: 0, rationale: ['no trade'], timestamp: new Date().toISOString(), routingVersion: '1.0' };
+
+  // Step 4b: Execution simulation — required pre-trade safety stage (uses DEX-specific fees)
   const executionSimulation = simulateExecution({
     strategyOutput,
     riskDecision,
@@ -510,6 +526,8 @@ async function runCycle(): Promise<void> {
     // eat into net edge and block trades that would be profitable.
     // Only charge gas when Risk Router is configured for real on-chain execution.
     gasUsd: config.riskRouterAddress ? 0.35 : 0,
+    dexId: dexRouting.selectedDex,
+    dexFeeBps: getDexFeeBps(dexRouting.selectedDex),
   });
   if (shouldExecute && !executionSimulation.allowed) {
     shouldExecute = false;
@@ -523,6 +541,7 @@ async function runCycle(): Promise<void> {
     mandateDecision,
     oracleIntegrity,
     executionSimulation,
+    dexRouting,
     operatorControl: {
       ...operatorControl,
       latestAction: getLatestOperatorAction(),
@@ -674,7 +693,7 @@ async function runCycle(): Promise<void> {
     `Cap: $${capital.toFixed(0)} | ` +
     `Pos: ${currentPositions.length}/${MAX_OPEN_POSITIONS} | ` +
     `${cognitive.rulesFired > 0 ? `Rules: ${cognitive.rulesFired} | ` : ''}` +
-    `Oracle: ${oracleIntegrity.status} | Sim: ${executionSimulation.reason} | ` +
+    `Oracle: ${oracleIntegrity.status} | DEX: ${dexRouting.selectedDex} | Sim: ${executionSimulation.reason} | ` +
     `${elapsed}ms`
   );
 

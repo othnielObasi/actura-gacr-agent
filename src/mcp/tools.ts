@@ -18,6 +18,7 @@ import { getRecentTrades, getTradeStats } from '../agent/trade-log.js';
 import { config } from '../agent/config.js';
 import { buildTradeIntent, hashTradeIntent, signTradeIntent } from '../chain/intent.js';
 import { initChain } from '../chain/sdk.js';
+import { routeTrade, getAvailableDexes, getDexProfile, type DexId } from '../chain/dex-router.js';
 
 export type McpVisibility = 'public' | 'restricted' | 'operator';
 
@@ -471,11 +472,57 @@ const getTradeHistory: McpTool = {
   },
 };
 
+const getDexRoutingInfo: McpTool = {
+  name: 'get_dex_routing',
+  description: 'Return DEX routing information: available venues, fee profiles, and a sample best-execution quote for the current market state.',
+  category: 'execution',
+  visibility: 'public',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      notional_usd: { type: 'number', description: 'Trade notional in USD for quote estimation (default: 300)' },
+      side: { type: 'string', description: 'LONG or SHORT (default: LONG)' },
+    },
+  },
+  handler: (args) => {
+    const state = safeState();
+    const market = state?.market;
+    const notionalUsd = typeof args.notional_usd === 'number' ? args.notional_usd : 300;
+    const side = args.side === 'SHORT' ? 'SHORT' : 'LONG';
+    const isTestnet = config.chainId === 84532;
+    const enabledDexes = config.allowedProtocols.filter(
+      (p): p is DexId => p === 'aerodrome' || p === 'uniswap'
+    );
+
+    const routing = routeTrade({
+      asset: config.tradingPair,
+      side: side as 'LONG' | 'SHORT',
+      notionalUsd,
+      volatility: market?.volatility ?? 0.02,
+      isTestnet,
+      enabledDexes,
+    });
+
+    return {
+      network: isTestnet ? 'Base Sepolia (testnet)' : 'Base',
+      enabledProtocols: config.allowedProtocols,
+      availableDexes: getAvailableDexes(isTestnet),
+      selectedDex: routing.selectedDex,
+      selectedDexProfile: getDexProfile(routing.selectedDex),
+      savingsBps: routing.savingsBps,
+      rationale: routing.rationale,
+      quotes: routing.quotes,
+      timestamp: routing.timestamp,
+    };
+  },
+};
+
 export const ALL_TOOLS: McpTool[] = [
   getMarketState,
   getTrustState,
   getCapitalRights,
   getMandateState,
+  getDexRoutingInfo,
   getPositions,
   getPerformanceMetrics,
   getTradeHistory,

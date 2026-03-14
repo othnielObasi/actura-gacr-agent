@@ -15,6 +15,7 @@ import type { MandateDecision } from '../chain/agent-mandate.js';
 import type { OracleIntegrityResult } from '../security/oracle-integrity.js';
 import type { ExecutionSimulationResult } from '../chain/execution-simulator.js';
 import type { OperatorActionReceipt } from '../agent/operator-control.js';
+import type { RoutingDecision } from '../chain/dex-router.js';
 
 export interface ValidationArtifact {
   version: string;
@@ -157,6 +158,20 @@ export interface ValidationArtifact {
     lastUpdatedAt: string | null;
     lastReason: string | null;
     latestAction?: OperatorActionReceipt | null;
+  };
+
+  dexRouting?: {
+    selectedDex: string;
+    savingsBps: number;
+    rationale: string[];
+    quotes: Array<{
+      dex: string;
+      estimatedFeeBps: number;
+      estimatedSlippageBps: number;
+      estimatedTotalCostBps: number;
+      available: boolean;
+    }>;
+    routingVersion: string;
   };
 
 }
@@ -332,6 +347,7 @@ export function attachGovernanceEvidence(
     oracleIntegrity?: OracleIntegrityResult | null;
     executionSimulation?: ExecutionSimulationResult | null;
     operatorControl?: { mode: string; canTrade: boolean; lastUpdatedAt: string | null; lastReason: string | null; latestAction?: OperatorActionReceipt | null } | null;
+    dexRouting?: RoutingDecision | null;
   }
 ): ValidationArtifact {
   if (extras.mandateDecision) {
@@ -369,6 +385,21 @@ export function attachGovernanceEvidence(
   }
   if (extras.operatorControl) {
     artifact.operatorControl = { ...extras.operatorControl };
+  }
+  if (extras.dexRouting) {
+    artifact.dexRouting = {
+      selectedDex: extras.dexRouting.selectedDex,
+      savingsBps: extras.dexRouting.savingsBps,
+      rationale: extras.dexRouting.rationale,
+      quotes: extras.dexRouting.quotes.map(q => ({
+        dex: q.dex,
+        estimatedFeeBps: q.estimatedFeeBps,
+        estimatedSlippageBps: q.estimatedSlippageBps,
+        estimatedTotalCostBps: q.estimatedTotalCostBps,
+        available: q.available,
+      })),
+      routingVersion: extras.dexRouting.routingVersion,
+    };
   }
   return artifact;
 }

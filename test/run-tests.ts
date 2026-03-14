@@ -15,6 +15,7 @@ const tests = [
   { name: 'Chain Integration', cmd: cmdFor('test/test-chain.ts') },
   { name: 'Agent Mandate Engine', cmd: cmdFor('test/test-mandate-engine.ts') },
   { name: 'Execution Simulator', cmd: cmdFor('test/test-execution-simulator.ts') },
+  { name: 'DEX Router', cmd: cmdFor('test/test-dex-router.ts') },
   { name: 'Oracle Integrity Guard', cmd: cmdFor('test/test-oracle-integrity.ts') },
   { name: 'Trust Policy Scorecard', cmd: cmdFor('test/test-trust-scorecard.ts') },
   { name: 'Reputation Evolution', cmd: cmdFor('test/test-reputation-evolution.ts') },

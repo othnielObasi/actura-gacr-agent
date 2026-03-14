@@ -23,7 +23,7 @@ export const config = {
 
   // Mandate / Permissions
   allowedAssets: (process.env.ALLOWED_ASSETS || 'WETH/USDC,ETH,USDC').split(',').map(s => s.trim()).filter(Boolean),
-  allowedProtocols: (process.env.ALLOWED_PROTOCOLS || 'uniswap').split(',').map(s => s.trim()).filter(Boolean),
+  allowedProtocols: (process.env.ALLOWED_PROTOCOLS || 'uniswap,aerodrome').split(',').map(s => s.trim()).filter(Boolean),
   restrictedAssets: (process.env.RESTRICTED_ASSETS || '').split(',').map(s => s.trim()).filter(Boolean),
   restrictedProtocols: (process.env.RESTRICTED_PROTOCOLS || '').split(',').map(s => s.trim()).filter(Boolean),
   requireHumanApprovalAboveUsd: parseFloat(process.env.REQUIRE_HUMAN_APPROVAL_ABOVE_USD || '20000'),

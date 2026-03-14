@@ -1,5 +1,6 @@
 import type { StrategyOutput } from '../strategy/momentum.js';
 import type { RiskDecision } from '../risk/engine.js';
+import type { DexId } from './dex-router.js';
 
 export interface ExecutionSimulationInput {
   strategyOutput: StrategyOutput;
@@ -7,6 +8,10 @@ export interface ExecutionSimulationInput {
   gasUsd?: number;
   liquidityBudgetUsd?: number;
   externalCostBps?: number;
+  /** Selected DEX identifier from routing decision */
+  dexId?: DexId;
+  /** DEX-specific fee in bps (overrides externalCostBps when provided) */
+  dexFeeBps?: number;
 }
 
 export interface ExecutionSimulationResult {
@@ -20,6 +25,7 @@ export interface ExecutionSimulationResult {
   expectedWorstCasePct: number;
   priceImpactPct: number;
   simulationVersion: string;
+  dexId: DexId | null;
 }
 
 export function simulateExecution(input: ExecutionSimulationInput): ExecutionSimulationResult {
@@ -30,7 +36,7 @@ export function simulateExecution(input: ExecutionSimulationInput): ExecutionSim
   const vol = strategyOutput.indicators.volatility ?? riskDecision.volatility.current ?? 0.02;
   const liquidityBudgetUsd = input.liquidityBudgetUsd ?? 25000;
   const gasUsd = input.gasUsd ?? 0.35;
-  const baseBps = input.externalCostBps ?? 8;
+  const baseBps = input.dexFeeBps ?? input.externalCostBps ?? 8;
 
   const sizePressure = liquidityBudgetUsd > 0 ? Math.min(1.5, notionalUsd / liquidityBudgetUsd) : 0;
 
@@ -84,6 +90,7 @@ export function simulateExecution(input: ExecutionSimulationInput): ExecutionSim
     expectedWorstCasePct: round4(expectedWorstCasePct),
     priceImpactPct: round4(priceImpactPct),
     simulationVersion: '1.0',
+    dexId: input.dexId ?? null,
   };
 }
 
