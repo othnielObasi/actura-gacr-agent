@@ -242,8 +242,8 @@ const explainTrade: McpTool = {
       tradeId: cp.id,
       decision: cp.riskDecision.approved ? 'APPROVED' : 'BLOCKED',
       signalConfidence: cp.strategyOutput?.signal?.confidence ?? null,
-      marketRegime: cp.artifact?.marketSnapshot?.regime ?? null,
-      volatilityProfile: cp.artifact?.marketSnapshot?.volatilityRegime ?? null,
+      marketRegime: cp.artifact?.marketSnapshot?.trendStrength ?? null,
+      volatilityProfile: cp.riskDecision?.volatility?.regime ?? null,
       currentPrice: cp.strategyOutput?.currentPrice ?? null,
       explanation: cp.riskDecision.explanation,
       checks: cp.riskDecision.checks,
@@ -303,7 +303,7 @@ const getReputationSummaryTool: McpTool = {
       trustHistoryCount: history.length,
       reputationRegistryConfigured: Boolean(config.reputationRegistry),
       preferredReviewerAddresses: config.preferredReviewerAddresses,
-      latestFeedbackTag: history.length ? history[history.length - 1].outcomeContext?.validationTag || null : null,
+      latestFeedbackTag: history.length ? (history[history.length - 1] as any).outcomeContext?.validationTag || null : null,
     };
   },
 };
@@ -348,7 +348,7 @@ const proposeTrade: McpTool = {
         `max mandate trade size ${(mandate.maxTradeSizePct * 100).toFixed(2)}%`,
       ],
       adaptiveSummary: getAdaptationSummary(),
-      contextStats: getContextStats({ regime: market?.volatility > 0.03 ? 'high_vol' : 'normal', direction: side }),
+      contextStats: getContextStats({ regime: (market?.volatility ?? 0) > 0.03 ? 'high' : 'normal', direction: side }),
       assetAddress: typeof args.asset_address === 'string' ? args.asset_address : ethers.ZeroAddress,
     };
   },
