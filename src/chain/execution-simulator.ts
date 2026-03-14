@@ -65,7 +65,7 @@ export function simulateExecution(input: ExecutionSimulationInput): ExecutionSim
   } else if (estimatedSlippageBps > 120) {
     allowed = false;
     reason = 'slippage_too_high';
-  } else if (expectedNetEdgePct <= 0.0001) {
+  } else if (expectedNetEdgePct <= Math.max(0.003, 2 * totalCostPct)) {
     allowed = false;
     reason = 'net_edge_too_low';
   } else if (riskDecision.volatility.regime === 'extreme') {
