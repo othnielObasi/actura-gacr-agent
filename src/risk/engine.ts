@@ -66,6 +66,11 @@ const MIN_PROFIT_FOR_TRAIL_PCT = (SLIPPAGE_BPS * 2) / 10000; // 2× one-way slip
 // Configurable via TAKE_PROFIT_PCT env var (default 3% for 4h candles).
 const TAKE_PROFIT_PCT = parseFloat(process.env.TAKE_PROFIT_PCT || '3') / 100;
 
+// Max hold duration: close positions that have been open too long.
+// Prevents capital from being stuck in sideways markets forever.
+// Default 4 hours — configurable via MAX_HOLD_HOURS env var.
+const MAX_HOLD_MS = parseFloat(process.env.MAX_HOLD_HOURS || '4') * 60 * 60 * 1000;
+
 function applySlippage(price: number, side: 'LONG' | 'SHORT'): number {
   const slip = price * (SLIPPAGE_BPS / 10000);
   return side === 'LONG' ? price + slip : price - slip;
@@ -452,6 +457,21 @@ export class RiskEngine {
             side: pos.side, entry: pos.entryPrice, exit: closePrice,
             pnl: Math.round(pnl * 100) / 100,
             ...(gapped ? { gapProtection: true, actualPrice: currentPrice } : {}),
+          });
+          continue;
+        }
+      }
+
+      // Check max hold duration — close stale positions to free capital
+      if (MAX_HOLD_MS > 0) {
+        const holdMs = Date.now() - new Date(pos.openedAt).getTime();
+        if (holdMs >= MAX_HOLD_MS) {
+          const pnl = this.closeAtIndex(i, currentPrice, /* skipSlippage */ false);
+          closed.push({ id: pos.id, pnl, reason: 'stop_loss' });
+          log.info(`Max hold duration exceeded: position #${pos.id}`, {
+            side: pos.side, entry: pos.entryPrice, exit: currentPrice,
+            holdHours: (holdMs / 3600000).toFixed(1),
+            pnl: Math.round(pnl * 100) / 100,
           });
         }
       }
