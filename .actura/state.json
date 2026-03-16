@@ -1,66 +1,37 @@
 {
-  "capital": 9991.032042471272,
+  "capital": 10002.091644242986,
   "openPositions": [
     {
       "id": 1,
       "asset": "WETH/USDC",
       "side": "LONG",
-      "size": 0.06584528,
-      "entryPrice": 2126.413871534638,
-      "stopLoss": 2091.1933703300315,
-      "trailingStopDistance": 35.220501204606535,
-      "highWaterMark": 2126.413871534638,
-      "openedAt": "2026-03-13T11:20:06.052Z"
+      "size": 0.0597,
+      "entryPrice": 2343.0407,
+      "stopLoss": 2286.1112466886734,
+      "trailingStopDistance": 56.9294533113266,
+      "highWaterMark": 2343.0407,
+      "openedAt": "2026-03-16T20:42:13.005Z",
+      "ipfsCid": "QmMock0000000000000000000000000924854d",
+      "txHash": null
     },
     {
       "id": 2,
       "asset": "WETH/USDC",
       "side": "LONG",
-      "size": 0.09406469,
-      "entryPrice": 2126.413871534638,
-      "stopLoss": 2093.3954398618494,
-      "trailingStopDistance": 33.018431672788665,
-      "highWaterMark": 2126.413871534638,
-      "openedAt": "2026-03-13T11:20:13.785Z"
-    },
-    {
-      "id": 3,
-      "asset": "WETH/USDC",
-      "side": "LONG",
-      "size": 0.08465822,
-      "entryPrice": 2126.413871534638,
-      "stopLoss": 2095.3411546004263,
-      "trailingStopDistance": 31.072716934211712,
-      "highWaterMark": 2126.413871534638,
-      "openedAt": "2026-03-13T11:20:19.577Z"
-    },
-    {
-      "id": 4,
-      "asset": "WETH/USDC",
-      "side": "LONG",
-      "size": 0.09406469,
-      "entryPrice": 2126.413871534638,
-      "stopLoss": 2096.9658339607536,
-      "trailingStopDistance": 29.44803757388445,
-      "highWaterMark": 2126.413871534638,
-      "openedAt": "2026-03-13T11:20:28.144Z"
-    },
-    {
-      "id": 5,
-      "asset": "WETH/USDC",
-      "side": "LONG",
-      "size": 0.06578559,
-      "entryPrice": 2128.3434300772356,
-      "stopLoss": 2101.791750242434,
-      "trailingStopDistance": 26.55167983480169,
-      "highWaterMark": 2128.3434300772356,
-      "openedAt": "2026-03-13T11:20:41.742Z"
+      "size": 0.05982538,
+      "entryPrice": 2342.974171411243,
+      "stopLoss": 2286.048441251187,
+      "trailingStopDistance": 56.92573016005599,
+      "highWaterMark": 2342.974171411243,
+      "openedAt": "2026-03-16T20:43:26.332Z",
+      "ipfsCid": "QmMock0000000000000000000000001812b56c",
+      "txHash": null
     }
   ],
-  "peakCapital": 9991.235162749392,
-  "totalTrades": 0,
-  "totalPnl": -8.96795752872822,
+  "peakCapital": 10002.091644242986,
+  "totalTrades": 8,
+  "totalPnl": 2.091644242986149,
   "agentId": null,
-  "lastCycle": 340,
-  "lastSavedAt": "2026-03-13T11:24:35.741Z"
+  "lastCycle": 564,
+  "lastSavedAt": "2026-03-16T20:50:21.847Z"
 }

@@ -132,7 +132,8 @@ async function callClaudeAPI(
   });
 
   if (!response.ok) {
-    throw new Error(`Claude API returned ${response.status}`);
+    const body = await response.text().catch(() => 'no body');
+    throw new Error(`Claude API returned ${response.status}: ${body.slice(0, 200)}`);
   }
 
   const data = await response.json() as { content: Array<{ type: string; text?: string }> };

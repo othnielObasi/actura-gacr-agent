@@ -36,7 +36,7 @@ export function simulateExecution(input: ExecutionSimulationInput): ExecutionSim
   const vol = strategyOutput.indicators.volatility ?? riskDecision.volatility.current ?? 0.02;
   const liquidityBudgetUsd = input.liquidityBudgetUsd ?? 25000;
   const gasUsd = input.gasUsd ?? 0.35;
-  const baseBps = input.dexFeeBps ?? input.externalCostBps ?? 8;
+  const baseBps = input.dexFeeBps ?? input.externalCostBps ?? 5; // sandbox (use 8 for live)
 
   const sizePressure = liquidityBudgetUsd > 0 ? Math.min(1.5, notionalUsd / liquidityBudgetUsd) : 0;
 
@@ -71,7 +71,7 @@ export function simulateExecution(input: ExecutionSimulationInput): ExecutionSim
   } else if (estimatedSlippageBps > 120) {
     allowed = false;
     reason = 'slippage_too_high';
-  } else if (expectedNetEdgePct <= Math.max(0.003, 2 * totalCostPct)) {
+  } else if (expectedNetEdgePct <= Math.max(0.0015, 1.5 * totalCostPct)) { // sandbox (use 0.003, 2× for live)
     allowed = false;
     reason = 'net_edge_too_low';
   } else if (riskDecision.volatility.regime === 'extreme') {

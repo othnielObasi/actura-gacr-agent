@@ -195,7 +195,7 @@ export function generateSignal(input: SignalInput): TradingSignal {
     atr,
     confidence,
     side: direction,
-    costBps: costBps ?? 18,
+    costBps: costBps ?? 10, // sandbox tuning (use 18+ for live)
     minEdgeMultiple: 1.5
   });
 
