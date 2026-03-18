@@ -11,10 +11,15 @@ import type { ValidationArtifact } from './artifact-emitter.js';
 
 const ARTIFACT_DIR = join(process.cwd(), 'artifacts');
 
+/** Resolve the IPFS gateway base URL (no trailing slash). */
+function gatewayBase(): string {
+  return config.pinataGateway.replace(/\/+$/, '');
+}
+
 export interface IpfsUploadResult {
   cid: string;
   uri: string;         // ipfs://Qm...
-  gatewayUrl: string;  // https://gateway.pinata.cloud/ipfs/Qm...
+  gatewayUrl: string;  // https://<gateway>/ipfs/Qm...
   size: number;
 }
 
@@ -81,7 +86,7 @@ export async function uploadArtifact(artifact: ValidationArtifact): Promise<Ipfs
     const result: IpfsUploadResult = {
       cid: data.IpfsHash,
       uri: `ipfs://${data.IpfsHash}`,
-      gatewayUrl: `https://gateway.pinata.cloud/ipfs/${data.IpfsHash}`,
+      gatewayUrl: `${gatewayBase()}/${data.IpfsHash}`,
       size: data.PinSize,
     };
     saveLocalBackup(artifact, result.cid);
@@ -112,7 +117,7 @@ function mockUpload(artifact: ValidationArtifact): IpfsUploadResult {
   return {
     cid: mockCid,
     uri: `ipfs://${mockCid}`,
-    gatewayUrl: `https://gateway.pinata.cloud/ipfs/${mockCid}`,
+    gatewayUrl: `${gatewayBase()}/${mockCid}`,
     size: content.length,
   };
 }
@@ -149,7 +154,7 @@ export async function uploadJson(data: object, name: string): Promise<IpfsUpload
   return {
     cid: result.IpfsHash,
     uri: `ipfs://${result.IpfsHash}`,
-    gatewayUrl: `https://gateway.pinata.cloud/ipfs/${result.IpfsHash}`,
+    gatewayUrl: `${gatewayBase()}/${result.IpfsHash}`,
     size: result.PinSize,
   };
 }

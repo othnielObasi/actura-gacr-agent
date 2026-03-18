@@ -72,6 +72,7 @@ CHAIN_ID=84532
 
 # IPFS
 PINATA_JWT=
+PINATA_GATEWAY=
 
 # Agent identity
 AGENT_NAME=Actura

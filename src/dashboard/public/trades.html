@@ -125,7 +125,7 @@
     function ipfsLink(cid) {
       if (!cid) return '<span style="color:var(--fg3)">—</span>';
       var short = cid.length > 12 ? cid.slice(0, 6) + '…' + cid.slice(-4) : cid;
-      return '<a href="https://gateway.pinata.cloud/ipfs/' + encodeURIComponent(cid) + '" target="_blank" rel="noopener" style="color:var(--cyan);text-decoration:none" title="' + cid + '">📄 ' + short + '</a>';
+      return '<a href="https://ipfs.io/ipfs/' + encodeURIComponent(cid) + '" target="_blank" rel="noopener" style="color:var(--cyan);text-decoration:none" title="' + cid + '">📄 ' + short + '</a>';
     }
     function txLink(hash) {
       if (!hash) return '<span style="color:var(--fg3)">—</span>';

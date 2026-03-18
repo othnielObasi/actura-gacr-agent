@@ -15,6 +15,7 @@ export const config = {
   
   // IPFS
   pinataJwt: process.env.PINATA_JWT || '',
+  pinataGateway: process.env.PINATA_GATEWAY || 'https://ipfs.io/ipfs',
   
   // Agent
   agentName: process.env.AGENT_NAME || 'Actura',

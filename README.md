@@ -47,7 +47,7 @@ Actura is **live on Base Sepolia** with verifiable on-chain state:
 | **Risk Policy Deploy Tx** | [`0xc3c484e2...`](https://sepolia.basescan.org/tx/0xc3c484e22603215a04cb64ff4a689c8ddf8b47d55da4b0382782a3233600dfec) |
 | **Identity Registry** | [`0x7177a686...Dd09A`](https://sepolia.basescan.org/address/0x7177a6867296406881E20d6647232314736Dd09A) |
 | **Owner Wallet** | [`0xE8684cfb...DdCD7`](https://sepolia.basescan.org/address/0xE8684cfbA08541C607898E55BAB58302204DdCD7) |
-| **Agent Metadata (IPFS)** | [`QmXUkbkBTw5H...`](https://gateway.pinata.cloud/ipfs/QmXUkbkBTw5HcjxvMwKSE3CnR1hJEtckc4xUHx4U82dbJt) |
+| **Agent Metadata (IPFS)** | [`QmXUkbkBTw5H...`](https://aqua-advisory-vicuna-831.mypinata.cloud/ipfs/QmXUkbkBTw5HcjxvMwKSE3CnR1hJEtckc4xUHx4U82dbJt) |
 | **Live Dashboard** | [http://192.248.145.196:3000](http://192.248.145.196:3000) |
 | **MCP Endpoint** | `http://192.248.145.196:3001/mcp` (JSON-RPC) |
 
@@ -67,7 +67,7 @@ Every trading decision produces an immutable IPFS artifact containing the full r
 | [`/api/checkpoints`](http://192.248.145.196:3000/api/checkpoints) | Recent trade checkpoints with signals, confidence, IPFS links |
 
 **Example artifact on IPFS** (anyone can view, no keys needed):
-[`QmUpDErcxCVigB5fCfshKUUajCtmdH3zGGGZ4RbdYCDc6s`](https://gateway.pinata.cloud/ipfs/QmUpDErcxCVigB5fCfshKUUajCtmdH3zGGGZ4RbdYCDc6s)
+[`QmUpDErcxCVigB5fCfshKUUajCtmdH3zGGGZ4RbdYCDc6s`](https://aqua-advisory-vicuna-831.mypinata.cloud/ipfs/QmUpDErcxCVigB5fCfshKUUajCtmdH3zGGGZ4RbdYCDc6s)
 
 Each artifact records: trade details, 11 risk checks (pass/fail), mandate evidence, neuro-symbolic rule firings, market snapshot (10 price candles, trend strength), confidence interval (best/worst/max loss), and a natural-language AI reasoning summary.
 

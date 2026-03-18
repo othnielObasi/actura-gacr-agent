@@ -198,7 +198,7 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
           file: f,
           timestamp: match ? match[1].replace(/-/g, ':').replace(/T(\d+):(\d+):(\d+):(\d+)/, 'T$1:$2:$3.$4') : f,
           cid: match ? match[2] : null,
-          ipfsUrl: match ? `https://gateway.pinata.cloud/ipfs/${match[2]}` : null,
+          ipfsUrl: match ? `${config.pinataGateway.replace(/\/+$/, '')}/${match[2]}` : null,
         };
       });
       res.json({ count: artifacts.length, total: allFiles.length, artifacts });
