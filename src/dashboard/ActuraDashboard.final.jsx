@@ -363,6 +363,7 @@ function Actura() {
         <div style={{ display: "flex", gap: 10, marginLeft: 16 }}>
           <a href="/" style={{ color: T.cyan, fontSize: 10, fontWeight: 600, textDecoration: "none", padding: "4px 10px", borderRadius: 4, background: `${T.cyan}10` }}>Dashboard</a>
           <a href="/trades" style={{ color: T.fg2, fontSize: 10, fontWeight: 600, textDecoration: "none", padding: "4px 10px", borderRadius: 4 }}>Trade History</a>
+          <a href="/judge" style={{ color: T.warn, fontSize: 10, fontWeight: 600, textDecoration: "none", padding: "4px 10px", borderRadius: 4, background: `${T.warn}15` }}>Judge Mode</a>
         </div>
         <div style={{ flex: 1 }} />
         <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 10 }}>
