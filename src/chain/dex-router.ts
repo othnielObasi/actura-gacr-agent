@@ -108,7 +108,7 @@ function estimateQuote(
       estimatedGasUsd: 0,
       liquidityScore: 0,
       available: false,
-      reason: `${profile.name} not available on testnet`,
+      reason: `${profile.name} integrated but not deployed on testnet — mainnet-ready (router: ${profile.routerAddress})`,
     };
   }
 

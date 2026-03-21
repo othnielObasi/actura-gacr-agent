@@ -39,6 +39,8 @@ import { simulateExecution } from '../chain/execution-simulator.js';
 import { routeTrade, getDexFeeBps, type RoutingDecision, type DexId } from '../chain/dex-router.js';
 import { generateSimulatedData, appendCandle } from '../data/price-feed.js';
 import { fetchLivePrice, fetchOHLCHistory, buildLiveCandle, getLiveFeedStatus } from '../data/live-price-feed.js';
+import { getKrakenFeedStatus } from '../data/kraken-feed.js';
+import { startIndexer, getIndexerStatus, getIndexedEvents } from '../chain/event-indexer.js';
 import { getOperatorControlState, getLatestOperatorAction } from './operator-control.js';
 import { recordClosedTrade, getRecentTrades, getTradeStats, loadClosedTrades } from './trade-log.js';
 
@@ -199,6 +201,17 @@ async function initAgent(): Promise<void> {
     dataSource: DATA_SOURCE,
     latestPrice: `$${marketData.prices[marketData.prices.length - 1].toFixed(2)}`,
   });
+
+  // Start on-chain event indexer (non-blocking, polls every 30s)
+  if (config.privateKey && agentId) {
+    try {
+      const { initChain } = await import('../chain/sdk.js');
+      initChain();
+      startIndexer(agentId);
+    } catch (e) {
+      log.warn('Event indexer failed to start — chain not configured', { error: String(e) });
+    }
+  }
 }
 
 // ──── Trading Cycle ────
@@ -738,6 +751,8 @@ export function getAgentState() {
     risk: riskEngine?.getStatus() ?? null,
     market: marketData ? computeMarketState(marketData) : null,
     liveFeed: getLiveFeedStatus(),
+    krakenFeed: getKrakenFeedStatus(),
+    eventIndexer: getIndexerStatus(),
     recentCheckpoints: getCheckpoints(10),
     scheduler: scheduler?.getState() ?? null,
     maxPositions: MAX_OPEN_POSITIONS,

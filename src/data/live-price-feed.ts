@@ -11,6 +11,7 @@
 
 import type { MarketData } from '../strategy/momentum.js';
 import { createLogger } from '../agent/logger.js';
+import { fetchKrakenPrice } from './kraken-feed.js';
 
 const log = createLogger('LIVE-FEED');
 
@@ -89,10 +90,24 @@ export async function fetchLivePrice(): Promise<{ price: number; source: string 
     log.debug('DeFiLlama fetch failed', { error: String(e) });
   }
 
-  // Both failed
+  // Try Kraken (3rd failover)
+  try {
+    const krakenResult = await fetchKrakenPrice();
+    if (krakenResult) {
+      lastFetchedPrice = krakenResult.price;
+      lastFetchTime = Date.now();
+      consecutiveFailures = 0;
+      return krakenResult;
+    }
+    log.debug('Kraken fetch returned null');
+  } catch (e) {
+    log.debug('Kraken fetch failed', { error: String(e) });
+  }
+
+  // All three sources failed
   consecutiveFailures++;
   if (consecutiveFailures <= 2) {
-    log.warn('All live price sources failed', { consecutiveFailures });
+    log.warn('All live price sources failed (CoinGecko, DeFiLlama, Kraken)', { consecutiveFailures });
   } else if (consecutiveFailures === MAX_CONSECUTIVE_FAILURES) {
     log.error(`Live feed failed ${MAX_CONSECUTIVE_FAILURES} consecutive times — data is stale, trading should halt`);
   }
