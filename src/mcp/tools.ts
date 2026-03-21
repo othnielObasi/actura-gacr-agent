@@ -19,7 +19,7 @@ import { config } from '../agent/config.js';
 import { buildTradeIntent, hashTradeIntent, signTradeIntent } from '../chain/intent.js';
 import { initChain } from '../chain/sdk.js';
 import { routeTrade, getAvailableDexes, getDexProfile, type DexId } from '../chain/dex-router.js';
-import { fetchKrakenTicker, getKrakenFeedStatus } from '../data/kraken-feed.js';
+import { fetchKrakenTicker, getKrakenFeedStatus, fetchKrakenBalance, fetchKrakenOpenOrders, fetchKrakenTradeHistory } from '../data/kraken-feed.js';
 import { getIndexedEvents, getIndexerStatus } from '../chain/event-indexer.js';
 
 export type McpVisibility = 'public' | 'restricted' | 'operator';
@@ -570,6 +570,58 @@ const getIndexedEventsTool: McpTool = {
   },
 };
 
+const getKrakenBalanceTool: McpTool = {
+  name: 'get_kraken_balance',
+  description: 'Return the Kraken account balance (requires KRAKEN_API_KEY). Shows all non-zero asset balances.',
+  category: 'market',
+  visibility: 'restricted',
+  inputSchema: { type: 'object', properties: {} },
+  handler: async () => {
+    const balance = await fetchKrakenBalance();
+    if (!balance) return { error: 'Kraken API keys not configured or request failed' };
+    const nonZero = Object.fromEntries(Object.entries(balance).filter(([, v]) => parseFloat(v) > 0));
+    return {
+      balance: nonZero,
+      assetCount: Object.keys(nonZero).length,
+      note: Object.entries(nonZero).map(([k, v]) => `${k}: ${v}`).join(', ') || 'No balances',
+    };
+  },
+};
+
+const getKrakenOrdersTool: McpTool = {
+  name: 'get_kraken_orders',
+  description: 'Return open orders on the Kraken account (requires KRAKEN_API_KEY).',
+  category: 'market',
+  visibility: 'restricted',
+  inputSchema: { type: 'object', properties: {} },
+  handler: async () => {
+    const orders = await fetchKrakenOpenOrders();
+    if (!orders) return { error: 'Kraken API keys not configured or request failed' };
+    return {
+      count: orders.length,
+      orders,
+      note: orders.length === 0 ? 'No open orders' : `${orders.length} open order(s)`,
+    };
+  },
+};
+
+const getKrakenTradesTool: McpTool = {
+  name: 'get_kraken_trades',
+  description: 'Return recent trade history from the Kraken account (requires KRAKEN_API_KEY).',
+  category: 'market',
+  visibility: 'restricted',
+  inputSchema: { type: 'object', properties: {} },
+  handler: async () => {
+    const trades = await fetchKrakenTradeHistory();
+    if (!trades) return { error: 'Kraken API keys not configured or request failed' };
+    return {
+      count: trades.length,
+      trades: trades.slice(0, 50),
+      note: `${trades.length} trade(s) in history`,
+    };
+  },
+};
+
 export const ALL_TOOLS: McpTool[] = [
   getMarketState,
   getTrustState,
@@ -584,6 +636,9 @@ export const ALL_TOOLS: McpTool[] = [
   getReputationSummaryTool,
   getKrakenMarketTool,
   getIndexedEventsTool,
+  getKrakenBalanceTool,
+  getKrakenOrdersTool,
+  getKrakenTradesTool,
   proposeTrade,
   executeTrade,
   pauseAgent,

@@ -20,6 +20,7 @@
  * Docs: https://docs.kraken.com/api/
  */
 
+import crypto from 'node:crypto';
 import { createLogger } from '../agent/logger.js';
 
 const log = createLogger('KRAKEN');
@@ -71,6 +72,34 @@ export interface KrakenStatus {
   cliAvailable: boolean;
   lastFetchTime: string | null;
   consecutiveFailures: number;
+}
+
+export interface KrakenBalance {
+  [asset: string]: string;
+}
+
+export interface KrakenOpenOrder {
+  orderId: string;
+  pair: string;
+  type: string;       // buy | sell
+  orderType: string;  // market | limit | stop-loss etc.
+  price: string;
+  volume: string;
+  status: string;
+  openTime: string;
+  description: string;
+}
+
+export interface KrakenTradeEntry {
+  orderId: string;
+  pair: string;
+  type: string;
+  orderType: string;
+  price: string;
+  cost: string;
+  fee: string;
+  volume: string;
+  time: number;
 }
 
 // ── State ──
@@ -249,4 +278,134 @@ export function getKrakenFeedStatus(): KrakenStatus {
     lastFetchTime: lastFetchTime ? new Date(lastFetchTime).toISOString() : null,
     consecutiveFailures,
   };
+}
+
+// ── Private API (Authenticated — requires KRAKEN_API_KEY + KRAKEN_API_SECRET) ──
+
+function getKrakenKeys(): { apiKey: string; apiSecret: string } | null {
+  const apiKey = process.env.KRAKEN_API_KEY;
+  const apiSecret = process.env.KRAKEN_API_SECRET;
+  if (!apiKey || !apiSecret) return null;
+  return { apiKey, apiSecret };
+}
+
+/**
+ * Create Kraken API signature for private endpoints.
+ * See: https://docs.kraken.com/api/docs/guides/spot-rest-auth
+ */
+function krakenSignature(urlPath: string, postData: string, secret: string, nonce: string): string {
+  const sha256 = crypto.createHash('sha256').update(nonce + postData).digest();
+  const hmac = crypto.createHmac('sha512', Buffer.from(secret, 'base64'));
+  hmac.update(Buffer.concat([Buffer.from(urlPath), sha256]));
+  return hmac.digest('base64');
+}
+
+async function krakenPrivateRequest<T>(endpoint: string, params: Record<string, string> = {}): Promise<T | null> {
+  const keys = getKrakenKeys();
+  if (!keys) {
+    log.warn('Kraken private API called without keys configured');
+    return null;
+  }
+
+  const urlPath = `/0/private/${endpoint}`;
+  const nonce = Date.now().toString();
+  const postBody = new URLSearchParams({ nonce, ...params }).toString();
+  const sig = krakenSignature(urlPath, postBody, keys.apiSecret, nonce);
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    const res = await fetch(`${KRAKEN_REST_URL}${urlPath}`, {
+      method: 'POST',
+      headers: {
+        'API-Key': keys.apiKey,
+        'API-Sign': sig,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: postBody,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      log.warn(`Kraken private ${endpoint} returned ${res.status}`);
+      return null;
+    }
+
+    const data = await res.json() as { error: string[]; result: T };
+    if (data.error?.length > 0) {
+      log.warn(`Kraken private ${endpoint} error`, { errors: data.error });
+      return null;
+    }
+
+    return data.result;
+  } catch (error) {
+    log.warn(`Kraken private ${endpoint} failed`, { error: String(error) });
+    return null;
+  }
+}
+
+/**
+ * Fetch account balance from Kraken.
+ * Returns map of asset → balance string, e.g. { "ZUSD": "10000.0000", "XETH": "1.5000" }
+ */
+export async function fetchKrakenBalance(): Promise<KrakenBalance | null> {
+  const result = await krakenPrivateRequest<KrakenBalance>('Balance');
+  if (result) {
+    log.info('Kraken balance fetched', {
+      assets: Object.keys(result).length,
+      summary: Object.entries(result)
+        .filter(([, v]) => parseFloat(v) > 0)
+        .map(([k, v]) => `${k}:${v}`)
+        .join(', '),
+    });
+  }
+  return result;
+}
+
+/**
+ * Fetch open orders from Kraken.
+ */
+export async function fetchKrakenOpenOrders(): Promise<KrakenOpenOrder[] | null> {
+  const result = await krakenPrivateRequest<{ open: Record<string, any> }>('OpenOrders');
+  if (!result?.open) return null;
+
+  const orders: KrakenOpenOrder[] = Object.entries(result.open).map(([id, o]) => ({
+    orderId: id,
+    pair: o.descr?.pair ?? '',
+    type: o.descr?.type ?? '',
+    orderType: o.descr?.ordertype ?? '',
+    price: o.descr?.price ?? '0',
+    volume: o.vol ?? '0',
+    status: o.status ?? '',
+    openTime: new Date((o.opentm ?? 0) * 1000).toISOString(),
+    description: o.descr?.order ?? '',
+  }));
+
+  log.info('Kraken open orders', { count: orders.length });
+  return orders;
+}
+
+/**
+ * Fetch recent trade history from Kraken.
+ */
+export async function fetchKrakenTradeHistory(): Promise<KrakenTradeEntry[] | null> {
+  const result = await krakenPrivateRequest<{ trades: Record<string, any> }>('TradesHistory');
+  if (!result?.trades) return null;
+
+  const trades: KrakenTradeEntry[] = Object.entries(result.trades).map(([id, t]) => ({
+    orderId: t.ordertxid ?? id,
+    pair: t.pair ?? '',
+    type: t.type ?? '',
+    orderType: t.ordertype ?? '',
+    price: t.price ?? '0',
+    cost: t.cost ?? '0',
+    fee: t.fee ?? '0',
+    volume: t.vol ?? '0',
+    time: t.time ?? 0,
+  }));
+
+  log.info('Kraken trade history', { count: trades.length });
+  return trades;
 }

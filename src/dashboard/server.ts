@@ -17,7 +17,7 @@ import { getReputationTimeline } from '../trust/trust-policy-scorecard.js';
 import { getOperatorControlState, getOperatorActionReceipts, pauseTrading, resumeTrading, emergencyStop } from '../agent/operator-control.js';
 import { buildRegistrationJson } from '../chain/identity.js';
 import { generateTradePost, generateDailySummaryPost, buildTwitterIntentUrl } from '../social/share.js';
-import { getKrakenFeedStatus, fetchKrakenTicker } from '../data/kraken-feed.js';
+import { getKrakenFeedStatus, fetchKrakenTicker, fetchKrakenBalance, fetchKrakenOpenOrders, fetchKrakenTradeHistory } from '../data/kraken-feed.js';
 import { getIndexedEvents, getIndexerStatus } from '../chain/event-indexer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -310,6 +310,27 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
     const status = getKrakenFeedStatus();
     const ticker = await fetchKrakenTicker();
     res.json({ status, ticker });
+  });
+
+  /** Kraken account balance (authenticated) */
+  app.get('/api/kraken/balance', async (_req, res) => {
+    const balance = await fetchKrakenBalance();
+    if (!balance) { res.json({ error: 'Kraken API keys not configured or request failed' }); return; }
+    res.json({ balance });
+  });
+
+  /** Kraken open orders (authenticated) */
+  app.get('/api/kraken/orders', async (_req, res) => {
+    const orders = await fetchKrakenOpenOrders();
+    if (!orders) { res.json({ error: 'Kraken API keys not configured or request failed' }); return; }
+    res.json({ count: orders.length, orders });
+  });
+
+  /** Kraken trade history (authenticated) */
+  app.get('/api/kraken/trades', async (_req, res) => {
+    const trades = await fetchKrakenTradeHistory();
+    if (!trades) { res.json({ error: 'Kraken API keys not configured or request failed' }); return; }
+    res.json({ count: trades.length, trades });
   });
 
   /** Data feeds overview */
