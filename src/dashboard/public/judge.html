@@ -171,6 +171,11 @@
       <div class="card">
         <div class="card-title">Quick Trade Summary (click to copy)</div>
         <div class="share-box" id="shareBox" onclick="copyShare()">Loading…</div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap" id="socialLinks">
+          <a id="shareTwitter" target="_blank" rel="noopener" class="badge badge-blue" style="text-decoration:none;padding:5px 12px;font-size:10px;cursor:pointer">Post on X / Twitter</a>
+          <a id="shareFarcaster" target="_blank" rel="noopener" class="badge badge-purple" style="text-decoration:none;padding:5px 12px;font-size:10px;cursor:pointer">Cast on Farcaster</a>
+          <a id="shareLinkedIn" target="_blank" rel="noopener" class="badge badge-cyan" style="text-decoration:none;padding:5px 12px;font-size:10px;cursor:pointer">Share on LinkedIn</a>
+        </div>
       </div>
 
     </div>
@@ -278,7 +283,7 @@
         if (tradeStats) {
           tsEl.innerHTML = [
             ['Total Trades', tradeStats.totalTrades || 0],
-            ['Win Rate', ((tradeStats.winRate || 0) * 100).toFixed(1) + '%'],
+            ['Win Rate', (tradeStats.winRate || 0).toFixed(1) + '%'],
             ['Total PnL', '$' + (tradeStats.totalPnl || 0).toFixed(2)],
           ].map(([k, v]) => `<div><div style="font-size:8px;color:#7c8a9e;text-transform:uppercase;letter-spacing:1px">${k}</div><div style="font-size:16px;font-weight:700;color:#edf2f7">${v}</div></div>`).join('');
         } else {
@@ -290,6 +295,7 @@
         const tools = ['get_market_state','get_trust_state','get_capital_rights','get_mandate_state','get_dex_routing',
           'get_positions','get_performance_metrics','get_trade_history','explain_trade','get_validation_status',
           'get_reputation_summary','get_kraken_market','get_indexed_events',
+          'get_kraken_balance','get_kraken_orders','get_kraken_trades',
           'propose_trade','execute_trade','pause_agent','resume_agent','emergency_stop'];
         mcpEl.innerHTML = tools.map(t => {
           const cls = t.startsWith('get_') || t === 'explain_trade' ? 'badge-green' : t.includes('trade') ? 'badge-warn' : 'badge-purple';
@@ -306,8 +312,11 @@
           </div>`
         ).join('<div style="display:flex;align-items:center;color:#4b5668;font-size:10px">→</div>');
 
-        // Share
-        const shareText = `🤖 Actura GACR Agent — ERC-8004 Trust-Governed Trading
+        // Share — fetch from share API
+        let shareText;
+        try {
+          const shareData = await fetch('/api/share/daily').then(r=>r.json()).catch(()=>null);
+          shareText = shareData?.post?.text || `🤖 Actura GACR Agent — ERC-8004 Trust-Governed Trading
 
 📊 Trust Score: ${latest?.trustScore?.toFixed(0) || '80'} | Capital: $${status?.capital?.toFixed(0) || '10,000'}
 🔗 ${artifacts?.total || 0} IPFS artifacts | ${status?.risk?.totalTrades || 0} trades executed
@@ -315,8 +324,18 @@
 
 Built on @base_protocol with ERC-8004
 @Surgexyz_ @lablabai #SurgeHackathon #ERC8004 #DeFi`;
+        } catch (_) {
+          shareText = 'Actura GACR Agent — ERC-8004 Trust-Governed Trading';
+        }
         document.getElementById('shareBox').textContent = shareText;
         window.__shareText = shareText;
+
+        // Social share links
+        const encoded = encodeURIComponent(shareText);
+        const dashUrl = encodeURIComponent(window.location.origin);
+        document.getElementById('shareTwitter').href = 'https://twitter.com/intent/tweet?text=' + encoded;
+        document.getElementById('shareFarcaster').href = 'https://warpcast.com/~/compose?text=' + encoded;
+        document.getElementById('shareLinkedIn').href = 'https://www.linkedin.com/sharing/share-offsite/?url=' + dashUrl;
 
       } catch (e) {
         document.getElementById('loading').textContent = 'Error loading data: ' + e.message;

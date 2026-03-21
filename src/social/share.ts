@@ -68,7 +68,7 @@ export function generateDailySummaryPost(params: {
   const text = `📊 ${config.agentName} — Daily Summary
 
 ${pnlEmoji} PnL: $${params.pnl.toFixed(2)} (${pnlPct}%)
-📈 Trades: ${params.trades} | Win Rate: ${(params.winRate * 100).toFixed(0)}%
+📈 Trades: ${params.trades} | Win Rate: ${params.winRate.toFixed(0)}%
 🛡️ Trust Score: ${params.trustScore.toFixed(0)}
 🔗 ${params.artifactCount} IPFS artifacts generated
 
