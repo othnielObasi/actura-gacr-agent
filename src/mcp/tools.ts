@@ -19,6 +19,8 @@ import { config } from '../agent/config.js';
 import { buildTradeIntent, hashTradeIntent, signTradeIntent } from '../chain/intent.js';
 import { initChain } from '../chain/sdk.js';
 import { routeTrade, getAvailableDexes, getDexProfile, type DexId } from '../chain/dex-router.js';
+import { fetchKrakenTicker, getKrakenFeedStatus } from '../data/kraken-feed.js';
+import { getIndexedEvents, getIndexerStatus } from '../chain/event-indexer.js';
 
 export type McpVisibility = 'public' | 'restricted' | 'operator';
 
@@ -517,6 +519,57 @@ const getDexRoutingInfo: McpTool = {
   },
 };
 
+const getKrakenMarketTool: McpTool = {
+  name: 'get_kraken_market',
+  description: 'Return current Kraken market data: live ticker (price, bid/ask, volume, VWAP) and feed health status.',
+  category: 'market',
+  visibility: 'public',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      pair: { type: 'string', description: 'Trading pair (default: WETH/USDC). Supports ETH/USD, BTC/USD.' },
+    },
+  },
+  handler: async (args) => {
+    const pair = typeof args.pair === 'string' ? args.pair : 'WETH/USDC';
+    const ticker = await fetchKrakenTicker(pair);
+    return {
+      status: getKrakenFeedStatus(),
+      ticker,
+      note: ticker
+        ? `Kraken ${pair}: $${ticker.price.toFixed(2)} (spread: $${ticker.spread.toFixed(2)}, vol24h: ${ticker.volume24h.toFixed(2)})`
+        : 'Kraken feed unavailable — using CoinGecko/DeFiLlama fallback',
+    };
+  },
+};
+
+const getIndexedEventsTool: McpTool = {
+  name: 'get_indexed_events',
+  description: 'Return on-chain events from ERC-8004 registries (reputation feedback, validation requests/responses) indexed by the agent.',
+  category: 'validation',
+  visibility: 'public',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      limit: { type: 'number', description: 'Max events to return (default: 20)' },
+      type: { type: 'string', description: 'Filter by event type: reputation_feedback, validation_request, validation_response' },
+    },
+  },
+  handler: (args) => {
+    const limit = typeof args.limit === 'number' ? Math.min(args.limit, 200) : 20;
+    const validTypes = ['reputation_feedback', 'validation_request', 'validation_response'];
+    const typeFilter = typeof args.type === 'string' && validTypes.includes(args.type)
+      ? args.type as 'reputation_feedback' | 'validation_request' | 'validation_response'
+      : undefined;
+    const events = typeFilter ? getIndexedEvents(typeFilter) : getIndexedEvents();
+    return {
+      indexer: getIndexerStatus(),
+      events: events.slice(-limit),
+      count: events.length,
+    };
+  },
+};
+
 export const ALL_TOOLS: McpTool[] = [
   getMarketState,
   getTrustState,
@@ -529,6 +582,8 @@ export const ALL_TOOLS: McpTool[] = [
   explainTrade,
   getValidationStatusTool,
   getReputationSummaryTool,
+  getKrakenMarketTool,
+  getIndexedEventsTool,
   proposeTrade,
   executeTrade,
   pauseAgent,

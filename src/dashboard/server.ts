@@ -16,6 +16,9 @@ import { config } from '../agent/config.js';
 import { getReputationTimeline } from '../trust/trust-policy-scorecard.js';
 import { getOperatorControlState, getOperatorActionReceipts, pauseTrading, resumeTrading, emergencyStop } from '../agent/operator-control.js';
 import { buildRegistrationJson } from '../chain/identity.js';
+import { generateTradePost, generateDailySummaryPost, buildTwitterIntentUrl } from '../social/share.js';
+import { getKrakenFeedStatus, fetchKrakenTicker } from '../data/kraken-feed.js';
+import { getIndexedEvents, getIndexerStatus } from '../chain/event-indexer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_PORT = parseInt(process.env.PORT || '3000', 10);
@@ -83,6 +86,11 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
   // Trade history page — separate tab
   app.get('/trades', (_req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'trades.html'));
+  });
+
+  // Judge walkthrough — single-page hackathon summary
+  app.get('/judge', (_req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'judge.html'));
   });
 
   // Serve the final dashboard JSX
@@ -284,6 +292,68 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
   app.get('/api/errors', (req, res) => {
     const limit = parseInt(req.query.limit as string) || 20;
     res.json({ errors: getErrors(limit) });
+  });
+
+  /** On-chain indexed events */
+  app.get('/api/events', (req, res) => {
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
+    const typeFilter = req.query.type as string | undefined;
+    const validTypes = ['reputation_feedback', 'validation_request', 'validation_response'];
+    const events = validTypes.includes(typeFilter as string)
+      ? getIndexedEvents(typeFilter as any).slice(-limit)
+      : getIndexedEvents().slice(-limit);
+    res.json({ count: events.length, indexer: getIndexerStatus(), events });
+  });
+
+  /** Kraken feed status + live ticker */
+  app.get('/api/feeds/kraken', async (_req, res) => {
+    const status = getKrakenFeedStatus();
+    const ticker = await fetchKrakenTicker();
+    res.json({ status, ticker });
+  });
+
+  /** Data feeds overview */
+  app.get('/api/feeds/status', (_req, res) => {
+    res.json({
+      kraken: getKrakenFeedStatus(),
+      indexer: getIndexerStatus(),
+    });
+  });
+
+  /** Generate shareable trade post */
+  app.get('/api/share/trade', (req, res) => {
+    const checkpoints = getCheckpoints(1);
+    if (checkpoints.length === 0) {
+      res.json({ error: 'No checkpoints yet' });
+      return;
+    }
+    const cp = checkpoints[0];
+    const state = getAgentState();
+    const post = generateTradePost({
+      signal: cp.strategyOutput.signal.direction,
+      confidence: cp.strategyOutput.signal.confidence,
+      price: cp.strategyOutput.currentPrice,
+      approved: cp.riskDecision.approved,
+      explanation: cp.riskDecision.explanation,
+      trustScore: state.risk?.trustScore ?? 80,
+      artifactCid: cp.ipfs?.cid,
+    });
+    res.json({ post, twitterUrl: buildTwitterIntentUrl(post) });
+  });
+
+  /** Generate shareable daily summary */
+  app.get('/api/share/daily', (_req, res) => {
+    const state = getAgentState();
+    const stats = getTradeStats();
+    const post = generateDailySummaryPost({
+      trades: stats.totalTrades ?? 0,
+      pnl: stats.totalPnl ?? 0,
+      capital: state.risk?.capital ?? 0,
+      trustScore: state.risk?.trustScore ?? 80,
+      winRate: stats.winRate ?? 0,
+      artifactCount: stats.totalTrades ?? 0,
+    });
+    res.json({ post, twitterUrl: buildTwitterIntentUrl(post) });
   });
 
   httpServer = app.listen(port, () => {

@@ -11,6 +11,8 @@ import { getDefaultMandate } from '../chain/agent-mandate.js';
 import { getOperatorActionReceipts, getOperatorControlState } from '../agent/operator-control.js';
 import { computeRiskAdjustedMetrics } from '../analytics/performance-metrics.js';
 import { config } from '../agent/config.js';
+import { getKrakenFeedStatus } from '../data/kraken-feed.js';
+import { getIndexedEvents, getIndexerStatus } from '../chain/event-indexer.js';
 
 export type McpVisibility = 'public' | 'restricted' | 'operator';
 
@@ -189,6 +191,34 @@ const tradeHistoryResource: McpResource = {
   },
 };
 
+const feedsResource: McpResource = {
+  uri: 'actura://state/feeds',
+  name: 'Data Feeds',
+  description: 'Health status of all external data feeds (Kraken, CoinGecko, DeFiLlama)',
+  visibility: 'public',
+  mimeType: 'application/json',
+  handler: () => ({
+    kraken: getKrakenFeedStatus(),
+    sources: ['coingecko', 'defillama', 'kraken'],
+    note: 'Price feed uses CoinGecko → DeFiLlama → Kraken failover chain',
+  }),
+};
+
+const eventsResource: McpResource = {
+  uri: 'actura://state/events',
+  name: 'On-Chain Events',
+  description: 'Indexed ERC-8004 registry events (reputation feedback, validation requests/responses)',
+  visibility: 'public',
+  mimeType: 'application/json',
+  handler: (params) => {
+    const limit = typeof params?.limit === 'number' ? params.limit : 50;
+    return {
+      indexer: getIndexerStatus(),
+      events: getIndexedEvents().slice(-limit),
+    };
+  },
+};
+
 export const ALL_RESOURCES: McpResource[] = [
   trustResource,
   marketResource,
@@ -199,4 +229,6 @@ export const ALL_RESOURCES: McpResource[] = [
   erc8004Resource,
   artifactsResource,
   tradeHistoryResource,
+  feedsResource,
+  eventsResource,
 ];

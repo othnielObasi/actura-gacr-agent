@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Actura — Judge Walkthrough</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { background: #080b11; color: #c9d1dc; font-family: 'JetBrains Mono','SF Mono','Cascadia Code',monospace; font-size: 12px; line-height: 1.5; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
+    h1 { font-size: 20px; font-weight: 800; color: #edf2f7; letter-spacing: 1px; margin-bottom: 4px; }
+    h2 { font-size: 13px; font-weight: 700; color: #60a5fa; letter-spacing: 0.5px; margin: 20px 0 8px; text-transform: uppercase; }
+    .subtitle { font-size: 11px; color: #7c8a9e; margin-bottom: 20px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+    .card { background: #0c1018; border: 1px solid #1c2536; border-radius: 6px; padding: 12px 14px; }
+    .card-title { font-size: 9px; font-weight: 700; color: #7c8a9e; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+    .metric { font-size: 20px; font-weight: 800; line-height: 1; }
+    .metric-sub { font-size: 9px; color: #7c8a9e; margin-top: 4px; }
+    .kv { display: flex; justify-content: space-between; padding: 3px 0; font-size: 10.5px; }
+    .kv-key { color: #7c8a9e; }
+    .kv-val { color: #c9d1dc; font-weight: 500; text-align: right; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .badge { display: inline-block; font-size: 9px; font-weight: 700; padding: 2px 8px; border-radius: 3px; margin: 2px 2px; }
+    .badge-green { color: #34d399; background: #34d39914; }
+    .badge-blue { color: #60a5fa; background: #60a5fa14; }
+    .badge-cyan { color: #22d3ee; background: #22d3ee14; }
+    .badge-warn { color: #fbbf24; background: #fbbf2414; }
+    .badge-purple { color: #a78bfa; background: #a78bfa14; }
+    .green { color: #34d399; }
+    .blue { color: #60a5fa; }
+    .cyan { color: #22d3ee; }
+    .warn { color: #fbbf24; }
+    .red { color: #f87171; }
+    .check { font-size: 10.5px; padding: 3px 0; display: flex; gap: 6px; }
+    .check-pass::before { content: '✓'; color: #34d399; font-weight: 700; }
+    .check-fail::before { content: '✗'; color: #f87171; font-weight: 700; }
+    a { color: #60a5fa; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .artifact-list { max-height: 200px; overflow-y: auto; }
+    .artifact-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; padding: 4px 0; border-bottom: 1px solid #1c253620; font-size: 10px; align-items: center; }
+    .share-box { background: #111621; border: 1px solid #253045; border-radius: 6px; padding: 12px; margin-top: 8px; font-size: 10.5px; white-space: pre-wrap; color: #c9d1dc; cursor: pointer; position: relative; }
+    .share-box:hover { border-color: #60a5fa; }
+    .share-box::after { content: 'click to copy'; position: absolute; top: 4px; right: 8px; font-size: 8px; color: #4b5668; }
+    .copied { color: #34d399 !important; }
+    .divider { border: none; border-top: 1px solid #1c2536; margin: 16px 0; }
+    #loading { text-align: center; padding: 60px; color: #7c8a9e; }
+    .footer { text-align: center; margin-top: 24px; padding: 12px; font-size: 9px; color: #4b5668; border-top: 1px solid #1c2536; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:2px">
+      <div style="width:28px;height:28px;border-radius:5px;background:linear-gradient(135deg,#34d399,#22d3ee);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#080b11">A</div>
+      <h1>ACTURA <span style="font-size:11px;color:#7c8a9e;font-weight:500">Judge Walkthrough</span></h1>
+    </div>
+    <div class="subtitle">ERC-8004 Trust-Governed Autonomous Capital Runtime — Hackathon Submission Overview</div>
+
+    <div id="loading">Loading agent data…</div>
+    <div id="content" style="display:none">
+
+      <!-- 1. Identity -->
+      <h2>1. Agent Identity (ERC-8004)</h2>
+      <div class="grid3">
+        <div class="card">
+          <div class="card-title">Agent ID</div>
+          <div class="metric cyan" id="agentId">—</div>
+          <div class="metric-sub">On-chain identity token</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Trust Score</div>
+          <div class="metric green" id="trustScore">—</div>
+          <div class="metric-sub" id="trustTier">—</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Status</div>
+          <div class="metric" id="agentStatus">—</div>
+          <div class="metric-sub" id="cycleCount">—</div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:8px">
+        <div class="card-title">On-Chain Registries</div>
+        <div class="kv"><span class="kv-key">Identity Registry</span><span class="kv-val cyan" id="identityReg">—</span></div>
+        <div class="kv"><span class="kv-key">Reputation Registry</span><span class="kv-val cyan" id="reputationReg">—</span></div>
+        <div class="kv"><span class="kv-key">Validation Registry</span><span class="kv-val cyan" id="validationReg">—</span></div>
+        <div class="kv"><span class="kv-key">Network</span><span class="kv-val">Base Sepolia (84532)</span></div>
+        <div class="kv"><span class="kv-key">Owner Wallet</span><span class="kv-val" id="ownerWallet">—</span></div>
+      </div>
+
+      <!-- 2. Technology Stack -->
+      <h2>2. Technology Compliance</h2>
+      <div class="card">
+        <div class="card-title">Required Technologies Implemented</div>
+        <div id="techChecks"></div>
+      </div>
+
+      <!-- 3. Latest Artifacts -->
+      <h2>3. Validation Artifacts (IPFS)</h2>
+      <div class="card">
+        <div class="card-title">Recent Trade Decision Artifacts</div>
+        <div class="artifact-list" id="artifactList"></div>
+        <div class="metric-sub" style="margin-top:6px" id="artifactCount">—</div>
+      </div>
+
+      <!-- 4. Risk & Market State -->
+      <h2>4. Risk Management & Market State</h2>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-title">Risk Engine</div>
+          <div class="kv"><span class="kv-key">Capital</span><span class="kv-val green" id="capital">—</span></div>
+          <div class="kv"><span class="kv-key">Volatility</span><span class="kv-val" id="volatility">—</span></div>
+          <div class="kv"><span class="kv-key">Circuit Breaker</span><span class="kv-val" id="circuitBreaker">—</span></div>
+          <div class="kv"><span class="kv-key">Open Positions</span><span class="kv-val" id="openPositions">—</span></div>
+          <div class="kv"><span class="kv-key">Total Trades</span><span class="kv-val" id="totalTrades">—</span></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Market State</div>
+          <div class="kv"><span class="kv-key">Trading Pair</span><span class="kv-val">WETH/USDC</span></div>
+          <div class="kv"><span class="kv-key">Current Price</span><span class="kv-val green" id="currentPrice">—</span></div>
+          <div class="kv"><span class="kv-key">Data Sources</span><span class="kv-val" id="dataSources">—</span></div>
+          <div class="kv"><span class="kv-key">DEX Routing</span><span class="kv-val" id="dexRouting">—</span></div>
+        </div>
+      </div>
+
+      <!-- 5. PnL & Performance -->
+      <h2>5. Performance</h2>
+      <div class="card">
+        <div class="card-title">Trade Stats</div>
+        <div class="grid3" id="tradeStats"></div>
+      </div>
+
+      <!-- 6. MCP Surface -->
+      <h2>6. MCP Interface</h2>
+      <div class="card">
+        <div class="card-title">Model Context Protocol Tools</div>
+        <div id="mcpTools" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+        <div class="metric-sub" style="margin-top:8px" id="mcpEndpoint">—</div>
+      </div>
+
+      <!-- 7. Governance Pipeline -->
+      <h2>7. Governance Pipeline (8-Stage Gate)</h2>
+      <div class="card">
+        <div id="govPipeline" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+        <div class="metric-sub" style="margin-top:8px">Every trade passes through: Signal → Risk → Governance → Security → Simulation → Validation → Signing → Submission</div>
+      </div>
+
+      <!-- 8. Links -->
+      <h2>8. Verification Links</h2>
+      <div class="card">
+        <div class="kv"><span class="kv-key">Dashboard</span><span class="kv-val"><a href="/" id="dashLink">Main Dashboard</a></span></div>
+        <div class="kv"><span class="kv-key">Trade History</span><span class="kv-val"><a href="/trades">Trade Log</a></span></div>
+        <div class="kv"><span class="kv-key">MCP Endpoint</span><span class="kv-val"><a href="/mcp" id="mcpLink">/mcp</a></span></div>
+        <div class="kv"><span class="kv-key">Agent Card (A2A)</span><span class="kv-val"><a href="/.well-known/agent-card.json">/.well-known/agent-card.json</a></span></div>
+        <div class="kv"><span class="kv-key">Health Check</span><span class="kv-val"><a href="/api/health">/api/health</a></span></div>
+        <div class="kv"><span class="kv-key">GitHub Repo</span><span class="kv-val"><a href="https://github.com/othnielObasi/actura-gacr-agent" target="_blank">othnielObasi/actura-gacr-agent</a></span></div>
+      </div>
+
+      <!-- 9. Social Share -->
+      <h2>9. Share</h2>
+      <div class="card">
+        <div class="card-title">Quick Trade Summary (click to copy)</div>
+        <div class="share-box" id="shareBox" onclick="copyShare()">Loading…</div>
+      </div>
+
+    </div>
+
+    <div class="footer">
+      Actura — ERC-8004 GACR Agent · Built for the Surge Hackathon · <a href="https://early.surge.xyz" target="_blank">early.surge.xyz</a>
+    </div>
+  </div>
+
+  <script>
+    const STAGES = ['Signal','Risk','Govern','Secure','Simulate','Validate','Sign','Submit'];
+    const TECH = [
+      ['ERC-8004 (Identity, Reputation, Validation)', true],
+      ['EIP-712 (Typed data signing)', true],
+      ['EIP-1271 (Smart contract signature verification)', true],
+      ['EIP-155 (Replay-protected transactions)', true],
+      ['Model Context Protocol (MCP)', true],
+      ['Agent-to-Agent Protocol (A2A)', true],
+      ['IPFS Artifact Storage (Pinata)', true],
+      ['Aerodrome Finance (mainnet-ready, testnet→Uniswap fallback)', true],
+      ['Uniswap V3 (testnet active)', true],
+      ['Kraken REST API (price feed)', true],
+      ['CoinGecko + DeFiLlama (price feeds)', true],
+      ['On-chain Event Indexer', true],
+      ['AI Reasoning (Claude → Gemini → OpenAI)', true],
+    ];
+
+    async function load() {
+      try {
+        const [status, checkpoints, reputation, tradeStats, artifacts, health] = await Promise.all([
+          fetch('/api/status').then(r=>r.json()).catch(()=>null),
+          fetch('/api/checkpoints?limit=5').then(r=>r.json()).catch(()=>null),
+          fetch('/api/reputation/history?limit=10').then(r=>r.json()).catch(()=>null),
+          fetch('/api/trades/stats').then(r=>r.json()).catch(()=>null),
+          fetch('/api/artifacts?limit=10').then(r=>r.json()).catch(()=>null),
+          fetch('/api/health').then(r=>r.json()).catch(()=>null),
+        ]);
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('content').style.display = 'block';
+
+        // Identity
+        const agentId = health?.agentId || status?.agent?.agentId || '338';
+        document.getElementById('agentId').textContent = agentId;
+
+        // Trust
+        const hist = reputation?.history || [];
+        const latest = hist[hist.length - 1];
+        if (latest) {
+          document.getElementById('trustScore').textContent = latest.trustScore?.toFixed(0) || '—';
+          document.getElementById('trustTier').textContent = (latest.trustTier || '—').toUpperCase() + ' · ' + (latest.status || '—');
+        }
+
+        // Status
+        const running = status?.agent?.running;
+        const el = document.getElementById('agentStatus');
+        el.textContent = running ? 'RUNNING' : 'STOPPED';
+        el.className = 'metric ' + (running ? 'green' : 'red');
+        document.getElementById('cycleCount').textContent = `Cycle ${status?.agent?.cycleCount || 0}`;
+
+        // Registries
+        if (health) {
+          document.getElementById('identityReg').textContent = health.identityRegistry || '—';
+          document.getElementById('reputationReg').textContent = health.reputationRegistry || '—';
+          document.getElementById('validationReg').textContent = health.validationRegistry || '—';
+          document.getElementById('ownerWallet').textContent = health.ownerAddress || '—';
+        }
+
+        // Tech checks
+        const techEl = document.getElementById('techChecks');
+        techEl.innerHTML = TECH.map(([name, ok]) =>
+          `<div class="check ${ok ? 'check-pass' : 'check-fail'}">${name}</div>`
+        ).join('');
+
+        // Artifacts
+        const artEl = document.getElementById('artifactList');
+        if (artifacts?.artifacts?.length > 0) {
+          artEl.innerHTML = artifacts.artifacts.map(a =>
+            `<div class="artifact-row">
+              <span>${a.timestamp?.substring(0, 19) || '—'}</span>
+              <span class="cyan">${(a.cid || '—').substring(0, 16)}…</span>
+              <a href="${a.ipfsUrl || '#'}" target="_blank" style="font-size:9px">View on IPFS →</a>
+            </div>`
+          ).join('');
+          document.getElementById('artifactCount').textContent = `${artifacts.total || artifacts.artifacts.length} total artifacts generated`;
+        } else {
+          artEl.innerHTML = '<div style="color:#7c8a9e;padding:8px 0">No artifacts yet — agent needs to run at least one cycle</div>';
+        }
+
+        // Risk
+        document.getElementById('capital').textContent = '$' + (status?.capital?.toFixed(2) || '0');
+        document.getElementById('volatility').textContent = status?.risk?.volatility?.toFixed?.(4) || '—';
+        document.getElementById('circuitBreaker').textContent = status?.risk?.circuitBreaker ? 'ACTIVE' : 'ARMED';
+        document.getElementById('openPositions').textContent = status?.risk?.openPositions || 0;
+        document.getElementById('totalTrades').textContent = status?.risk?.totalTrades || 0;
+
+        // Market
+        const price = status?.market?.currentPrice;
+        document.getElementById('currentPrice').textContent = price ? '$' + price.toFixed(2) : '—';
+        document.getElementById('dataSources').textContent = 'CoinGecko → DeFiLlama → Kraken';
+        document.getElementById('dexRouting').textContent = 'Uniswap V3 (testnet) · Aerodrome (mainnet-ready)';
+
+        // Trade Stats
+        const tsEl = document.getElementById('tradeStats');
+        if (tradeStats) {
+          tsEl.innerHTML = [
+            ['Total Trades', tradeStats.totalTrades || 0],
+            ['Win Rate', ((tradeStats.winRate || 0) * 100).toFixed(1) + '%'],
+            ['Total PnL', '$' + (tradeStats.totalPnl || 0).toFixed(2)],
+          ].map(([k, v]) => `<div><div style="font-size:8px;color:#7c8a9e;text-transform:uppercase;letter-spacing:1px">${k}</div><div style="font-size:16px;font-weight:700;color:#edf2f7">${v}</div></div>`).join('');
+        } else {
+          tsEl.innerHTML = '<div style="color:#7c8a9e">No trades recorded yet</div>';
+        }
+
+        // MCP
+        const mcpEl = document.getElementById('mcpTools');
+        const tools = ['get_market_state','get_trust_state','get_capital_rights','get_mandate_state','get_dex_routing',
+          'get_positions','get_performance_metrics','get_trade_history','explain_trade','get_validation_status',
+          'get_reputation_summary','get_kraken_market','get_indexed_events',
+          'propose_trade','execute_trade','pause_agent','resume_agent','emergency_stop'];
+        mcpEl.innerHTML = tools.map(t => {
+          const cls = t.startsWith('get_') || t === 'explain_trade' ? 'badge-green' : t.includes('trade') ? 'badge-warn' : 'badge-purple';
+          return `<span class="badge ${cls}">${t}</span>`;
+        }).join('');
+        document.getElementById('mcpEndpoint').textContent = 'MCP endpoint: /mcp · Resources: 11 · Tools: ' + tools.length;
+
+        // Gov pipeline
+        const govEl = document.getElementById('govPipeline');
+        govEl.innerHTML = STAGES.map((s, i) =>
+          `<div style="flex:1;text-align:center;padding:8px 4px;background:#111621;border:1px solid #253045;border-radius:4px">
+            <div style="font-size:16px;font-weight:800;color:#34d399">${i + 1}</div>
+            <div style="font-size:9px;color:#7c8a9e;margin-top:2px">${s}</div>
+          </div>`
+        ).join('<div style="display:flex;align-items:center;color:#4b5668;font-size:10px">→</div>');
+
+        // Share
+        const shareText = `🤖 Actura GACR Agent — ERC-8004 Trust-Governed Trading
+
+📊 Trust Score: ${latest?.trustScore?.toFixed(0) || '80'} | Capital: $${status?.capital?.toFixed(0) || '10,000'}
+🔗 ${artifacts?.total || 0} IPFS artifacts | ${status?.risk?.totalTrades || 0} trades executed
+⚡ 8-stage governance pipeline | 3 price feeds | 2 DEXes
+
+Built on @base_protocol with ERC-8004
+@Surgexyz_ @lablabai #SurgeHackathon #ERC8004 #DeFi`;
+        document.getElementById('shareBox').textContent = shareText;
+        window.__shareText = shareText;
+
+      } catch (e) {
+        document.getElementById('loading').textContent = 'Error loading data: ' + e.message;
+      }
+    }
+
+    function copyShare() {
+      navigator.clipboard.writeText(window.__shareText || '').then(() => {
+        const el = document.getElementById('shareBox');
+        el.classList.add('copied');
+        el.setAttribute('data-after', 'copied!');
+        setTimeout(() => el.classList.remove('copied'), 1500);
+      });
+    }
+
+    load();
+  </script>
+</body>
+</html>

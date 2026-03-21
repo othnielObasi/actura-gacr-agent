@@ -11,7 +11,7 @@
 
 import type { MarketData } from '../strategy/momentum.js';
 import { createLogger } from '../agent/logger.js';
-import { fetchKrakenPrice } from './kraken-feed.js';
+import { fetchKrakenPrice, fetchKrakenOHLC } from './kraken-feed.js';
 
 const log = createLogger('LIVE-FEED');
 
@@ -119,6 +119,7 @@ export async function fetchLivePrice(): Promise<{ price: number; source: string 
  * Returns null if fetch fails.
  */
 export async function fetchOHLCHistory(): Promise<MarketData | null> {
+  // Try CoinGecko first
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -131,43 +132,58 @@ export async function fetchOHLCHistory(): Promise<MarketData | null> {
 
     if (!res.ok) {
       log.warn(`CoinGecko OHLC returned ${res.status}`);
-      return null;
+    } else {
+      // CoinGecko OHLC response: [[timestamp, open, high, low, close], ...]
+      const raw = await res.json() as number[][];
+      if (Array.isArray(raw) && raw.length >= 20) {
+        const prices: number[] = [];
+        const highs: number[] = [];
+        const lows: number[] = [];
+        const timestamps: string[] = [];
+
+        for (const candle of raw) {
+          if (!Array.isArray(candle) || candle.length < 5) continue;
+          const [ts, _open, high, low, close] = candle;
+          prices.push(close);
+          highs.push(high);
+          lows.push(low);
+          timestamps.push(new Date(ts).toISOString());
+        }
+
+        if (prices.length >= 20) {
+          log.info('Loaded live OHLC history', {
+            candles: prices.length,
+            latest: `$${prices[prices.length - 1].toFixed(2)}`,
+            oldest: `$${prices[0].toFixed(2)}`,
+          });
+          return { prices, highs, lows, timestamps };
+        }
+      }
+      log.warn('CoinGecko OHLC returned insufficient data');
     }
-
-    // CoinGecko OHLC response: [[timestamp, open, high, low, close], ...]
-    const raw = await res.json() as number[][];
-    if (!Array.isArray(raw) || raw.length < 20) {
-      log.warn('CoinGecko OHLC returned insufficient data', { count: raw?.length ?? 0 });
-      return null;
-    }
-
-    const prices: number[] = [];
-    const highs: number[] = [];
-    const lows: number[] = [];
-    const timestamps: string[] = [];
-
-    for (const candle of raw) {
-      if (!Array.isArray(candle) || candle.length < 5) continue;
-      const [ts, _open, high, low, close] = candle;
-      prices.push(close);
-      highs.push(high);
-      lows.push(low);
-      timestamps.push(new Date(ts).toISOString());
-    }
-
-    if (prices.length < 20) return null;
-
-    log.info('Loaded live OHLC history', {
-      candles: prices.length,
-      latest: `$${prices[prices.length - 1].toFixed(2)}`,
-      oldest: `$${prices[0].toFixed(2)}`,
-    });
-
-    return { prices, highs, lows, timestamps };
   } catch (e) {
-    log.warn('Failed to fetch OHLC history', { error: String(e) });
-    return null;
+    log.warn('CoinGecko OHLC fetch failed', { error: String(e) });
   }
+
+  // Fallback: Kraken OHLC (1h candles)
+  try {
+    const candles = await fetchKrakenOHLC('WETH/USDC', 60);
+    if (candles && candles.length >= 20) {
+      const prices = candles.map(c => c.close);
+      const highs = candles.map(c => c.high);
+      const lows = candles.map(c => c.low);
+      const timestamps = candles.map(c => c.timestamp);
+      log.info('Loaded Kraken OHLC fallback', {
+        candles: prices.length,
+        latest: `$${prices[prices.length - 1].toFixed(2)}`,
+      });
+      return { prices, highs, lows, timestamps };
+    }
+  } catch (e) {
+    log.warn('Kraken OHLC fallback failed', { error: String(e) });
+  }
+
+  return null;
 }
 
 /**
