@@ -37,7 +37,10 @@ const FUNDING_TTL_MS = 5 * 60 * 1000;        // 5 min cache
 
 const FEAR_GREED_URL = 'https://api.alternative.me/fng/?limit=1';
 const CRYPTOPANIC_API_KEY = process.env.CRYPTOPANIC_API_KEY || '';
-const CRYPTOPANIC_URL = `https://cryptopanic.com/api/v1/posts/?auth_token=${CRYPTOPANIC_API_KEY}&currencies=ETH,BTC&filter=hot&public=true`;
+const CRYPTOPANIC_BASE = `https://cryptopanic.com/api/developer/v2/posts/?auth_token=${CRYPTOPANIC_API_KEY}&currencies=ETH,BTC&public=true`;
+const CRYPTOPANIC_HOT_URL = `${CRYPTOPANIC_BASE}&filter=hot`;
+const CRYPTOPANIC_BULLISH_URL = `${CRYPTOPANIC_BASE}&filter=bullish`;
+const CRYPTOPANIC_BEARISH_URL = `${CRYPTOPANIC_BASE}&filter=bearish`;
 const KRAKEN_TICKER_URL = 'https://api.kraken.com/0/public/Ticker?pair=ETHUSD';
 
 // Weights for composite (sum to 1.0)
@@ -95,8 +98,8 @@ async function fetchFearGreed(): Promise<number | null> {
 // ──── CryptoPanic News Sentiment ────
 
 /**
- * Fetch hot crypto news from CryptoPanic free API.
- * Counts bullish vs bearish vote ratios across recent posts.
+ * Fetch crypto news from CryptoPanic Developer v2 API.
+ * Strategy: fetch hot posts, aggregate vote sentiment + count bullish/bearish tagged posts.
  * Returns [-1, +1] sentiment score.
  */
 async function fetchNewsSentiment(): Promise<number | null> {
@@ -104,11 +107,15 @@ async function fetchNewsSentiment(): Promise<number | null> {
     return newsCache.value;
   }
 
+  if (!CRYPTOPANIC_API_KEY) {
+    return newsCache?.value ?? null;
+  }
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-    const res = await fetch(CRYPTOPANIC_URL, {
+    const res = await fetch(CRYPTOPANIC_HOT_URL, {
       signal: controller.signal,
       headers: { 'Accept': 'application/json' },
     });
@@ -129,7 +136,10 @@ async function fetchNewsSentiment(): Promise<number | null> {
     }
 
     const posts = data?.results;
-    if (!posts || posts.length === 0) return newsCache?.value ?? null;
+    if (!posts || posts.length === 0) {
+      log.warn('News API returned no posts');
+      return newsCache?.value ?? null;
+    }
 
     // Aggregate vote sentiment across posts
     let bullishVotes = 0;
@@ -145,7 +155,6 @@ async function fetchNewsSentiment(): Promise<number | null> {
     const totalVotes = bullishVotes + bearishVotes;
     let normalized = 0;
     if (totalVotes > 0) {
-      // Range: [-1, +1]. Pure bullish = +1, pure bearish = -1
       normalized = (bullishVotes - bearishVotes) / totalVotes;
     }
 
