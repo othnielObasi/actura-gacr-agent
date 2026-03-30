@@ -97,7 +97,7 @@ async function fetchFearGreed(): Promise<number | null> {
 
 // ──── CryptoPanic News Sentiment ────
 
-const GEMINI_CLASSIFY_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const GEMINI_CLASSIFY_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 /**
  * Fetch crypto news headlines from CryptoPanic, then use Gemini to classify
