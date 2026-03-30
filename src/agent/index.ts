@@ -63,6 +63,7 @@ let scheduler: Scheduler;
 let agentId: number | null = config.agentId ?? null;
 let cycleCount = 0;
 let regimeGovernance = new RegimeGovernanceController();
+let lastSentiment: SentimentResult | null = null;
 
 // ──── Initialization ────
 
@@ -364,6 +365,7 @@ async function runCycle(): Promise<void> {
   let sentiment: SentimentResult | null = null;
   try {
     sentiment = await fetchSentiment();
+    lastSentiment = sentiment;
   } catch (err: any) {
     log.warn('Sentiment fetch failed — proceeding without', { error: err.message?.slice(0, 80) });
   }
@@ -872,6 +874,7 @@ export function getAgentState() {
     scheduler: scheduler?.getState() ?? null,
     maxPositions: MAX_OPEN_POSITIONS,
     operatorControl: getOperatorControlState(),
+    sentiment: lastSentiment,
   };
 }
 

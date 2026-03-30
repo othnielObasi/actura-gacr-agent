@@ -145,6 +145,7 @@ function Actura() {
   const [governance, setGovernance] = useState(null);
   const [agentRunning, setAgentRunning] = useState(false);
   const [cycleCount, setCycleCount] = useState(0);
+  const [sentiment, setSentiment] = useState(null);
 
   /* ── Tier mapping from API tier names ── */
   const tierMap = { probation: "TIER_1_PROBATION", limited: "TIER_2_LIMITED", standard: "TIER_3_STANDARD", elevated: "TIER_4_EXPANDED", elite: "TIER_4_EXPANDED" };
@@ -276,6 +277,7 @@ function Actura() {
         if (r.circuitBreaker?.active) setOracleStatus("BLOCKED");
         else if (r.volatility?.ratio > 2.0) setOracleStatus("WATCH");
         else setOracleStatus("HEALTHY");
+        if (statusRes.sentiment) setSentiment(statusRes.sentiment);
       }
 
       if (checkpointsRes?.checkpoints) {
@@ -397,8 +399,41 @@ function Actura() {
             <Spark prices={prices} h={72} />
           </P>
 
-          {/* Governance Pipeline — THE HERO */}
-          <P title="Governance Pipeline" tag={`cycle ${cycleCount || tick}`}>
+          {/* Sentiment Intelligence */}
+          <P title="Market Sentiment" tag={sentiment ? `${sentiment.sources?.length || 0} sources` : "loading"}>
+            {sentiment ? (() => {
+              const comp = sentiment.composite || 0;
+              const fg = sentiment.fearGreed;
+              const news = sentiment.newsSentiment;
+              const fund = sentiment.fundingRate;
+              const sentColor = comp > 0.15 ? T.up : comp < -0.15 ? T.dn : T.warn;
+              const sentLabel = comp > 0.3 ? "BULLISH" : comp > 0.15 ? "LEAN BULL" : comp < -0.3 ? "BEARISH" : comp < -0.15 ? "LEAN BEAR" : "NEUTRAL";
+              const fgRaw = fg !== null ? Math.round((fg + 1) * 50) : null;
+              const fgLabel = fgRaw !== null ? (fgRaw <= 20 ? "Extreme Fear" : fgRaw <= 40 ? "Fear" : fgRaw <= 60 ? "Neutral" : fgRaw <= 80 ? "Greed" : "Extreme Greed") : "—";
+              const barWidth = Math.abs(comp) * 100;
+              const barLeft = comp >= 0 ? 50 : 50 - barWidth;
+              return React.createElement(React.Fragment, null,
+                React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 0, marginBottom: 8, borderBottom: `1px solid ${T.brd}`, paddingBottom: 6 } },
+                  React.createElement(Metric, { label: "Composite", value: comp.toFixed(2), sub: sentLabel, color: sentColor }),
+                  React.createElement(Metric, { label: "Fear & Greed", value: fgRaw !== null ? String(fgRaw) : "—", sub: fgLabel, color: fg !== null ? (fg > 0.15 ? T.up : fg < -0.15 ? T.dn : T.warn) : T.fg3 }),
+                  React.createElement(Metric, { label: "News", value: news !== null ? news.toFixed(2) : "—", sub: news !== null ? (news > 0.1 ? "Bullish" : news < -0.1 ? "Bearish" : "Neutral") : "N/A", color: news !== null ? (news > 0.1 ? T.up : news < -0.1 ? T.dn : T.warn) : T.fg3 }),
+                  React.createElement(Metric, { label: "Funding", value: fund !== null ? fund.toFixed(2) : "—", sub: fund !== null ? (fund > 0.1 ? "Longs crowd" : fund < -0.1 ? "Shorts crowd" : "Balanced") : "N/A", color: fund !== null ? (fund > 0.1 ? T.up : fund < -0.1 ? T.dn : T.warn) : T.fg3 }),
+                ),
+                React.createElement("div", { style: { position: "relative", height: 12, background: T.s1, borderRadius: 6, overflow: "hidden", border: `1px solid ${T.brd}` } },
+                  React.createElement("div", { style: { position: "absolute", left: "50%", top: 0, bottom: 0, width: 1, background: T.fg3, zIndex: 2 } }),
+                  React.createElement("div", { style: { position: "absolute", left: `${barLeft}%`, top: 1, bottom: 1, width: `${barWidth}%`, background: sentColor, borderRadius: 4, opacity: 0.7, transition: "all 0.5s ease" } }),
+                ),
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 7.5, color: T.fg3, marginTop: 3 } },
+                  React.createElement("span", null, "FEAR"),
+                  React.createElement("span", null, "GREED"),
+                ),
+              );
+            })() : React.createElement("div", { style: { color: T.fg3, fontSize: 10, textAlign: "center", padding: 16 } }, "Awaiting first sentiment fetch...")}
+          </P>
+        </div>
+
+        {/* Governance Pipeline — THE HERO */}
+        <P title="Governance Pipeline" tag={`cycle ${cycleCount || tick}`}>
             <div style={{ fontSize: 9.5, color: T.fg2, marginBottom: 8 }}>Every trade passes through 8 deterministic stages. Only trades that clear all gates execute.</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 4 }}>
               {STAGES.map((s, i) => {
@@ -434,7 +469,6 @@ function Actura() {
               </div>
             </div>
           </P>
-        </div>
 
         {/* ═══ 3. DECISION ENGINE ═══ */}
         <P title="Decision Engine" tag={`${trades.length} decisions`} noPad>

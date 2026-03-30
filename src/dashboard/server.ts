@@ -148,6 +148,7 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
         openPositions: state.risk.openPositions.length,
         totalTrades: state.risk.totalTrades,
       },
+      sentiment: state.sentiment ?? null,
     });
   });
 
