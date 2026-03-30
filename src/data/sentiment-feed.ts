@@ -201,7 +201,7 @@ Respond with ONLY a JSON array like [-1,0,1,0,-1,...] with exactly ${headlines.l
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 256, temperature: 0.1 },
+        generationConfig: { maxOutputTokens: 512, temperature: 0.1, thinkingConfig: { thinkingBudget: 0 } },
       }),
     });
     clearTimeout(timeout);
@@ -215,14 +215,28 @@ Respond with ONLY a JSON array like [-1,0,1,0,-1,...] with exactly ${headlines.l
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
     };
     const text = (data?.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
-    const jsonMatch = text.match(/\[[\s\S]*?\]/);
-    if (!jsonMatch) {
-      log.warn('Gemini classify returned no array', { text: text.slice(0, 100) });
-      return null;
+
+    // Try complete array first, then handle truncated responses
+    let scores: number[];
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      try {
+        scores = JSON.parse(jsonMatch[0]);
+      } catch {
+        // Array might be truncated — extract whatever numbers we can
+        const nums = text.match(/-?[01]/g);
+        scores = nums ? nums.map(Number) : [];
+      }
+    } else {
+      // No brackets — try to extract individual scores
+      const nums = text.match(/-?[01]/g);
+      scores = nums ? nums.map(Number) : [];
     }
 
-    const scores: number[] = JSON.parse(jsonMatch[0]);
-    if (!Array.isArray(scores) || scores.length === 0) return null;
+    if (!Array.isArray(scores) || scores.length === 0) {
+      log.warn('Gemini classify returned no scores', { text: text.slice(0, 120) });
+      return null;
+    }
 
     // Average the classifications and dampen (news is noisy)
     const avg = scores.reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0) / scores.length;
