@@ -37,7 +37,7 @@ const FUNDING_TTL_MS = 5 * 60 * 1000;        // 5 min cache
 
 const FEAR_GREED_URL = 'https://api.alternative.me/fng/?limit=1';
 const CRYPTOPANIC_API_KEY = process.env.CRYPTOPANIC_API_KEY || '';
-const CRYPTOPANIC_URL = `https://cryptopanic.com/api/free/v1/posts/?auth_token=${CRYPTOPANIC_API_KEY}&currencies=ETH,BTC&filter=hot&public=true`;
+const CRYPTOPANIC_URL = `https://cryptopanic.com/api/v1/posts/?auth_token=${CRYPTOPANIC_API_KEY}&currencies=ETH,BTC&filter=hot&public=true`;
 const KRAKEN_TICKER_URL = 'https://api.kraken.com/0/public/Ticker?pair=ETHUSD';
 
 // Weights for composite (sum to 1.0)
@@ -114,14 +114,19 @@ async function fetchNewsSentiment(): Promise<number | null> {
     });
     clearTimeout(timeout);
 
-    if (!res.ok) return newsCache?.value ?? null;
+    if (!res.ok) {
+      log.warn('News API returned non-OK', { status: res.status });
+      return newsCache?.value ?? null;
+    }
 
-    const data = await res.json() as {
-      results?: Array<{
-        votes?: { positive?: number; negative?: number; liked?: number; disliked?: number };
-        kind?: string;
-      }>;
-    };
+    const text = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      log.warn('News API returned non-JSON', { snippet: text.slice(0, 100) });
+      return newsCache?.value ?? null;
+    }
 
     const posts = data?.results;
     if (!posts || posts.length === 0) return newsCache?.value ?? null;
