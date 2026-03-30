@@ -816,6 +816,8 @@ export function getAgentState() {
 
 export function getHealthCheck() {
   const state = scheduler?.getState();
+  let ownerAddress = '';
+  try { ownerAddress = getWalletAddress(); } catch { /* not initialised yet */ }
   return {
     status: state?.running ? 'healthy' : 'stopped',
     uptime: state?.uptime ?? 0,
@@ -826,6 +828,12 @@ export function getHealthCheck() {
     lastError: state?.lastError,
     capital: riskEngine?.getCapital() ?? 0,
     positions: riskEngine?.getOpenPositions().length ?? 0,
+    agentId: agentId ?? config.agentId ?? 338,
+    identityRegistry: config.identityRegistry,
+    reputationRegistry: config.reputationRegistry,
+    validationRegistry: config.validationRegistry,
+    chainId: config.chainId,
+    ownerAddress,
   };
 }
 
@@ -878,6 +886,7 @@ export async function runSimulation(cycles: number = 50): Promise<void> {
 
 // ──── Entry Point ────
 import { executeTrade, preflight, claimSandboxCapital } from '../chain/executor.js';
+import { getWalletAddress } from '../chain/sdk.js';
 import { startDashboard, stopDashboard } from '../dashboard/server.js';
 import { startMcpServer, stopMcpServer } from '../mcp/server.js';
 
