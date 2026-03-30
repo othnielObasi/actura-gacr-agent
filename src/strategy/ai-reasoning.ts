@@ -17,6 +17,7 @@ import { createLogger } from '../agent/logger.js';
 import { retry } from '../agent/retry.js';
 import type { StrategyOutput } from '../strategy/momentum.js';
 import type { RiskDecision } from '../risk/engine.js';
+import type { SentimentResult } from '../data/sentiment-feed.js';
 
 const log = createLogger('AI-REASON');
 
@@ -56,6 +57,7 @@ export async function generateReasoning(
   recentPrices: number[],
   capitalUsd: number,
   openPositionCount: number,
+  sentiment?: SentimentResult | null,
 ): Promise<AIReasoning> {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
@@ -65,7 +67,7 @@ export async function generateReasoning(
   if (anthropicKey) {
     try {
       const result = await retry(
-        () => callClaudeAPI(anthropicKey, strategyOutput, riskDecision, recentPrices, capitalUsd, openPositionCount),
+        () => callClaudeAPI(anthropicKey, strategyOutput, riskDecision, recentPrices, capitalUsd, openPositionCount, sentiment),
         { maxRetries: 1, baseDelayMs: 500, label: 'Claude reasoning' }
       );
       return result;
@@ -78,7 +80,7 @@ export async function generateReasoning(
   if (geminiKey) {
     try {
       const result = await retry(
-        () => callGeminiAPI(geminiKey, strategyOutput, riskDecision, recentPrices, capitalUsd, openPositionCount),
+        () => callGeminiAPI(geminiKey, strategyOutput, riskDecision, recentPrices, capitalUsd, openPositionCount, sentiment),
         { maxRetries: 1, baseDelayMs: 500, label: 'Gemini reasoning' }
       );
       return result;
@@ -91,7 +93,7 @@ export async function generateReasoning(
   if (openaiKey) {
     try {
       const result = await retry(
-        () => callOpenAIAPI(openaiKey, strategyOutput, riskDecision, recentPrices, capitalUsd, openPositionCount),
+        () => callOpenAIAPI(openaiKey, strategyOutput, riskDecision, recentPrices, capitalUsd, openPositionCount, sentiment),
         { maxRetries: 1, baseDelayMs: 500, label: 'OpenAI reasoning' }
       );
       return result;
@@ -114,8 +116,9 @@ async function callClaudeAPI(
   prices: number[],
   capital: number,
   posCount: number,
+  sentiment?: SentimentResult | null,
 ): Promise<AIReasoning> {
-  const prompt = buildReasoningPrompt(strategy, risk, prices, capital, posCount);
+  const prompt = buildReasoningPrompt(strategy, risk, prices, capital, posCount, sentiment);
 
   const response = await fetch(ANTHROPIC_API_URL, {
     method: 'POST',
@@ -158,11 +161,25 @@ function buildReasoningPrompt(
   prices: number[],
   capital: number,
   posCount: number,
+  sentiment?: SentimentResult | null,
 ): string {
   const last10 = prices.slice(-10);
   const priceChange = last10.length >= 2
     ? ((last10[last10.length - 1] - last10[0]) / last10[0] * 100).toFixed(2)
     : '0';
+
+  // Build sentiment block if available
+  let sentimentBlock = '';
+  if (sentiment && sentiment.sources.length > 0) {
+    const fgRaw = sentiment.fearGreed !== null ? Math.round((sentiment.fearGreed + 1) * 50) : null;
+    const fgLabel = fgRaw !== null ? (fgRaw <= 20 ? 'Extreme Fear' : fgRaw <= 40 ? 'Fear' : fgRaw <= 60 ? 'Neutral' : fgRaw <= 80 ? 'Greed' : 'Extreme Greed') : 'N/A';
+    sentimentBlock = `\n\nSENTIMENT (25% weight in signal scorecard):
+- Composite: ${sentiment.composite.toFixed(2)} (${sentiment.composite > 0.15 ? 'BULLISH' : sentiment.composite < -0.15 ? 'BEARISH' : 'NEUTRAL'})
+- Fear & Greed Index: ${fgRaw ?? 'N/A'}/100 (${fgLabel})
+- News sentiment: ${sentiment.newsSentiment?.toFixed(2) ?? 'N/A'} (LLM-classified headlines)
+- Funding proxy: ${sentiment.fundingRate?.toFixed(2) ?? 'N/A'} (Kraken VWAP deviation)
+- Active sources: ${sentiment.sources.join(', ')}`;
+  }
 
   return `You are the reasoning engine for Actura, an accountable autonomous trading agent. Analyze this trade decision and provide structured reasoning.
 
@@ -172,7 +189,7 @@ MARKET SNAPSHOT:
 - SMA(20): ${strategy.indicators.smaFast?.toFixed(2) ?? 'N/A'}
 - SMA(50): ${strategy.indicators.smaSlow?.toFixed(2) ?? 'N/A'}
 - Volatility: ${strategy.indicators.volatility?.toFixed(4) ?? 'N/A'} (regime: ${risk.volatility.regime})
-- ATR: ${strategy.indicators.atr?.toFixed(2) ?? 'N/A'}
+- ATR: ${strategy.indicators.atr?.toFixed(2) ?? 'N/A'}${sentimentBlock}
 
 SIGNAL:
 - Direction: ${strategy.signal.direction}
@@ -193,7 +210,7 @@ PORTFOLIO:
 - Drawdown: ${(risk.circuitBreaker.drawdownPct * 100).toFixed(2)}%
 
 Respond ONLY with valid JSON (no markdown, no backticks):
-{"marketContext":"1-2 sentences on market conditions","tradeRationale":"why this decision makes sense","riskNarrative":"plain English risk assessment","confidenceFactors":["factor1","factor2","factor3"],"watchItems":["risk1","risk2"],"summary":"one sentence summary"}`;
+{"marketContext":"1-2 sentences on market conditions including sentiment","tradeRationale":"why this decision makes sense given technicals AND sentiment","riskNarrative":"plain English risk assessment","confidenceFactors":["factor1","factor2","factor3"],"watchItems":["risk1","risk2"],"summary":"one sentence summary referencing market sentiment"}`;
 }
 
 /**
@@ -206,8 +223,9 @@ async function callGeminiAPI(
   prices: number[],
   capital: number,
   posCount: number,
+  sentiment?: SentimentResult | null,
 ): Promise<AIReasoning> {
-  const prompt = buildReasoningPrompt(strategy, risk, prices, capital, posCount);
+  const prompt = buildReasoningPrompt(strategy, risk, prices, capital, posCount, sentiment);
 
   const url = `${GEMINI_API_URL}?key=${apiKey}`;
   const response = await fetch(url, {
@@ -253,8 +271,9 @@ async function callOpenAIAPI(
   prices: number[],
   capital: number,
   posCount: number,
+  sentiment?: SentimentResult | null,
 ): Promise<AIReasoning> {
-  const prompt = buildReasoningPrompt(strategy, risk, prices, capital, posCount);
+  const prompt = buildReasoningPrompt(strategy, risk, prices, capital, posCount, sentiment);
 
   const response = await fetch(OPENAI_API_URL, {
     method: 'POST',

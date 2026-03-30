@@ -644,7 +644,7 @@ async function runCycle(): Promise<void> {
 
   // Step 5b: Enrich with AI reasoning + market snapshot + confidence intervals
   const aiReasoning = await generateReasoning(
-    strategyOutput, riskDecision, marketData.prices, capital, openCount
+    strategyOutput, riskDecision, marketData.prices, capital, openCount, sentiment
   );
   artifact = enrichArtifact(artifact, aiReasoning, marketData.prices);
 

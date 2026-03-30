@@ -97,9 +97,13 @@ async function fetchFearGreed(): Promise<number | null> {
 
 // ──── CryptoPanic News Sentiment ────
 
+const GEMINI_CLASSIFY_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+
 /**
- * Fetch crypto news from CryptoPanic Developer v2 API.
- * Strategy: fetch hot posts, aggregate vote sentiment + count bullish/bearish tagged posts.
+ * Fetch crypto news headlines from CryptoPanic, then use Gemini to classify
+ * sentiment. The Developer v2 tier returns posts but vote data is always 0,
+ * so we use LLM classification instead.
+ *
  * Returns [-1, +1] sentiment score.
  */
 async function fetchNewsSentiment(): Promise<number | null> {
@@ -112,6 +116,7 @@ async function fetchNewsSentiment(): Promise<number | null> {
   }
 
   try {
+    // Step 1: Fetch headlines from CryptoPanic
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -141,37 +146,101 @@ async function fetchNewsSentiment(): Promise<number | null> {
       return newsCache?.value ?? null;
     }
 
-    // Aggregate vote sentiment across posts
-    let bullishVotes = 0;
-    let bearishVotes = 0;
-
-    for (const post of posts.slice(0, 20)) {
-      const v = post.votes;
-      if (!v) continue;
-      bullishVotes += (v.positive ?? 0) + (v.liked ?? 0);
-      bearishVotes += (v.negative ?? 0) + (v.disliked ?? 0);
+    // Step 2: Extract headlines for LLM classification
+    const headlines = posts.slice(0, 15).map((p: any) => p.title).filter(Boolean);
+    if (headlines.length === 0) {
+      return newsCache?.value ?? null;
     }
 
-    const totalVotes = bullishVotes + bearishVotes;
-    let normalized = 0;
-    if (totalVotes > 0) {
-      normalized = (bullishVotes - bearishVotes) / totalVotes;
+    // Step 3: Classify via Gemini
+    const normalized = await classifyHeadlines(headlines);
+    if (normalized === null) {
+      return newsCache?.value ?? null;
     }
-
-    // Dampen — news is noisy
-    normalized = normalized * 0.8;
 
     newsCache = { value: normalized, fetchedAt: Date.now() };
     log.info('News sentiment fetched', {
-      posts: posts.length,
-      bullish: bullishVotes,
-      bearish: bearishVotes,
+      posts: headlines.length,
       normalized: normalized.toFixed(2),
+      method: 'llm_classify',
     });
     return normalized;
   } catch (err: any) {
     log.warn('News sentiment fetch failed', { error: err.message?.slice(0, 80) });
     return newsCache?.value ?? null;
+  }
+}
+
+/**
+ * Use Gemini Flash to classify headlines as bullish/bearish/neutral.
+ * Returns [-1, +1] or null on failure.
+ */
+async function classifyHeadlines(headlines: string[]): Promise<number | null> {
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    log.warn('No GEMINI_API_KEY — skipping headline classification');
+    return null;
+  }
+
+  const numberedList = headlines.map((h, i) => `${i + 1}. ${h}`).join('\n');
+  const prompt = `You are a crypto market sentiment classifier. For each headline below, respond with ONLY a JSON array of numbers: -1 (bearish), 0 (neutral), or 1 (bullish).
+
+Headlines:
+${numberedList}
+
+Respond with ONLY a JSON array like [-1,0,1,0,-1,...] with exactly ${headlines.length} elements. No text, no markdown.`;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    const url = `${GEMINI_CLASSIFY_URL}?key=${geminiKey}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 256, temperature: 0.1 },
+      }),
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      log.warn('Gemini classify returned non-OK', { status: res.status });
+      return null;
+    }
+
+    const data = await res.json() as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    const text = (data?.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
+    const jsonMatch = text.match(/\[[\s\S]*?\]/);
+    if (!jsonMatch) {
+      log.warn('Gemini classify returned no array', { text: text.slice(0, 100) });
+      return null;
+    }
+
+    const scores: number[] = JSON.parse(jsonMatch[0]);
+    if (!Array.isArray(scores) || scores.length === 0) return null;
+
+    // Average the classifications and dampen (news is noisy)
+    const avg = scores.reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0) / scores.length;
+    const normalized = Math.max(-1, Math.min(1, avg * 0.8));
+
+    log.info('Headlines classified', {
+      count: scores.length,
+      bullish: scores.filter(s => s > 0).length,
+      bearish: scores.filter(s => s < 0).length,
+      neutral: scores.filter(s => s === 0).length,
+      raw: avg.toFixed(3),
+      normalized: normalized.toFixed(2),
+    });
+
+    return normalized;
+  } catch (err: any) {
+    log.warn('Headline classification failed', { error: err.message?.slice(0, 80) });
+    return null;
   }
 }
 
