@@ -36,7 +36,8 @@ const NEWS_TTL_MS = 3 * 60 * 1000;           // 3 min cache
 const FUNDING_TTL_MS = 5 * 60 * 1000;        // 5 min cache
 
 const FEAR_GREED_URL = 'https://api.alternative.me/fng/?limit=1';
-const CRYPTOPANIC_URL = 'https://cryptopanic.com/api/free/v1/posts/?auth_token=FREE&currencies=ETH,BTC&filter=hot&public=true';
+const CRYPTOPANIC_API_KEY = process.env.CRYPTOPANIC_API_KEY || '';
+const CRYPTOPANIC_URL = `https://cryptopanic.com/api/free/v1/posts/?auth_token=${CRYPTOPANIC_API_KEY}&currencies=ETH,BTC&filter=hot&public=true`;
 const KRAKEN_TICKER_URL = 'https://api.kraken.com/0/public/Ticker?pair=ETHUSD';
 
 // Weights for composite (sum to 1.0)
