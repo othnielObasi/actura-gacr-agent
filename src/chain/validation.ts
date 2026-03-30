@@ -22,20 +22,23 @@ import { createLogger } from '../agent/logger.js';
 const log = createLogger('VALIDATION');
 
 // v1.0 ABI
+// Deployed contract ABI (bytes32 tag, not string tag)
 const VALIDATION_ABI = [
   // Write
-  'function validationRequest(address validatorAddress, uint256 agentId, string requestURI, bytes32 requestHash) external',
-  'function validationResponse(bytes32 requestHash, uint8 response, string responseURI, bytes32 responseHash, string tag) external',
+  'function validationRequest(address validatorAddress, uint256 agentId, string requestUri, bytes32 requestHash) external',
+  'function validationResponse(bytes32 requestHash, uint8 response, string responseUri, bytes32 responseHash, bytes32 tag) external',
 
   // Read
-  'function getValidationStatus(bytes32 requestHash) external view returns (address validatorAddress, uint256 agentId, uint8 response, bytes32 responseHash, string tag, uint256 lastUpdate)',
-  'function getSummary(uint256 agentId, address[] validatorAddresses, string tag) external view returns (uint64 count, uint8 averageResponse)',
+  'function getValidationStatus(bytes32 requestHash) external view returns (address validatorAddress, uint256 agentId, uint8 response, bytes32 tag, uint256 lastUpdate)',
+  'function getSummary(uint256 agentId, address[] validatorAddresses, bytes32 tag) external view returns (uint64 count, uint8 avgResponse)',
   'function getAgentValidations(uint256 agentId) external view returns (bytes32[])',
   'function getValidatorRequests(address validatorAddress) external view returns (bytes32[])',
+  'function requestExists(bytes32 requestHash) external view returns (bool)',
+  'function getRequest(bytes32 requestHash) external view returns (address validatorAddress, uint256 agentId, string requestUri, uint256 timestamp)',
 
   // Events
-  'event ValidationRequest(address indexed validatorAddress, uint256 indexed agentId, string requestURI, bytes32 indexed requestHash)',
-  'event ValidationResponse(address indexed validatorAddress, uint256 indexed agentId, bytes32 indexed requestHash, uint8 response, string responseURI, bytes32 responseHash, string tag)',
+  'event ValidationRequest(address indexed validatorAddress, uint256 indexed agentId, string requestUri, bytes32 indexed requestHash)',
+  'event ValidationResponse(address indexed validatorAddress, uint256 indexed agentId, bytes32 indexed requestHash, uint8 response, string responseUri, bytes32 responseHash, bytes32 tag)',
 ];
 
 let contract: ethers.Contract | null = null;
@@ -139,6 +142,7 @@ export async function submitValidationResponse(
   const registry = getContract();
 
   const clampedResponse = Math.max(0, Math.min(100, Math.round(response)));
+  const tagBytes32 = tag ? ethers.encodeBytes32String(tag.slice(0, 31)) : ethers.ZeroHash;
 
   log.info(`Submitting validation response`, {
     requestHash: requestHash.slice(0, 16) + '...',
@@ -151,7 +155,7 @@ export async function submitValidationResponse(
     clampedResponse,
     responseURI,
     responseHash,
-    tag
+    tagBytes32
   );
   const receipt = await waitForTx(tx);
 
@@ -179,6 +183,8 @@ export async function submitValidationResponseAsValidator(
 
   const clampedResponse = Math.max(0, Math.min(100, Math.round(response)));
 
+  const tagBytes32 = tag ? ethers.encodeBytes32String(tag.slice(0, 31)) : ethers.ZeroHash;
+
   log.info(`Validator ${validatorWallet.address} responding`, {
     requestHash: requestHash.slice(0, 16) + '...',
     response: clampedResponse,
@@ -189,7 +195,7 @@ export async function submitValidationResponseAsValidator(
     clampedResponse,
     responseURI,
     responseHash,
-    tag
+    tagBytes32
   );
   const receipt = await waitForTx(tx);
 
@@ -263,15 +269,14 @@ export async function validateTradeArtifact(
  */
 export async function getValidationStatus(requestHash: string) {
   const registry = getContract();
-  const [validatorAddress, agentId, response, responseHash, tag, lastUpdate] =
+  const [validatorAddress, agentId, response, tag, lastUpdate] =
     await registry.getValidationStatus(requestHash);
 
   return {
     validatorAddress,
     agentId: Number(agentId),
     response: Number(response),
-    responseHash,
-    tag,
+    tag: ethers.decodeBytes32String(tag),
     lastUpdate: Number(lastUpdate),
   };
 }
@@ -285,6 +290,7 @@ export async function getValidationSummary(
   tag: string = ''
 ): Promise<{ count: number; averageResponse: number }> {
   const registry = getContract();
-  const [count, averageResponse] = await registry.getSummary(agentId, validatorAddresses, tag);
+  const tagBytes32 = tag ? ethers.encodeBytes32String(tag.slice(0, 31)) : ethers.ZeroHash;
+  const [count, averageResponse] = await registry.getSummary(agentId, validatorAddresses, tagBytes32);
   return { count: Number(count), averageResponse: Number(averageResponse) };
 }
