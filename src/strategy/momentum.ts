@@ -48,7 +48,7 @@ let prevSmaSlow: number | null = null;
 /**
  * Run the strategy on current market data
  */
-export function runStrategy(data: MarketData, capitalUsd: number): StrategyOutput {
+export function runStrategy(data: MarketData, capitalUsd: number, sentimentComposite?: number | null): StrategyOutput {
   const { smaFast: fastPeriod, smaSlow: slowPeriod, ewmaSpan, atrPeriod, basePositionPct, stopLossAtrMultiple, baselineVolatility } = config.strategy;
   
   const currentPrice = data.prices[data.prices.length - 1];
@@ -86,6 +86,7 @@ export function runStrategy(data: MarketData, capitalUsd: number): StrategyOutpu
     ret5,
     ret20,
     autocorr1: ac1,
+    sentimentComposite: sentimentComposite ?? null,
   };
 
   const signal = generateSignal(signalInput);

@@ -36,6 +36,7 @@ export interface TradingSignal {
   ret5?: number | null;
   ret20?: number | null;
   autocorr1?: number | null;
+  sentimentComposite?: number | null;
   edge?: {
     allowed: boolean;
     expectedEdgePct: number;
@@ -67,6 +68,9 @@ export interface SignalInput {
   ret20?: number | null;
   autocorr1?: number | null;
 
+  // sentiment composite [-1 (bearish) to +1 (bullish)]
+  sentimentComposite?: number | null;
+
   // edge model config (optional)
   costBps?: number;
 }
@@ -88,6 +92,7 @@ export function generateSignal(input: SignalInput): TradingSignal {
     smaFast, smaSlow, prevSmaFast, prevSmaSlow,
     volatility, baselineVolatility, atr, currentPrice,
     rsi, adx, choppiness, zscore, ret5, ret20, autocorr1,
+    sentimentComposite,
     costBps
   } = input;
 
@@ -156,9 +161,13 @@ export function generateSignal(input: SignalInput): TradingSignal {
   const rsiPenalty = isBullish ? overboughtPenalty : oversoldPenalty;
   const meanRevPenalty = 0.6 * rsiPenalty + 0.5 * zExtremePenalty;
 
+  // Sentiment nudge: composite [-1,+1] scaled to ~15% of trend weight
+  const sentimentScore = (sentimentComposite ?? 0) * 0.25;
+
   const alphaScore =
     trendScore +
     momentumScore +
+    sentimentScore +
     (directionSign * crossoverBoost) -
     (directionSign * meanRevPenalty); // reduce signal magnitude regardless of direction
 
@@ -214,6 +223,7 @@ export function generateSignal(input: SignalInput): TradingSignal {
       ret5: ret5 ?? null,
       ret20: ret20 ?? null,
       autocorr1: autocorr1 ?? null,
+      sentimentComposite: sentimentComposite ?? null,
       edge,
       timestamp,
       reason: edge.reason
@@ -231,6 +241,7 @@ export function generateSignal(input: SignalInput): TradingSignal {
   const reason = [
     baseReason,
     `alphaScore ${alphaScore.toFixed(3)}`,
+    `sent ${(sentimentComposite ?? 0).toFixed(2)}`,
     `conf ${confidence.toFixed(2)}`,
     `volConf ${volConfidence.toFixed(2)}`,
     `structure ${structure.regime}`,
@@ -258,6 +269,7 @@ export function generateSignal(input: SignalInput): TradingSignal {
     ret5: ret5 ?? null,
     ret20: ret20 ?? null,
     autocorr1: autocorr1 ?? null,
+    sentimentComposite: sentimentComposite ?? null,
     edge,
     timestamp,
     reason

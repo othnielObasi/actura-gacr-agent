@@ -39,6 +39,7 @@ import { simulateExecution } from '../chain/execution-simulator.js';
 import { routeTrade, getDexFeeBps, type RoutingDecision, type DexId } from '../chain/dex-router.js';
 import { generateSimulatedData, appendCandle } from '../data/price-feed.js';
 import { fetchLivePrice, fetchOHLCHistory, buildLiveCandle, getLiveFeedStatus } from '../data/live-price-feed.js';
+import { fetchSentiment, type SentimentResult } from '../data/sentiment-feed.js';
 import { getKrakenFeedStatus } from '../data/kraken-feed.js';
 import { checkTradeOnChain, recordTradeOnChain, recordCloseOnChain, getOnChainRiskState } from '../chain/risk-policy-client.js';
 import { executeKrakenTrade, closeKrakenPosition, getKrakenAccountSnapshot, krakenPreflight } from '../data/kraken-bridge.js';
@@ -358,9 +359,15 @@ async function runCycle(): Promise<void> {
     marketData.timestamps = marketData.timestamps.slice(-200);
   }
 
-  // Step 2: Run strategy
+  // Step 2: Run strategy (with sentiment)
   const capital = riskEngine.getCapital();
-  const strategyOutput = runStrategy(marketData, capital);
+  let sentiment: SentimentResult | null = null;
+  try {
+    sentiment = await fetchSentiment();
+  } catch (err: any) {
+    log.warn('Sentiment fetch failed — proceeding without', { error: err.message?.slice(0, 80) });
+  }
+  const strategyOutput = runStrategy(marketData, capital, sentiment?.composite ?? null);
 
   // Step 2a: Oracle integrity guard — block suspicious or stale market states
   const oracleIntegrity = evaluateOracleIntegrity({
@@ -622,6 +629,17 @@ async function runCycle(): Promise<void> {
     };
   }
 
+  // Add sentiment data to artifact
+  if (sentiment && sentiment.sources.length > 0) {
+    (artifact as any).sentiment = {
+      composite: sentiment.composite,
+      fearGreed: sentiment.fearGreed,
+      newsSentiment: sentiment.newsSentiment,
+      fundingRate: sentiment.fundingRate,
+      sources: sentiment.sources,
+    };
+  }
+
   // Step 5b: Enrich with AI reasoning + market snapshot + confidence intervals
   const aiReasoning = await generateReasoning(
     strategyOutput, riskDecision, marketData.prices, capital, openCount
@@ -801,6 +819,7 @@ async function runCycle(): Promise<void> {
     `Cap: $${capital.toFixed(0)} | ` +
     `Pos: ${currentPositions.length}/${MAX_OPEN_POSITIONS} | ` +
     `${cognitive.rulesFired > 0 ? `Rules: ${cognitive.rulesFired} | ` : ''}` +
+    `${sentiment?.sources.length ? `Sent: ${sentiment.composite.toFixed(2)} (${sentiment.sources.join(',')}) | ` : ''}` +
     `Oracle: ${oracleIntegrity.status} | DEX: ${dexRouting.selectedDex} | Sim: ${executionSimulation.reason} | ` +
     `${elapsed}ms`
   );
