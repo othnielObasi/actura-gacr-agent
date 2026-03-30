@@ -149,7 +149,7 @@ export function generateSignal(input: SignalInput): TradingSignal {
   const directionSign = isBullish ? 1 : -1;
 
   const trendScore = directionSign * (0.9 * trendStrength);
-  const momentumScore = directionSign * (1.4 * m5 + 0.9 * m20); // returns are already signed
+  const momentumScore = 1.4 * m5 + 0.9 * m20; // returns already carry direction — do NOT multiply by directionSign
   const crossoverBoost = crossedUp || crossedDown ? 0.15 : 0;
 
   // Penalties: if bullish, penalize overbought; if bearish penalize oversold
@@ -160,7 +160,7 @@ export function generateSignal(input: SignalInput): TradingSignal {
     trendScore +
     momentumScore +
     (directionSign * crossoverBoost) -
-    meanRevPenalty;
+    (directionSign * meanRevPenalty); // reduce signal magnitude regardless of direction
 
   // Confidence mapping: higher absolute score → higher confidence.
   // Keep conservative to reduce overtrading.
