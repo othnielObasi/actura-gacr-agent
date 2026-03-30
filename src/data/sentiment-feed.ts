@@ -38,7 +38,7 @@ const FUNDING_TTL_MS = 5 * 60 * 1000;        // 5 min cache
 const FEAR_GREED_URL = 'https://api.alternative.me/fng/?limit=1';
 const CRYPTOPANIC_API_KEY = process.env.CRYPTOPANIC_API_KEY || '';
 const CRYPTOPANIC_BASE = `https://cryptopanic.com/api/developer/v2/posts/?auth_token=${CRYPTOPANIC_API_KEY}&currencies=ETH,BTC&public=true`;
-const CRYPTOPANIC_HOT_URL = `${CRYPTOPANIC_BASE}&filter=hot`;
+const CRYPTOPANIC_HOT_URL = `${CRYPTOPANIC_BASE}&kind=news`;
 const CRYPTOPANIC_BULLISH_URL = `${CRYPTOPANIC_BASE}&filter=bullish`;
 const CRYPTOPANIC_BEARISH_URL = `${CRYPTOPANIC_BASE}&filter=bearish`;
 const KRAKEN_TICKER_URL = 'https://api.kraken.com/0/public/Ticker?pair=ETHUSD';
