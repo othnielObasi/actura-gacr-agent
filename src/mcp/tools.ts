@@ -20,6 +20,8 @@ import { buildTradeIntent, hashTradeIntent, signTradeIntent } from '../chain/int
 import { initChain } from '../chain/sdk.js';
 import { routeTrade, getAvailableDexes, getDexProfile, type DexId } from '../chain/dex-router.js';
 import { fetchKrakenTicker, getKrakenFeedStatus, fetchKrakenBalance, fetchKrakenOpenOrders, fetchKrakenTradeHistory } from '../data/kraken-feed.js';
+import { getCliStatus, checkCliHealth, placeMarketOrder, placeLimitOrder, cancelOrder, cancelAllOrders, getBalanceViaCli } from '../data/kraken-cli.js';
+import { getKrakenAccountSnapshot } from '../data/kraken-bridge.js';
 import { getIndexedEvents, getIndexerStatus } from '../chain/event-indexer.js';
 
 export type McpVisibility = 'public' | 'restricted' | 'operator';
@@ -622,6 +624,115 @@ const getKrakenTradesTool: McpTool = {
   },
 };
 
+// ── Kraken CLI Execution Tools ──
+
+const getKrakenCliStatus: McpTool = {
+  name: 'get_kraken_cli_status',
+  description: 'Check if the Kraken CLI binary is installed and healthy. Shows version, paper trading mode, and API key status.',
+  category: 'market',
+  visibility: 'public',
+  inputSchema: { type: 'object', properties: {} },
+  handler: async () => {
+    const status = await checkCliHealth();
+    return status;
+  },
+};
+
+const getKrakenSnapshot: McpTool = {
+  name: 'get_kraken_snapshot',
+  description: 'Get a complete Kraken account snapshot: balance, open orders, recent trades, live ticker, and CLI status.',
+  category: 'market',
+  visibility: 'restricted',
+  inputSchema: { type: 'object', properties: {} },
+  handler: async () => {
+    return getKrakenAccountSnapshot();
+  },
+};
+
+const krakenMarketOrder: McpTool = {
+  name: 'kraken_market_order',
+  description: 'Place a market order via Kraken CLI. Respects paper trading mode. Use this for immediate execution.',
+  category: 'execution',
+  visibility: 'restricted',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      pair: { type: 'string', description: 'Trading pair (e.g. WETH/USDC, BTC/USD)' },
+      side: { type: 'string', enum: ['buy', 'sell'], description: 'Order side' },
+      volume: { type: 'string', description: 'Order volume in base asset units' },
+      validate_only: { type: 'boolean', description: 'Dry run — validate without placing' },
+      stop_loss_price: { type: 'string', description: 'Optional stop-loss price' },
+    },
+    required: ['pair', 'side', 'volume'],
+  },
+  handler: async (args) => {
+    return placeMarketOrder(
+      String(args.pair),
+      args.side === 'sell' ? 'sell' : 'buy',
+      String(args.volume),
+      {
+        validateOnly: args.validate_only === true,
+        stopLossPrice: args.stop_loss_price ? String(args.stop_loss_price) : undefined,
+      }
+    );
+  },
+};
+
+const krakenLimitOrder: McpTool = {
+  name: 'kraken_limit_order',
+  description: 'Place a limit order via Kraken CLI at a specified price.',
+  category: 'execution',
+  visibility: 'restricted',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      pair: { type: 'string', description: 'Trading pair (e.g. WETH/USDC, BTC/USD)' },
+      side: { type: 'string', enum: ['buy', 'sell'], description: 'Order side' },
+      volume: { type: 'string', description: 'Order volume in base asset units' },
+      price: { type: 'string', description: 'Limit price' },
+      validate_only: { type: 'boolean', description: 'Dry run — validate without placing' },
+    },
+    required: ['pair', 'side', 'volume', 'price'],
+  },
+  handler: async (args) => {
+    return placeLimitOrder(
+      String(args.pair),
+      args.side === 'sell' ? 'sell' : 'buy',
+      String(args.volume),
+      String(args.price),
+      { validateOnly: args.validate_only === true }
+    );
+  },
+};
+
+const krakenCancelOrder: McpTool = {
+  name: 'kraken_cancel_order',
+  description: 'Cancel an open Kraken order by transaction ID.',
+  category: 'execution',
+  visibility: 'restricted',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      order_id: { type: 'string', description: 'Kraken order/transaction ID to cancel' },
+    },
+    required: ['order_id'],
+  },
+  handler: async (args) => {
+    return cancelOrder(String(args.order_id));
+  },
+};
+
+const krakenCancelAll: McpTool = {
+  name: 'kraken_cancel_all',
+  description: 'Cancel ALL open Kraken orders. Use with caution.',
+  category: 'execution',
+  visibility: 'operator',
+  inputSchema: { type: 'object', properties: {} },
+  handler: async () => {
+    return cancelAllOrders();
+  },
+};
+
 export const ALL_TOOLS: McpTool[] = [
   getMarketState,
   getTrustState,
@@ -644,4 +755,11 @@ export const ALL_TOOLS: McpTool[] = [
   pauseAgent,
   resumeAgent,
   emergencyStopAgent,
+  // Kraken CLI execution tools
+  getKrakenCliStatus,
+  getKrakenSnapshot,
+  krakenMarketOrder,
+  krakenLimitOrder,
+  krakenCancelOrder,
+  krakenCancelAll,
 ];

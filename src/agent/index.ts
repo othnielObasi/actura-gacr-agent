@@ -40,9 +40,11 @@ import { routeTrade, getDexFeeBps, type RoutingDecision, type DexId } from '../c
 import { generateSimulatedData, appendCandle } from '../data/price-feed.js';
 import { fetchLivePrice, fetchOHLCHistory, buildLiveCandle, getLiveFeedStatus } from '../data/live-price-feed.js';
 import { getKrakenFeedStatus } from '../data/kraken-feed.js';
+import { executeKrakenTrade, closeKrakenPosition, getKrakenAccountSnapshot, krakenPreflight } from '../data/kraken-bridge.js';
+import { getCliStatus } from '../data/kraken-cli.js';
 import { startIndexer, getIndexerStatus, getIndexedEvents } from '../chain/event-indexer.js';
 import { getOperatorControlState, getLatestOperatorAction } from './operator-control.js';
-import { recordClosedTrade, getRecentTrades, getTradeStats, loadClosedTrades } from './trade-log.js';
+import { recordClosedTrade, getRecentTrades, getTradeStats, loadClosedTrades, type ClosedTrade } from './trade-log.js';
 
 const log = createLogger('AGENT');
 
@@ -86,6 +88,20 @@ async function initAgent(): Promise<void> {
       positions: savedState.openPositions.length,
       lastCycle: savedState.lastCycle,
     });
+    // Reconcile capital with trade log to prevent drift from restarts
+    const closedTrades = loadClosedTrades();
+    const tradePnlSum = closedTrades.reduce((s, t) => s + t.pnl, 0);
+    const expectedCapital = INITIAL_CAPITAL + tradePnlSum;
+    const drift = Math.abs(savedState.capital - expectedCapital);
+    if (drift > 0.01 && savedState.openPositions.length === 0) {
+      log.warn('Capital drift detected — correcting from trade log', {
+        stateCapital: savedState.capital,
+        expectedCapital,
+        drift: drift.toFixed(4),
+      });
+      savedState.capital = expectedCapital;
+    }
+
     riskEngine = new RiskEngine(savedState.capital);
     cycleCount = savedState.lastCycle;
 
@@ -619,6 +635,27 @@ async function runCycle(): Promise<void> {
       }
     }
 
+    // Step 8b: Kraken CLI execution (combined track — runs alongside ERC-8004)
+    const krakenEnabled = !!(process.env.KRAKEN_API_KEY && process.env.KRAKEN_API_SECRET);
+    if (krakenEnabled && (MODE === 'live' || MODE === 'kraken' || process.env.KRAKEN_PAPER_TRADING === 'true')) {
+      const krakenResult = await executeKrakenTrade(strategyOutput, riskDecision, artifact, agentId);
+      if (krakenResult.success) {
+        (checkpoint as any).krakenOrderId = krakenResult.orderId;
+        (checkpoint as any).krakenPaperTrade = krakenResult.paperTrade;
+        ipfsResult = ipfsResult || (krakenResult.artifactIpfsCid
+          ? { cid: krakenResult.artifactIpfsCid, uri: krakenResult.artifactIpfsUri!, gatewayUrl: '' }
+          : null);
+        log.info('Kraken order executed', {
+          orderId: krakenResult.orderId,
+          paper: krakenResult.paperTrade,
+          side: krakenResult.side,
+          volume: krakenResult.volume,
+        });
+      } else {
+        log.warn('Kraken execution failed — position tracked locally only', { error: krakenResult.error });
+      }
+    }
+
     // Always record position locally (for our risk engine tracking)
     riskEngine.openPosition({
       asset: config.tradingPair,
@@ -649,6 +686,22 @@ async function runCycle(): Promise<void> {
   // different price.
   if (closedPositions.length > 0) {
     persistState();
+
+    // Close corresponding Kraken positions when stop-losses fire
+    const krakenEnabled = !!(process.env.KRAKEN_API_KEY && process.env.KRAKEN_API_SECRET);
+    if (krakenEnabled && (MODE === 'live' || MODE === 'kraken' || process.env.KRAKEN_PAPER_TRADING === 'true')) {
+      for (const closed of closedPositions) {
+        const pos = positions.find(p => p.id === closed.id);
+        if (pos) {
+          closeKrakenPosition(pos.asset, pos.side, pos.size.toFixed(8), closed.reason)
+            .then(r => {
+              if (r.success) log.info('Kraken position closed', { orderId: r.orderId, reason: closed.reason });
+              else log.warn('Kraken close failed', { error: r.error, reason: closed.reason });
+            })
+            .catch(e => log.warn('Kraken close threw', { error: String(e) }));
+        }
+      }
+    }
   }
 
   // Step 9b: Record outcomes for neuro-symbolic + adaptive learning
@@ -752,6 +805,7 @@ export function getAgentState() {
     market: marketData ? computeMarketState(marketData) : null,
     liveFeed: getLiveFeedStatus(),
     krakenFeed: getKrakenFeedStatus(),
+    krakenCli: getCliStatus(),
     eventIndexer: getIndexerStatus(),
     recentCheckpoints: getCheckpoints(10),
     scheduler: scheduler?.getState() ?? null,

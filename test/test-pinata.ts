@@ -60,7 +60,7 @@ async function main() {
       const res = await fetch(result.gatewayUrl, { signal: AbortSignal.timeout(10000) });
       console.log('  Status:', res.status);
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json() as Record<string, unknown>;
         console.log('  Retrieved agentName:', data.agentName);
         console.log('  ✅ Pinata upload + retrieval WORKING');
       } else {

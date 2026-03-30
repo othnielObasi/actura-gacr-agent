@@ -18,6 +18,8 @@ import { getOperatorControlState, getOperatorActionReceipts, pauseTrading, resum
 import { buildRegistrationJson } from '../chain/identity.js';
 import { generateTradePost, generateDailySummaryPost, buildTwitterIntentUrl } from '../social/share.js';
 import { getKrakenFeedStatus, fetchKrakenTicker, fetchKrakenBalance, fetchKrakenOpenOrders, fetchKrakenTradeHistory } from '../data/kraken-feed.js';
+import { getCliStatus, checkCliHealth } from '../data/kraken-cli.js';
+import { getKrakenAccountSnapshot, krakenPreflight } from '../data/kraken-bridge.js';
 import { getIndexedEvents, getIndexerStatus } from '../chain/event-indexer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -337,8 +339,27 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
   app.get('/api/feeds/status', (_req, res) => {
     res.json({
       kraken: getKrakenFeedStatus(),
+      krakenCli: getCliStatus(),
       indexer: getIndexerStatus(),
     });
+  });
+
+  /** Kraken CLI status + health */
+  app.get('/api/kraken/cli', async (_req, res) => {
+    const status = await checkCliHealth();
+    res.json(status);
+  });
+
+  /** Kraken account snapshot (balance + orders + trades + CLI status) */
+  app.get('/api/kraken/snapshot', async (_req, res) => {
+    const snapshot = await getKrakenAccountSnapshot();
+    res.json(snapshot);
+  });
+
+  /** Kraken preflight check */
+  app.get('/api/kraken/preflight', async (_req, res) => {
+    const result = await krakenPreflight();
+    res.json(result);
   });
 
   /** Generate shareable trade post */
@@ -356,7 +377,7 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
       price: cp.strategyOutput.currentPrice,
       approved: cp.riskDecision.approved,
       explanation: cp.riskDecision.explanation,
-      trustScore: state.risk?.trustScore ?? 80,
+      trustScore: (state.risk as any)?.trustScore ?? 80,
       artifactCid: cp.ipfs?.cid,
     });
     res.json({ post, twitterUrl: buildTwitterIntentUrl(post) });
@@ -370,7 +391,7 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
       trades: stats.totalTrades ?? 0,
       pnl: stats.totalPnl ?? 0,
       capital: state.risk?.capital ?? 0,
-      trustScore: state.risk?.trustScore ?? 80,
+      trustScore: (state.risk as any)?.trustScore ?? 80,
       winRate: stats.winRate ?? 0,
       artifactCount: stats.totalTrades ?? 0,
     });

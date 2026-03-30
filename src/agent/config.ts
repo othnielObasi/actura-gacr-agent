@@ -58,7 +58,12 @@ export const config = {
     basePositionPct: 0.02,  // 2% of capital per trade
     stopLossAtrMultiple: 1.5,
     baselineVolatility: 0.02,  // 2% daily vol baseline
-  }
+  },
+
+  // Kraken CLI
+  krakenCliPath: process.env.KRAKEN_CLI_PATH || 'kraken',
+  krakenPaperTrading: process.env.KRAKEN_PAPER_TRADING !== 'false',  // default true
+  krakenCliTimeoutMs: parseInt(process.env.KRAKEN_CLI_TIMEOUT_MS || '30000'),
 } as const;
 
 export type Config = typeof config;
