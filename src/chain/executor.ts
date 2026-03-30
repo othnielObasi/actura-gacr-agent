@@ -190,7 +190,6 @@ export async function executeTrade(
           yieldPercent: realizedYieldPct,
           period: 'day',
           artifactUri: ipfsResult.uri,
-          endpoint: config.riskRouterAddress || '',
         }),
         { maxRetries: 2, baseDelayMs: 1500, label: 'Reputation submission' }
       );

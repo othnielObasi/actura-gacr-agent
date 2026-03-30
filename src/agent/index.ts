@@ -645,12 +645,15 @@ async function runCycle(): Promise<void> {
   const checkpoint = saveCheckpoint(strategyOutput, riskDecision, artifact, ipfsResult);
 
   // Step 8: Execute trade
+  let mainExecutorRanValidation = false;
   if (shouldExecute) {
-    if (MODE === 'live' && agentId) {
+    if (MODE === 'live' && agentId && config.riskRouterAddress) {
       // REAL EXECUTION: Sign intent → Risk Router → Validation → Reputation
+      // Only runs when Risk Router is configured (hackathon publishes the address)
       const execResult = await executeTrade(strategyOutput, riskDecision, artifact, agentId);
       if (execResult.success) {
         checkpoint.onChainTxHash = execResult.intentTxHash;
+        mainExecutorRanValidation = true;
         ipfsResult = ipfsResult || { cid: execResult.artifactIpfsCid!, uri: execResult.artifactIpfsUri!, gatewayUrl: '' };
       } else {
         log.warn('On-chain execution failed — recording locally only', { error: execResult.error });
@@ -660,7 +663,10 @@ async function runCycle(): Promise<void> {
     // Step 8b: Kraken CLI execution (combined track — runs alongside ERC-8004)
     const krakenEnabled = !!(process.env.KRAKEN_API_KEY && process.env.KRAKEN_API_SECRET);
     if (krakenEnabled && (MODE === 'live' || MODE === 'kraken' || process.env.KRAKEN_PAPER_TRADING === 'true')) {
-      const krakenResult = await executeKrakenTrade(strategyOutput, riskDecision, artifact, agentId);
+      const krakenResult = await executeKrakenTrade(
+        strategyOutput, riskDecision, artifact, agentId,
+        { skipOnChainValidation: mainExecutorRanValidation },
+      );
       if (krakenResult.success) {
         (checkpoint as any).krakenOrderId = krakenResult.orderId;
         (checkpoint as any).krakenPaperTrade = krakenResult.paperTrade;

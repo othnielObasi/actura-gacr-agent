@@ -199,7 +199,7 @@ export async function submitValidationResponseAsValidator(
 
 /**
  * Full validation flow for a trade artifact:
- * 1. Agent submits validation request
+ * 1. Agent submits validation request (skip if already exists)
  * 2. Validator (second wallet) submits response
  */
 export async function validateTradeArtifact(
@@ -221,13 +221,25 @@ export async function validateTradeArtifact(
   const provider = getProvider();
   const validatorWallet = new ethers.Wallet(validatorPrivateKey, provider);
 
-  // Step 1: Agent submits request
-  const requestTx = await submitValidationRequest(
-    validatorWallet.address,
-    agentId,
-    artifactIpfsUri,
-    requestHash
-  );
+  // Step 1: Agent submits request (tolerate "already exists" from prior retry)
+  let requestTx = '';
+  try {
+    requestTx = await submitValidationRequest(
+      validatorWallet.address,
+      agentId,
+      artifactIpfsUri,
+      requestHash
+    );
+  } catch (err: any) {
+    const msg = err?.message || '';
+    if (msg.includes('already exists') || msg.includes('Request hash')) {
+      log.info('Validation request already submitted — continuing to response', {
+        requestHash: requestHash.slice(0, 16) + '...',
+      });
+    } else {
+      throw err;
+    }
+  }
 
   // Step 2: Calculate score from risk checks
   const passedCount = riskChecks.filter(c => c.passed).length;

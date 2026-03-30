@@ -87,6 +87,7 @@ export async function executeKrakenTrade(
   riskDecision: RiskDecision,
   artifact: ValidationArtifact,
   agentId: number | null,
+  options?: { skipOnChainValidation?: boolean },
 ): Promise<KrakenExecutionResult> {
   const start = Date.now();
   const result: KrakenExecutionResult = {
@@ -228,9 +229,9 @@ export async function executeKrakenTrade(
       log.warn('IPFS upload failed — trade still executed', { error: String(e) });
     }
 
-    // ── Step 5: On-chain validation (if agent is registered) ──
+    // ── Step 5: On-chain validation (if agent is registered and not already done by main executor) ──
     const validatorKey = process.env.VALIDATOR_PRIVATE_KEY;
-    if (agentId && validatorKey && result.artifactIpfsUri) {
+    if (agentId && validatorKey && result.artifactIpfsUri && !options?.skipOnChainValidation) {
       try {
         const validation = await retry(
           () => validateTradeArtifact(
@@ -252,9 +253,9 @@ export async function executeKrakenTrade(
       }
     }
 
-    // ── Step 6: Post reputation feedback ──
+    // ── Step 6: Post reputation feedback (skip if main executor already posted) ──
     const reviewerKey = process.env.REVIEWER_PRIVATE_KEY || process.env.VALIDATOR_PRIVATE_KEY;
-    if (agentId && reviewerKey) {
+    if (agentId && reviewerKey && !options?.skipOnChainValidation) {
       try {
         const conf = strategyOutput.signal.confidence;
         const dir = direction === 'LONG' ? 1 : -1;
@@ -265,7 +266,6 @@ export async function executeKrakenTrade(
             yieldPercent: estimatedYieldPct,
             period: 'day',
             artifactUri: result.artifactIpfsUri || '',
-            endpoint: 'kraken-cli',
           }),
           { maxRetries: 2, baseDelayMs: 1500, label: 'Kraken trade reputation' }
         );

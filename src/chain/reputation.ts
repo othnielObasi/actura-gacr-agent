@@ -1,14 +1,15 @@
 /**
- * ERC-8004 Reputation Registry — v1.0 Spec Compliant
+ * ERC-8004 Reputation Registry — Deployed Contract ABI
  * 
- * Key differences from v0.4:
- * - giveFeedback uses int128 value + uint8 valueDecimals (not uint8 score)
- * - Tags are strings, not bytes32
- * - feedbackAuth is REMOVED — anyone can give feedback
+ * The deployed contract at 0xB5048e uses the intermediate v1.0 format:
+ * - giveFeedback uses uint8 score (not int128 value + decimals)
+ * - Tags are bytes32 (not string)
+ * - feedbackAuth (bytes) is REQUIRED — EIP-191 signature from agent owner
+ *   authorizing the reviewer to submit feedback
  * - Agent owner CANNOT give self-feedback (contract enforces this)
- * - endpoint parameter added
  * 
- * Spec: https://eips.ethereum.org/EIPS/eip-8004#reputation-registry
+ * feedbackAuth signature message (7 × 32 bytes = 224 bytes):
+ *   abi.encodePacked(agentId, clientAddress, indexLimit, expiry, chainId, identityRegistry, signerAddress)
  */
 
 import { ethers } from 'ethers';
@@ -18,26 +19,31 @@ import { createLogger } from '../agent/logger.js';
 
 const log = createLogger('REPUTATION');
 
-// v1.0 ABI
+// Deployed contract ABI (intermediate v1.0 — uint8 score, bytes32 tags, bytes feedbackAuth)
 const REPUTATION_ABI = [
   // Write
-  'function giveFeedback(uint256 agentId, int128 value, uint8 valueDecimals, string tag1, string tag2, string endpoint, string feedbackURI, bytes32 feedbackHash) external',
+  'function giveFeedback(uint256 agentId, uint8 score, bytes32 tag1, bytes32 tag2, string fileuri, bytes32 filehash, bytes feedbackAuth) external',
   'function revokeFeedback(uint256 agentId, uint64 feedbackIndex) external',
   'function appendResponse(uint256 agentId, address clientAddress, uint64 feedbackIndex, string responseURI, bytes32 responseHash) external',
 
   // Read
-  'function getSummary(uint256 agentId, address[] clientAddresses, string tag1, string tag2) external view returns (uint64 count, int128 summaryValue, uint8 summaryValueDecimals)',
-  'function readFeedback(uint256 agentId, address clientAddress, uint64 feedbackIndex) external view returns (int128 value, uint8 valueDecimals, string tag1, string tag2, bool isRevoked)',
+  'function getSummary(uint256 agentId, address[] clientAddresses, bytes32 tag1, bytes32 tag2) external view returns (uint64 count, uint8 averageScore)',
+  'function readFeedback(uint256 agentId, address clientAddress, uint64 feedbackIndex) external view returns (uint8 score, bytes32 tag1, bytes32 tag2, bool isRevoked)',
   'function getClients(uint256 agentId) external view returns (address[])',
   'function getLastIndex(uint256 agentId, address clientAddress) external view returns (uint64)',
+  'function getIdentityRegistry() external view returns (address)',
 
   // Events
-  'event NewFeedback(uint256 indexed agentId, address indexed clientAddress, uint64 feedbackIndex, int128 value, uint8 valueDecimals, string indexed indexedTag1, string tag1, string tag2, string endpoint, string feedbackURI, bytes32 feedbackHash)',
+  'event NewFeedback(uint256 indexed agentId, address indexed clientAddress, uint64 feedbackIndex, uint8 score, bytes32 indexed indexedTag1, bytes32 tag1, bytes32 tag2, string fileuri, bytes32 filehash)',
 ];
 
 let contract: ethers.Contract | null = null;
 
-function getContract(): ethers.Contract {
+function getContract(signer?: ethers.Signer): ethers.Contract {
+  if (signer) {
+    if (!config.reputationRegistry) throw new Error('REPUTATION_REGISTRY address not set');
+    return new ethers.Contract(config.reputationRegistry, REPUTATION_ABI, signer);
+  }
   if (!contract) {
     if (!config.reputationRegistry) throw new Error('REPUTATION_REGISTRY address not set');
     contract = new ethers.Contract(config.reputationRegistry, REPUTATION_ABI, getWallet());
@@ -45,16 +51,65 @@ function getContract(): ethers.Contract {
   return contract;
 }
 
+/** Encode a string as a bytes32 (right-padded UTF-8) */
+function toBytes32(s: string): string {
+  if (!s) return ethers.ZeroHash;
+  return ethers.encodeBytes32String(s.slice(0, 31)); // max 31 bytes for bytes32
+}
+
+/**
+ * Build the feedbackAuth bytes for the deployed Reputation Registry.
+ * 
+ * Format: [abi.encode(struct) = 224 bytes] + [signature = 65 bytes (r+s+v)]
+ * 
+ * The agent owner signs: keccak256(abi.encode(agentId, clientAddress, indexLimit, expiry, chainId, identityRegistry, signerAddress))
+ * Using EIP-191 personal sign (ethers signMessage auto-prepends the prefix).
+ * 
+ * The contract then hashes the same struct and wraps it with EIP-191 prefix
+ * before ECDSA.tryRecover.
+ */
+async function buildFeedbackAuth(
+  agentOwnerWallet: ethers.Wallet,
+  agentId: number,
+  reviewerAddress: string,
+): Promise<string> {
+  const indexLimit = 1000n; // Allow up to 1000 feedback entries
+  const expiry = BigInt(Math.floor(Date.now() / 1000) + 3600); // 1 hour
+  const chainId = BigInt(config.chainId);
+  const identityRegistryAddr = config.identityRegistry;
+  const signerAddress = agentOwnerWallet.address;
+
+  // Step 1: ABI-encode the struct (7 × 32 bytes = 224 bytes)
+  const coder = ethers.AbiCoder.defaultAbiCoder();
+  const structEncoded = coder.encode(
+    ['uint256', 'address', 'uint64', 'uint256', 'uint256', 'address', 'address'],
+    [agentId, reviewerAddress, indexLimit, expiry, chainId, identityRegistryAddr, signerAddress],
+  );
+
+  // Step 2: Hash the struct (this is what the contract hashes before EIP-191 wrapping)
+  const structHash = ethers.keccak256(structEncoded);
+
+  // Step 3: Sign with EIP-191 personal sign (signMessage auto-adds "\x19Ethereum Signed Message:\n32")
+  const signature = await agentOwnerWallet.signMessage(ethers.getBytes(structHash));
+  const sigBytes = ethers.getBytes(signature); // 65 bytes: r(32) + s(32) + v(1)
+
+  // Step 4: Concatenate struct + signature
+  const structBytes = ethers.getBytes(structEncoded);
+  const authBytes = new Uint8Array(structBytes.length + sigBytes.length);
+  authBytes.set(structBytes, 0);
+  authBytes.set(sigBytes, structBytes.length);
+
+  return ethers.hexlify(authBytes);
+}
+
 /**
  * Build off-chain feedback JSON per ERC-8004 spec
  */
 export function buildFeedbackJson(params: {
   agentId: number;
-  value: number;
-  valueDecimals: number;
+  score: number;
   tag1: string;
   tag2?: string;
-  endpoint?: string;
   tradePnl?: number;
   tradeAsset?: string;
   sharpeRatio?: number | null;
@@ -65,12 +120,9 @@ export function buildFeedbackJson(params: {
     agentId: params.agentId,
     clientAddress: `eip155:${config.chainId}:${safeWalletAddress()}`,
     createdAt: new Date().toISOString(),
-    value: params.value,
-    valueDecimals: params.valueDecimals,
+    score: params.score,
     tag1: params.tag1,
     tag2: params.tag2 || '',
-    endpoint: params.endpoint || '',
-    // Custom context
     context: {
       tradePnl: params.tradePnl,
       tradeAsset: params.tradeAsset,
@@ -81,34 +133,36 @@ export function buildFeedbackJson(params: {
 }
 
 /**
- * Submit feedback on-chain (v1.0)
+ * Submit feedback on-chain (deployed contract ABI)
  * 
  * IMPORTANT: The agent owner CANNOT call this for their own agent.
- * Use a separate "reviewer" wallet, or have an external service call this.
+ * Use a separate "reviewer" wallet, with feedbackAuth signed by the agent owner.
  */
 export async function giveFeedback(
   agentId: number,
-  value: number,           // int128 — e.g. 87 for score, -32 for -3.2% yield
-  valueDecimals: number,   // uint8 0-18 — e.g. 0 for integer, 1 for 1 decimal
-  tag1: string,            // e.g. "tradingYield", "successRate", "starred"
-  tag2: string = '',       // e.g. "day", "week", "month"
-  endpoint: string = '',   // OPTIONAL endpoint that was used
-  feedbackURI: string = '',// OPTIONAL IPFS URI to full feedback JSON
-  feedbackHash: string = ethers.ZeroHash, // OPTIONAL keccak256 of feedbackURI content
+  score: number,            // uint8 0-100
+  tag1: string,             // e.g. "tradingYield", "starred"
+  tag2: string = '',
+  feedbackURI: string = '',
+  feedbackHash: string = ethers.ZeroHash,
+  feedbackAuth: string = '0x',
 ): Promise<string> {
   const registry = getContract();
 
-  log.info(`Giving feedback: agent=${agentId}, value=${value}, decimals=${valueDecimals}, tag1=${tag1}`);
+  const clampedScore = Math.max(0, Math.min(100, Math.round(score)));
+  const tag1Bytes = toBytes32(tag1);
+  const tag2Bytes = toBytes32(tag2);
+
+  log.info(`Giving feedback: agent=${agentId}, score=${clampedScore}, tag1=${tag1}`);
 
   const tx = await registry.giveFeedback(
     agentId,
-    value,
-    valueDecimals,
-    tag1,
-    tag2,
-    endpoint,
+    clampedScore,
+    tag1Bytes,
+    tag2Bytes,
     feedbackURI,
-    feedbackHash
+    feedbackHash,
+    feedbackAuth,
   );
   const receipt = await waitForTx(tx);
 
@@ -125,32 +179,26 @@ export async function getReputationSummary(
   clientAddresses: string[],
   tag1: string = '',
   tag2: string = ''
-): Promise<{ count: number; value: number; valueDecimals: number }> {
+): Promise<{ count: number; averageScore: number }> {
   const registry = getContract();
 
-  const [count, summaryValue, summaryValueDecimals] = await registry.getSummary(
+  const [count, averageScore] = await registry.getSummary(
     agentId,
     clientAddresses,
-    tag1,
-    tag2
+    toBytes32(tag1),
+    toBytes32(tag2),
   );
 
   return {
     count: Number(count),
-    value: Number(summaryValue),
-    valueDecimals: Number(summaryValueDecimals),
+    averageScore: Number(averageScore),
   };
 }
 
 /**
- * Post trading yield feedback
+ * Post trading yield feedback (mapped to 0-100 score for uint8 contract)
  * 
- * Per spec tag examples:
- *   tag1: "tradingYield"
- *   tag2: "day" | "week" | "month" | "year"
- *   value: yield as int128 with valueDecimals
- *   e.g. -3.2% → value=-32, valueDecimals=1
- *   e.g. 12.5% → value=125, valueDecimals=1
+ * Yield is mapped: -10% → 0, 0% → 50, +10% → 100
  */
 export async function postTradingYield(
   agentId: number,
@@ -158,19 +206,19 @@ export async function postTradingYield(
   period: 'day' | 'week' | 'month' | 'year',
   feedbackURI: string = '',
   feedbackHash: string = ethers.ZeroHash,
+  feedbackAuth: string = '0x',
 ): Promise<string> {
-  // Convert to int128 with 1 decimal
-  const value = Math.round(yieldPercent * 10);  // -3.2% → -32
+  // Map yield to 0-100 score: -10% → 0, 0% → 50, +10% → 100
+  const score = Math.max(0, Math.min(100, Math.round(50 + yieldPercent * 5)));
 
   return giveFeedback(
     agentId,
-    value,
-    1,  // 1 decimal place
+    score,
     'tradingYield',
     period,
-    '',
     feedbackURI,
-    feedbackHash
+    feedbackHash,
+    feedbackAuth,
   );
 }
 
@@ -182,16 +230,16 @@ export async function postQualityScore(
   score: number,            // 0-100
   feedbackURI: string = '',
   feedbackHash: string = ethers.ZeroHash,
+  feedbackAuth: string = '0x',
 ): Promise<string> {
   return giveFeedback(
     agentId,
     Math.max(0, Math.min(100, Math.round(score))),
-    0,  // No decimals
     'starred',
     '',
-    '',
     feedbackURI,
-    feedbackHash
+    feedbackHash,
+    feedbackAuth,
   );
 }
 
@@ -206,23 +254,43 @@ export async function getFeedbackClients(agentId: number): Promise<string[]> {
 
 /**
  * Submit feedback from an external reviewer wallet (required for ERC-8004 self-feedback restriction).
+ * The agent owner wallet signs the feedbackAuth to authorize the reviewer.
  */
 export async function giveFeedbackAsReviewer(
   reviewerPrivateKey: string,
   agentId: number,
-  value: number,
-  valueDecimals: number,
+  score: number,
   tag1: string,
   tag2: string = '',
-  endpoint: string = '',
   feedbackURI: string = '',
   feedbackHash: string = ethers.ZeroHash,
 ): Promise<string> {
   if (!config.reputationRegistry) throw new Error('REPUTATION_REGISTRY address not set');
+  if (!config.privateKey) throw new Error('PRIVATE_KEY (agent owner) needed to sign feedbackAuth');
+
   const provider = getProvider();
-  const reviewerWallet = new ethers.Wallet(reviewerPrivateKey.startsWith('0x') ? reviewerPrivateKey : `0x${reviewerPrivateKey}`, provider);
+  const reviewerWallet = new ethers.Wallet(
+    reviewerPrivateKey.startsWith('0x') ? reviewerPrivateKey : `0x${reviewerPrivateKey}`,
+    provider,
+  );
+
+  // Agent owner signs the feedbackAuth authorizing this reviewer
+  const agentOwnerWallet = new ethers.Wallet(
+    config.privateKey.startsWith('0x') ? config.privateKey : `0x${config.privateKey}`,
+    provider,
+  );
+  const feedbackAuth = await buildFeedbackAuth(agentOwnerWallet, agentId, reviewerWallet.address);
+
+  const clampedScore = Math.max(0, Math.min(100, Math.round(score)));
+  const tag1Bytes = toBytes32(tag1);
+  const tag2Bytes = toBytes32(tag2);
+
   const registry = new ethers.Contract(config.reputationRegistry, REPUTATION_ABI, reviewerWallet);
-  const tx = await registry.giveFeedback(agentId, value, valueDecimals, tag1, tag2, endpoint, feedbackURI, feedbackHash);
+  log.info(`Reviewer giving feedback: agent=${agentId}, score=${clampedScore}, tag1=${tag1}`);
+
+  const tx = await registry.giveFeedback(
+    agentId, clampedScore, tag1Bytes, tag2Bytes, feedbackURI, feedbackHash, feedbackAuth,
+  );
   const receipt = await waitForTx(tx);
   log.info(`Reviewer feedback submitted`, { reviewer: reviewerWallet.address, txHash: receipt.hash });
   return receipt.hash;
@@ -239,18 +307,16 @@ export async function postTradeOutcomeFeedback(
     period: 'day' | 'week' | 'month' | 'year';
     artifactUri?: string;
     artifactHash?: string;
-    endpoint?: string;
   },
 ): Promise<string> {
-  const value = Math.round(params.yieldPercent * 10);
+  // Map yield to 0-100 score: -10% → 0, 0% → 50, +10% → 100
+  const score = Math.max(0, Math.min(100, Math.round(50 + params.yieldPercent * 5)));
   return giveFeedbackAsReviewer(
     reviewerPrivateKey,
     agentId,
-    value,
-    1,
+    score,
     'tradingYield',
     params.period,
-    params.endpoint || '',
     params.artifactUri || '',
     params.artifactHash || ethers.ZeroHash,
   );
