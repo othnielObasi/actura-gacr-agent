@@ -488,7 +488,7 @@ const getDexRoutingInfo: McpTool = {
       side: { type: 'string', description: 'LONG or SHORT (default: LONG)' },
     },
   },
-  handler: (args) => {
+  handler: async (args) => {
     const state = safeState();
     const market = state?.market;
     const notionalUsd = typeof args.notional_usd === 'number' ? args.notional_usd : 300;
@@ -498,7 +498,7 @@ const getDexRoutingInfo: McpTool = {
       (p): p is DexId => p === 'aerodrome' || p === 'uniswap'
     );
 
-    const routing = routeTrade({
+    const routing = await routeTrade({
       asset: config.tradingPair,
       side: side as 'LONG' | 'SHORT',
       notionalUsd,

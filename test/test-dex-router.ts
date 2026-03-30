@@ -7,11 +7,12 @@ function assert(condition: boolean, name: string): void {
   else { console.log(`  ❌ ${name}`); failed++; }
 }
 
+(async () => {
 console.log('\n🧪 DEX ROUTER TESTS\n');
 
 // ── Basic routing ──
 console.log('── Basic Routing ──');
-const route1 = routeTrade({
+const route1 = await routeTrade({
   asset: 'WETH/USDC',
   side: 'LONG',
   notionalUsd: 300,
@@ -27,7 +28,7 @@ assert(route1.savingsBps >= 0, `Savings non-negative: ${route1.savingsBps} bps`)
 
 // ── Testnet fallback ──
 console.log('── Testnet Fallback ──');
-const route2 = routeTrade({
+const route2 = await routeTrade({
   asset: 'WETH/USDC',
   side: 'SHORT',
   notionalUsd: 200,
@@ -41,7 +42,7 @@ assert(aeroQuote !== undefined && !aeroQuote.available, 'Aerodrome marked unavai
 
 // ── Single DEX ──
 console.log('── Single DEX ──');
-const route3 = routeTrade({
+const route3 = await routeTrade({
   asset: 'WETH/USDC',
   side: 'LONG',
   notionalUsd: 500,
@@ -83,7 +84,7 @@ assert(getDexFeeBps('uniswap') === 30, `Uniswap fee: ${getDexFeeBps('uniswap')} 
 
 // ── High volatility routing ──
 console.log('── High Volatility ──');
-const route4 = routeTrade({
+const route4 = await routeTrade({
   asset: 'WETH/USDC',
   side: 'LONG',
   notionalUsd: 300,
@@ -95,3 +96,4 @@ assert(route4.quotes.every(q => q.estimatedSlippageBps > route1.quotes.find(r =>
 
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
+})();

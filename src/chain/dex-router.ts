@@ -18,8 +18,93 @@
  */
 
 import { createLogger } from '../agent/logger.js';
+import { ethers } from 'ethers';
+import { config } from '../agent/config.js';
 
 const log = createLogger('DEX-ROUTER');
+
+// ── Uniswap V3 Quoter (real on-chain quotes) ──
+
+// QuoterV2 on Base Sepolia — same as Base mainnet canonical address
+const UNISWAP_QUOTER_ADDRESS = '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a';
+const WETH_ADDRESS = '0x4200000000000000000000000000000000000006';
+const USDC_ADDRESS = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+
+const QUOTER_ABI = [
+  'function quoteExactInputSingle((address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96)) external returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)',
+];
+
+let quoterContract: ethers.Contract | null = null;
+
+function getQuoter(): ethers.Contract | null {
+  if (quoterContract) return quoterContract;
+  try {
+    const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+    quoterContract = new ethers.Contract(UNISWAP_QUOTER_ADDRESS, QUOTER_ABI, provider);
+    return quoterContract;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch a real on-chain quote from Uniswap V3 Quoter.
+ * Returns null on failure (network, no pool, etc.) — caller falls back to model.
+ */
+async function fetchUniswapQuote(
+  input: RoutingInput,
+): Promise<{ amountOut: bigint; gasEstimate: bigint; slippageBps: number } | null> {
+  const quoter = getQuoter();
+  if (!quoter) return null;
+
+  try {
+    // Determine token direction: buying ETH (USDC→WETH) or selling ETH (WETH→USDC)
+    const isBuying = input.side === 'LONG';
+    const tokenIn = isBuying ? USDC_ADDRESS : WETH_ADDRESS;
+    const tokenOut = isBuying ? WETH_ADDRESS : USDC_ADDRESS;
+
+    // Amount in smallest unit
+    let amountIn: bigint;
+    if (isBuying) {
+      // USDC has 6 decimals
+      amountIn = ethers.parseUnits(input.notionalUsd.toFixed(2), 6);
+    } else {
+      // WETH has 18 decimals — convert USD notional to ETH units (rough)
+      const ethAmount = input.notionalUsd / 2000; // approximate ETH price
+      amountIn = ethers.parseEther(ethAmount.toFixed(8));
+    }
+
+    if (amountIn === 0n) return null;
+
+    const params = {
+      tokenIn,
+      tokenOut,
+      amountIn,
+      fee: 3000, // 0.3% pool (most common)
+      sqrtPriceLimitX96: 0n,
+    };
+
+    const result = await quoter.quoteExactInputSingle.staticCall(params);
+    const amountOut = result[0] as bigint;
+    const gasEstimate = result[3] as bigint;
+
+    // Calculate effective slippage vs ideal price
+    // For a fair comparison, just return the quote — slippage is implicit
+    const slippageBps = 0; // Real quote already includes slippage
+
+    log.info('Uniswap V3 on-chain quote', {
+      side: input.side,
+      amountIn: amountIn.toString(),
+      amountOut: amountOut.toString(),
+      gasEstimate: gasEstimate.toString(),
+    });
+
+    return { amountOut, gasEstimate, slippageBps };
+  } catch (error) {
+    log.debug('Uniswap quoter call failed — using model estimate', { error: String(error) });
+    return null;
+  }
+}
 
 // ── DEX Profiles ──
 
@@ -94,7 +179,7 @@ export interface RoutingInput {
 
 // ── Quote Estimation ──
 
-function estimateQuote(
+function estimateQuoteModel(
   profile: DexProfile,
   input: RoutingInput,
 ): DexQuote {
@@ -141,13 +226,39 @@ function estimateQuote(
 
 // ── Best Execution Router ──
 
-export function routeTrade(input: RoutingInput): RoutingDecision {
+async function estimateQuote(
+  profile: DexProfile,
+  input: RoutingInput,
+): Promise<DexQuote> {
+  // For Uniswap on testnet, try real on-chain quote first
+  if (profile.id === 'uniswap' && profile.testnetAvailable) {
+    const realQuote = await fetchUniswapQuote(input);
+    if (realQuote) {
+      const gasUsd = Number(realQuote.gasEstimate) * 0.000000001; // rough L2 gas
+      return {
+        dex: 'uniswap',
+        estimatedFeeBps: profile.baseFeeBps,
+        estimatedSlippageBps: realQuote.slippageBps,
+        estimatedTotalCostBps: profile.baseFeeBps + realQuote.slippageBps,
+        estimatedGasUsd: Math.max(gasUsd, 0.05),
+        liquidityScore: 1.0, // real quote = real liquidity
+        available: true,
+        reason: 'on_chain_quote',
+      };
+    }
+  }
+  // Fallback to model-based estimate
+  return estimateQuoteModel(profile, input);
+}
+
+export async function routeTrade(input: RoutingInput): Promise<RoutingDecision> {
   const enabledDexes = input.enabledDexes ?? (Object.keys(DEX_PROFILES) as DexId[]);
 
   // Get quotes from all enabled DEXes
-  const quotes: DexQuote[] = enabledDexes
+  const quotePromises = enabledDexes
     .filter(id => DEX_PROFILES[id])
     .map(id => estimateQuote(DEX_PROFILES[id], input));
+  const quotes: DexQuote[] = await Promise.all(quotePromises);
 
   // Filter to available quotes
   const available = quotes.filter(q => q.available);

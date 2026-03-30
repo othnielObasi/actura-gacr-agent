@@ -40,6 +40,7 @@ import { routeTrade, getDexFeeBps, type RoutingDecision, type DexId } from '../c
 import { generateSimulatedData, appendCandle } from '../data/price-feed.js';
 import { fetchLivePrice, fetchOHLCHistory, buildLiveCandle, getLiveFeedStatus } from '../data/live-price-feed.js';
 import { getKrakenFeedStatus } from '../data/kraken-feed.js';
+import { checkTradeOnChain, recordTradeOnChain, recordCloseOnChain, getOnChainRiskState } from '../chain/risk-policy-client.js';
 import { executeKrakenTrade, closeKrakenPosition, getKrakenAccountSnapshot, krakenPreflight } from '../data/kraken-bridge.js';
 import { getCliStatus } from '../data/kraken-cli.js';
 import { startIndexer, getIndexerStatus, getIndexedEvents } from '../chain/event-indexer.js';
@@ -544,7 +545,7 @@ async function runCycle(): Promise<void> {
     ),
   };
   const dexRouting: RoutingDecision = shouldExecute
-    ? routeTrade(routingInput)
+    ? await routeTrade(routingInput)
     : { selectedDex: 'uniswap' as DexId, quotes: [], savingsBps: 0, rationale: ['no trade'], timestamp: new Date().toISOString(), routingVersion: '1.0' };
 
   // Step 4b: Execution simulation — required pre-trade safety stage (uses DEX-specific fees)
@@ -564,6 +565,20 @@ async function runCycle(): Promise<void> {
     log.warn('Execution simulation blocked trade', executionSimulation);
   }
 
+  // Step 4c: On-chain risk policy check (ActuraRiskPolicy contract)
+  let onChainRiskCheck: Awaited<ReturnType<typeof checkTradeOnChain>> | null = null;
+  if (shouldExecute) {
+    onChainRiskCheck = await checkTradeOnChain(
+      strategyOutput.signal.direction as 'LONG' | 'SHORT',
+      riskDecision.finalPositionSize * strategyOutput.currentPrice,
+    );
+    if (onChainRiskCheck.available && !onChainRiskCheck.approved) {
+      shouldExecute = false;
+      strategyOutput.signal.reason = `[ON-CHAIN RISK BLOCK] ${onChainRiskCheck.reason} | ${strategyOutput.signal.reason}`;
+      log.warn('On-chain risk policy blocked trade', { reason: onChainRiskCheck.reason });
+    }
+  }
+
   // Step 5: Build validation artifact (ALWAYS — even for rejected trades)
   let artifact = buildTradeArtifact(strategyOutput, riskDecision, agentId);
   artifact = attachGovernanceEvidence(artifact, {
@@ -579,6 +594,13 @@ async function runCycle(): Promise<void> {
 
   // Add cognitive + supervisory layer data to artifact
   (artifact as any).supervisory = supervisory;
+  if (onChainRiskCheck?.available) {
+    (artifact as any).onChainRiskPolicy = {
+      contract: onChainRiskCheck.contractAddress,
+      approved: onChainRiskCheck.approved,
+      reason: onChainRiskCheck.reason,
+    };
+  }
   if ((strategyOutput.signal as any).regimeGovernance) {
     (artifact as any).regimeGovernance = (strategyOutput.signal as any).regimeGovernance;
   }
@@ -656,6 +678,14 @@ async function runCycle(): Promise<void> {
       }
     }
 
+    // Step 8c: Record trade on-chain in ActuraRiskPolicy
+    if (shouldExecute) {
+      recordTradeOnChain(
+        strategyOutput.signal.direction as 'LONG' | 'SHORT',
+        riskDecision.finalPositionSize * strategyOutput.currentPrice,
+      ).catch(e => log.warn('recordTradeOnChain failed (non-critical)', { error: String(e) }));
+    }
+
     // Always record position locally (for our risk engine tracking)
     riskEngine.openPosition({
       asset: config.tradingPair,
@@ -686,6 +716,12 @@ async function runCycle(): Promise<void> {
   // different price.
   if (closedPositions.length > 0) {
     persistState();
+
+    // Record closes on-chain in ActuraRiskPolicy
+    for (const closed of closedPositions) {
+      recordCloseOnChain(closed.pnl)
+        .catch(e => log.warn('recordCloseOnChain failed (non-critical)', { error: String(e) }));
+    }
 
     // Close corresponding Kraken positions when stop-losses fire
     const krakenEnabled = !!(process.env.KRAKEN_API_KEY && process.env.KRAKEN_API_SECRET);
@@ -834,6 +870,7 @@ export function getHealthCheck() {
     validationRegistry: config.validationRegistry,
     chainId: config.chainId,
     ownerAddress,
+    riskPolicyAddress: process.env.RISK_POLICY_ADDRESS || '',
   };
 }
 
