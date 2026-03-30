@@ -216,8 +216,9 @@ async function callGeminiAPI(
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
-        maxOutputTokens: 1024,
+        maxOutputTokens: 2048,
         temperature: 0.3,
+        thinkingConfig: { thinkingBudget: 128 },
       },
     }),
   });
