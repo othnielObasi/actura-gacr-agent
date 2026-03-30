@@ -216,21 +216,26 @@ async function callGeminiAPI(
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
-        maxOutputTokens: 500,
+        maxOutputTokens: 1024,
         temperature: 0.3,
       },
     }),
   });
 
   if (!response.ok) {
-    throw new Error(`Gemini API returned ${response.status}`);
+    const body = await response.text().catch(() => '');
+    throw new Error(`Gemini API returned ${response.status}: ${body.slice(0, 200)}`);
   }
 
   const data = await response.json() as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
   };
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  const cleaned = text.replace(/```json|```/g, '').trim();
+  // Gemini 2.5 Pro may return multiple parts (thinking + text) — find the JSON part
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const text = parts.map(p => p.text || '').join('');
+  // Extract JSON from markdown fences or raw text
+  const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/(\{[\s\S]*\})/);
+  const cleaned = jsonMatch ? jsonMatch[1].trim() : text.replace(/```json|```/g, '').trim();
   const parsed = JSON.parse(cleaned) as AIReasoning;
 
   log.info('AI reasoning generated [Gemini]', { summary: parsed.summary.slice(0, 80) });
