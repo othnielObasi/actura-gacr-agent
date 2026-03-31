@@ -148,6 +148,7 @@ function Actura() {
   const [sentiment, setSentiment] = useState(null);
   const [security, setSecurity] = useState(null);
   const [latestAi, setLatestAi] = useState(null);
+  const [feedsData, setFeedsData] = useState(null);
 
   /* ── Tier mapping from API tier names ── */
   const tierMap = { probation: "TIER_1_PROBATION", limited: "TIER_2_LIMITED", standard: "TIER_3_STANDARD", elevated: "TIER_4_EXPANDED", elite: "TIER_4_EXPANDED" };
@@ -252,7 +253,7 @@ function Actura() {
   /* ── API fetching ── */
   const fetchData = useCallback(async () => {
     try {
-      const [statusRes, checkpointsRes, reputationRes, operatorRes, actionsRes, positionsRes, governanceRes, securityRes, artifactRes] = await Promise.all([
+      const [statusRes, checkpointsRes, reputationRes, operatorRes, actionsRes, positionsRes, governanceRes, securityRes, artifactRes, feedsRes] = await Promise.all([
         fetch("/api/status").then(r => r.json()).catch(() => null),
         fetch("/api/checkpoints?limit=10").then(r => r.json()).catch(() => null),
         fetch("/api/reputation/history?limit=30").then(r => r.json()).catch(() => null),
@@ -262,6 +263,7 @@ function Actura() {
         fetch("/api/governance").then(r => r.json()).catch(() => null),
         fetch("/api/security").then(r => r.json()).catch(() => null),
         fetch("/api/artifact/latest").then(r => r.json()).catch(() => null),
+        fetch("/api/feeds/kraken").then(r => r.json()).catch(() => null),
       ]);
 
       if (statusRes) {
@@ -317,6 +319,7 @@ function Actura() {
       if (governanceRes) setGovernance(governanceRes);
       if (securityRes) setSecurity(securityRes);
       if (artifactRes?.aiReasoning) setLatestAi(artifactRes.aiReasoning);
+      if (feedsRes) setFeedsData(feedsRes);
 
       setStage(s => (s + 1) % STAGES.length);
       setTick(t => t + 1);
@@ -393,7 +396,7 @@ function Actura() {
       <div style={{ padding: "10px 14px 30px", display: "grid", gap: 10 }}>
 
         {/* ═══ 2. MARKET + PIPELINE (the governance story starts here) ═══ */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
           {/* Market Intelligence */}
           <P title="Market Intelligence" tag={`${regime} · ${profile}`}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 0, marginBottom: 8, borderBottom: `1px solid ${T.brd}`, paddingBottom: 6 }}>
@@ -435,6 +438,38 @@ function Actura() {
                 ),
               );
             })() : React.createElement("div", { style: { color: T.fg3, fontSize: 10, textAlign: "center", padding: 16 } }, "Awaiting first sentiment fetch...")}
+          </P>
+
+          {/* Live Data Feeds */}
+          <P title="Live Data Feeds" tag={feedsData?.status?.available ? "CONNECTED" : "OFFLINE"}>
+            {(() => {
+              const tk = feedsData?.ticker;
+              const st = feedsData?.status;
+              const krakenOk = st?.available && !st?.consecutiveFailures;
+              const sentOk = sentiment && sentiment.sources?.length > 0;
+              const priceAge = tk?.timestamp ? Math.round((Date.now() - new Date(tk.timestamp).getTime()) / 1000) : null;
+              const feeds = [
+                { name: "Kraken", ok: krakenOk, detail: tk ? `$${Number(tk.price).toFixed(2)} · spread $${Number(tk.spread).toFixed(2)}` : "no data", sub: tk ? `vol ${Number(tk.volume24h).toFixed(0)} · vwap $${Number(tk.vwap24h).toFixed(0)}` : "" },
+                { name: "CoinGecko", ok: cPrice > 0, detail: cPrice > 0 ? `$${fn(cPrice, 2)}` : "no data", sub: prices.length > 0 ? `${prices.length} data points` : "" },
+                { name: "Fear & Greed", ok: sentiment?.fearGreed != null, detail: sentiment?.fearGreed != null ? `${Math.round((sentiment.fearGreed + 1) * 50)}/100` : "—", sub: sentiment?.fearGreed != null ? (sentiment.fearGreed < -0.4 ? "Extreme Fear" : sentiment.fearGreed < 0 ? "Fear" : "Greed") : "" },
+                { name: "Alpha Vantage", ok: sentiment?.newsSentiment != null, detail: sentiment?.newsSentiment != null ? `${sentiment.newsSentiment.toFixed(3)}` : "—", sub: sentOk ? `${sentiment.sources.length} sources` : "" },
+                { name: "Funding Proxy", ok: sentiment?.fundingRate != null, detail: sentiment?.fundingRate != null ? `${sentiment.fundingRate.toFixed(3)}` : "—", sub: sentiment?.fundingRate != null ? (sentiment.fundingRate > 0.1 ? "Longs crowd" : sentiment.fundingRate < -0.1 ? "Shorts crowd" : "Balanced") : "" },
+              ];
+              return React.createElement(React.Fragment, null,
+                priceAge !== null && React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.brd}` } },
+                  React.createElement(Metric, { label: "Price Freshness", value: `${priceAge}s`, sub: priceAge < 30 ? "fresh" : priceAge < 120 ? "acceptable" : "stale", color: priceAge < 30 ? T.up : priceAge < 120 ? T.warn : T.dn }),
+                  React.createElement(Metric, { label: "Active Feeds", value: `${feeds.filter(f => f.ok).length}/${feeds.length}`, sub: "connected", color: feeds.filter(f => f.ok).length >= 4 ? T.up : T.warn }),
+                ),
+                feeds.map((f, i) => React.createElement("div", { key: f.name, style: { display: "flex", alignItems: "center", gap: 8, padding: "4px 0", borderBottom: i < feeds.length - 1 ? `1px solid ${T.brd}30` : "none" } },
+                  React.createElement(Dot, { color: f.ok ? T.up : T.dn }),
+                  React.createElement("div", { style: { flex: 1 } },
+                    React.createElement("div", { style: { fontSize: 10, fontWeight: 600, color: T.fg } }, f.name),
+                    f.sub && React.createElement("div", { style: { fontSize: 8.5, color: T.fg3 } }, f.sub),
+                  ),
+                  React.createElement("span", { style: { fontSize: 9.5, color: f.ok ? T.fg2 : T.fg3, fontWeight: 500 } }, f.detail),
+                )),
+              );
+            })()}
           </P>
         </div>
 
