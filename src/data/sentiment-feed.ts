@@ -32,7 +32,7 @@ interface CachedValue<T> {
 
 const FETCH_TIMEOUT_MS = 6000;
 const FEAR_GREED_TTL_MS = 5 * 60 * 1000;    // 5 min cache (updates hourly upstream)
-const NEWS_TTL_MS = 3 * 60 * 1000;           // 3 min cache
+const NEWS_TTL_MS = 15 * 60 * 1000;          // 15 min cache (CryptoPanic rate limits aggressively)
 const FUNDING_TTL_MS = 5 * 60 * 1000;        // 5 min cache
 
 const FEAR_GREED_URL = 'https://api.alternative.me/fng/?limit=1';
