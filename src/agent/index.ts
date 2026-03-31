@@ -615,7 +615,7 @@ async function runCycle(): Promise<void> {
 
   // Step 5: Build validation artifact (ALWAYS — even for rejected trades)
   let artifact = buildTradeArtifact(strategyOutput, riskDecision, agentId);
-  artifact = attachGovernanceEvidence(artifact, {
+  artifact = await attachGovernanceEvidence(artifact, {
     mandateDecision,
     oracleIntegrity,
     executionSimulation,

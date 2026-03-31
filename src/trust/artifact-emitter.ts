@@ -16,6 +16,7 @@ import type { OracleIntegrityResult } from '../security/oracle-integrity.js';
 import type { ExecutionSimulationResult } from '../chain/execution-simulator.js';
 import type { OperatorActionReceipt } from '../agent/operator-control.js';
 import type { RoutingDecision } from '../chain/dex-router.js';
+import { generateAttestationSummary } from '../security/tee-attestation.js';
 
 export interface ValidationArtifact {
   version: string;
@@ -180,6 +181,18 @@ export interface ValidationArtifact {
     eoaVerification: boolean;
     typedDataVerification: boolean;
     note: string;
+  };
+
+  teeAttestation?: {
+    type: string;
+    agentAddress: string;
+    measurementHash: string;
+    codeHash: string;
+    gitCommit: string;
+    nonce: string;
+    timestamp: string;
+    signature: string;
+    valid: boolean;
   };
 
 }
@@ -348,7 +361,7 @@ export function buildDailySummaryArtifact(
 }
 
 
-export function attachGovernanceEvidence(
+export async function attachGovernanceEvidence(
   artifact: ValidationArtifact,
   extras: {
     mandateDecision?: MandateDecision | null;
@@ -357,7 +370,7 @@ export function attachGovernanceEvidence(
     operatorControl?: { mode: string; canTrade: boolean; lastUpdatedAt: string | null; lastReason: string | null; latestAction?: OperatorActionReceipt | null } | null;
     dexRouting?: RoutingDecision | null;
   }
-): ValidationArtifact {
+): Promise<ValidationArtifact> {
   if (extras.mandateDecision) {
     artifact.mandate = {
       approved: extras.mandateDecision.approved,
@@ -422,6 +435,13 @@ export function attachGovernanceEvidence(
     typedDataVerification: true,
     note: 'Agent supports EIP-1271 smart-contract signature verification for both EOA and contract wallets (multisigs, AA). Operator commands and cross-agent messages can be cryptographically verified.',
   };
+
+  // Generate TEE attestation for this artifact
+  try {
+    artifact.teeAttestation = await generateAttestationSummary();
+  } catch {
+    // Non-fatal: attestation is best-effort
+  }
 
   return artifact;
 }

@@ -26,7 +26,8 @@ import { createLogger } from '../agent/logger.js';
 import { retry } from '../agent/retry.js';
 import { config } from '../agent/config.js';
 import { getWallet, getWalletAddress, getBalance, initChain } from './sdk.js';
-import { buildTradeIntent, signTradeIntent, type TradeIntentData } from './intent.js';
+import { buildTradeIntent, signTradeIntent, TRADE_INTENT_TYPES, getTradeIntentDomain, type TradeIntentData } from './intent.js';
+import { verifyTypedDataSignature } from './eip1271.js';
 import { submitTradeIntent, getIntentStatus, claimSandbox } from './risk-router.js';
 import { validateTradeArtifact, computeRequestHash } from './validation.js';
 import { buildFeedbackJson, postTradeOutcomeFeedback } from './reputation.js';
@@ -112,6 +113,24 @@ export async function executeTrade(
     log.info('Signing TradeIntent (EIP-712)...');
     const { signature, domain } = await signTradeIntent(intent);
     log.info('Intent signed', { nonce: intent.nonce.toString() });
+
+    // ── Step 2b: EIP-1271 signature verification ──
+    log.info('Verifying signature (EIP-1271 aware)...');
+    const wallet = getWallet();
+    const verification = await verifyTypedDataSignature(
+      wallet.address,
+      domain,
+      TRADE_INTENT_TYPES,
+      intent as unknown as Record<string, unknown>,
+      signature,
+    );
+    if (!verification.valid) {
+      result.error = `EIP-1271 signature verification failed: ${verification.reason}`;
+      result.executionTimeMs = Date.now() - start;
+      log.error('Signature verification failed', verification);
+      return result;
+    }
+    log.info('Signature verified', { method: verification.method, signer: verification.signer });
 
     // ── Step 3: Submit to Risk Router ──
     log.info('Submitting to Risk Router...');
