@@ -153,8 +153,8 @@ export function generateSignal(input: SignalInput): TradingSignal {
   // - penalties reduce chasing into extremes
   const directionSign = isBullish ? 1 : -1;
 
-  const trendScore = directionSign * (0.9 * trendStrength);
-  const momentumScore = 1.4 * m5 + 0.9 * m20; // returns already carry direction — do NOT multiply by directionSign
+  const trendScore = directionSign * (0.6 * trendStrength);
+  const momentumScore = 1.8 * m5 + 1.1 * m20; // returns already carry direction — do NOT multiply by directionSign
   const crossoverBoost = crossedUp || crossedDown ? 0.15 : 0;
 
   // Penalties: if bullish, penalize overbought; if bearish penalize oversold
@@ -196,6 +196,14 @@ export function generateSignal(input: SignalInput): TradingSignal {
   let direction: SignalDirection = 'NEUTRAL';
   if (confidence >= 0.12) {
     direction = alphaScore >= 0 ? 'LONG' : 'SHORT';
+  }
+
+  // Momentum contradiction override: if 5-period return strongly opposes SMA direction, force NEUTRAL
+  // Prevents shorting into rallies or longing into selloffs when SMA lags
+  const momentumContradiction = (direction === 'SHORT' && m5 > 0.015) || (direction === 'LONG' && m5 < -0.015);
+  if (momentumContradiction) {
+    direction = 'NEUTRAL';
+    confidence = 0;
   }
 
   // Expected edge filter (additional Sharpe module)
