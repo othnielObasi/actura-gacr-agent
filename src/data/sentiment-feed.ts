@@ -32,15 +32,12 @@ interface CachedValue<T> {
 
 const FETCH_TIMEOUT_MS = 6000;
 const FEAR_GREED_TTL_MS = 5 * 60 * 1000;    // 5 min cache (updates hourly upstream)
-const NEWS_TTL_MS = 15 * 60 * 1000;          // 15 min cache (CryptoPanic rate limits aggressively)
+const NEWS_TTL_MS = 60 * 60 * 1000;          // 60 min cache (Alpha Vantage free tier: 25 req/day)
 const FUNDING_TTL_MS = 5 * 60 * 1000;        // 5 min cache
 
 const FEAR_GREED_URL = 'https://api.alternative.me/fng/?limit=1';
-const CRYPTOPANIC_API_KEY = process.env.CRYPTOPANIC_API_KEY || '';
-const CRYPTOPANIC_BASE = `https://cryptopanic.com/api/developer/v2/posts/?auth_token=${CRYPTOPANIC_API_KEY}&currencies=ETH,BTC&public=true`;
-const CRYPTOPANIC_HOT_URL = `${CRYPTOPANIC_BASE}&kind=news`;
-const CRYPTOPANIC_BULLISH_URL = `${CRYPTOPANIC_BASE}&filter=bullish`;
-const CRYPTOPANIC_BEARISH_URL = `${CRYPTOPANIC_BASE}&filter=bearish`;
+const ALPHAVANTAGE_API_KEY = process.env.ALPHAVANTAGE_API_KEY || '';
+const ALPHAVANTAGE_NEWS_URL = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=CRYPTO:ETH,CRYPTO:BTC&limit=50&apikey=${ALPHAVANTAGE_API_KEY}`;
 const KRAKEN_TICKER_URL = 'https://api.kraken.com/0/public/Ticker?pair=ETHUSD';
 
 // Weights for composite (sum to 1.0)
@@ -95,166 +92,127 @@ async function fetchFearGreed(): Promise<number | null> {
   }
 }
 
-// ──── CryptoPanic News Sentiment ────
-
-const GEMINI_CLASSIFY_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+// ──── Alpha Vantage News Sentiment ────
 
 /**
- * Fetch crypto news headlines from CryptoPanic, then use Gemini to classify
- * sentiment. The Developer v2 tier returns posts but vote data is always 0,
- * so we use LLM classification instead.
+ * Fetch pre-scored news sentiment from Alpha Vantage.
+ * Returns articles with per-ticker sentiment scores already computed.
+ * We average the ticker_sentiment_score for CRYPTO:ETH and CRYPTO:BTC across articles.
  *
- * Returns [-1, +1] sentiment score.
+ * Alpha Vantage scores: -1 (Bearish) to +1 (Bullish), already normalized.
+ * Free tier: 25 requests/day → 60-min cache keeps us under limit.
  */
 async function fetchNewsSentiment(): Promise<number | null> {
   if (newsCache && Date.now() - newsCache.fetchedAt < NEWS_TTL_MS) {
     return newsCache.value;
   }
 
-  if (!CRYPTOPANIC_API_KEY) {
+  if (!ALPHAVANTAGE_API_KEY) {
+    log.warn('No ALPHAVANTAGE_API_KEY — skipping news sentiment');
     return newsCache?.value ?? null;
   }
 
   try {
-    // Step 1: Fetch headlines from CryptoPanic
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-    const res = await fetch(CRYPTOPANIC_HOT_URL, {
+    const res = await fetch(ALPHAVANTAGE_NEWS_URL, {
       signal: controller.signal,
       headers: { 'Accept': 'application/json' },
     });
     clearTimeout(timeout);
 
     if (!res.ok) {
-      log.warn('News API returned non-OK', { status: res.status });
+      log.warn('Alpha Vantage returned non-OK', { status: res.status });
       return newsCache?.value ?? null;
     }
 
-    const text = await res.text();
-    let data: any;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      log.warn('News API returned non-JSON', { snippet: text.slice(0, 100) });
+    const data = await res.json() as {
+      feed?: Array<{
+        title?: string;
+        overall_sentiment_score?: number;
+        overall_sentiment_label?: string;
+        ticker_sentiment?: Array<{
+          ticker?: string;
+          ticker_sentiment_score?: string;
+          ticker_sentiment_label?: string;
+          relevance_score?: string;
+        }>;
+      }>;
+      Information?: string;
+      Note?: string;
+    };
+
+    // Check for rate limit or error messages
+    if (data.Information || data.Note) {
+      log.warn('Alpha Vantage API message', { msg: (data.Information || data.Note || '').slice(0, 100) });
       return newsCache?.value ?? null;
     }
 
-    const posts = data?.results;
-    if (!posts || posts.length === 0) {
-      log.warn('News API returned no posts');
+    const articles = data?.feed;
+    if (!articles || articles.length === 0) {
+      log.warn('Alpha Vantage returned no articles');
       return newsCache?.value ?? null;
     }
 
-    // Step 2: Extract headlines for LLM classification
-    const headlines = posts.slice(0, 15).map((p: any) => p.title).filter(Boolean);
-    if (headlines.length === 0) {
+    // Extract crypto-specific sentiment: average ticker scores for ETH and BTC
+    let totalScore = 0;
+    let scoreCount = 0;
+
+    for (const article of articles) {
+      const tickers = article.ticker_sentiment || [];
+      for (const t of tickers) {
+        const ticker = t.ticker || '';
+        if (ticker === 'CRYPTO:ETH' || ticker === 'CRYPTO:BTC') {
+          const score = Number(t.ticker_sentiment_score);
+          const relevance = Number(t.relevance_score);
+          if (Number.isFinite(score) && Number.isFinite(relevance) && relevance > 0) {
+            // Weight by relevance — more relevant articles matter more
+            totalScore += score * relevance;
+            scoreCount += relevance;
+          }
+        }
+      }
+    }
+
+    // If no crypto-specific scores, fall back to overall article sentiment
+    if (scoreCount === 0) {
+      for (const article of articles) {
+        const score = Number(article.overall_sentiment_score);
+        if (Number.isFinite(score)) {
+          totalScore += score;
+          scoreCount += 1;
+        }
+      }
+    }
+
+    if (scoreCount === 0) {
+      log.warn('Alpha Vantage: no sentiment scores found');
       return newsCache?.value ?? null;
     }
 
-    // Step 3: Classify via Gemini
-    const normalized = await classifyHeadlines(headlines);
-    if (normalized === null) {
-      return newsCache?.value ?? null;
-    }
+    // Alpha Vantage scores are already in [-1, +1] range
+    // Dampen slightly since news is noisy
+    const avg = totalScore / scoreCount;
+    const normalized = Math.max(-1, Math.min(1, avg * 0.85));
+
+    const bullish = articles.filter(a => (a.overall_sentiment_score ?? 0) > 0.1).length;
+    const bearish = articles.filter(a => (a.overall_sentiment_score ?? 0) < -0.1).length;
 
     newsCache = { value: normalized, fetchedAt: Date.now() };
     log.info('News sentiment fetched', {
-      posts: headlines.length,
+      source: 'alpha_vantage',
+      articles: articles.length,
+      cryptoScores: Math.round(scoreCount),
+      bullish,
+      bearish,
+      raw: avg.toFixed(3),
       normalized: normalized.toFixed(2),
-      method: 'llm_classify',
     });
     return normalized;
   } catch (err: any) {
     log.warn('News sentiment fetch failed', { error: err.message?.slice(0, 80) });
     return newsCache?.value ?? null;
-  }
-}
-
-/**
- * Use Gemini Flash to classify headlines as bullish/bearish/neutral.
- * Returns [-1, +1] or null on failure.
- */
-async function classifyHeadlines(headlines: string[]): Promise<number | null> {
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey) {
-    log.warn('No GEMINI_API_KEY — skipping headline classification');
-    return null;
-  }
-
-  const numberedList = headlines.map((h, i) => `${i + 1}. ${h}`).join('\n');
-  const prompt = `You are a crypto market sentiment classifier. For each headline below, respond with ONLY a JSON array of numbers: -1 (bearish), 0 (neutral), or 1 (bullish).
-
-Headlines:
-${numberedList}
-
-Respond with ONLY a JSON array like [-1,0,1,0,-1,...] with exactly ${headlines.length} elements. No text, no markdown.`;
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-
-    const url = `${GEMINI_CLASSIFY_URL}?key=${geminiKey}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 512, temperature: 0.1, thinkingConfig: { thinkingBudget: 0 } },
-      }),
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) {
-      log.warn('Gemini classify returned non-OK', { status: res.status });
-      return null;
-    }
-
-    const data = await res.json() as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    };
-    const text = (data?.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
-
-    // Try complete array first, then handle truncated responses
-    let scores: number[];
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      try {
-        scores = JSON.parse(jsonMatch[0]);
-      } catch {
-        // Array might be truncated — extract whatever numbers we can
-        const nums = text.match(/-?[01]/g);
-        scores = nums ? nums.map(Number) : [];
-      }
-    } else {
-      // No brackets — try to extract individual scores
-      const nums = text.match(/-?[01]/g);
-      scores = nums ? nums.map(Number) : [];
-    }
-
-    if (!Array.isArray(scores) || scores.length === 0) {
-      log.warn('Gemini classify returned no scores', { text: text.slice(0, 120) });
-      return null;
-    }
-
-    // Average the classifications and dampen (news is noisy)
-    const avg = scores.reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0) / scores.length;
-    const normalized = Math.max(-1, Math.min(1, avg * 0.8));
-
-    log.info('Headlines classified', {
-      count: scores.length,
-      bullish: scores.filter(s => s > 0).length,
-      bearish: scores.filter(s => s < 0).length,
-      neutral: scores.filter(s => s === 0).length,
-      raw: avg.toFixed(3),
-      normalized: normalized.toFixed(2),
-    });
-
-    return normalized;
-  } catch (err: any) {
-    log.warn('Headline classification failed', { error: err.message?.slice(0, 80) });
-    return null;
   }
 }
 

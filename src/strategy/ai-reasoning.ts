@@ -176,7 +176,7 @@ function buildReasoningPrompt(
     sentimentBlock = `\n\nSENTIMENT (25% weight in signal scorecard):
 - Composite: ${sentiment.composite.toFixed(2)} (${sentiment.composite > 0.15 ? 'BULLISH' : sentiment.composite < -0.15 ? 'BEARISH' : 'NEUTRAL'})
 - Fear & Greed Index: ${fgRaw ?? 'N/A'}/100 (${fgLabel})
-- News sentiment: ${sentiment.newsSentiment?.toFixed(2) ?? 'N/A'} (LLM-classified headlines)
+- News sentiment: ${sentiment.newsSentiment?.toFixed(2) ?? 'N/A'} (Alpha Vantage crypto news)
 - Funding proxy: ${sentiment.fundingRate?.toFixed(2) ?? 'N/A'} (Kraken VWAP deviation)
 - Active sources: ${sentiment.sources.join(', ')}`;
   }
