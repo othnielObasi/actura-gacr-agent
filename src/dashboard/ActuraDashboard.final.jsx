@@ -147,7 +147,7 @@ function Actura() {
   const [cycleCount, setCycleCount] = useState(0);
   const [sentiment, setSentiment] = useState(null);
   const [security, setSecurity] = useState(null);
-  const [auditTrail, setAuditTrail] = useState(null);
+  const [latestAi, setLatestAi] = useState(null);
 
   /* ── Tier mapping from API tier names ── */
   const tierMap = { probation: "TIER_1_PROBATION", limited: "TIER_2_LIMITED", standard: "TIER_3_STANDARD", elevated: "TIER_4_EXPANDED", elite: "TIER_4_EXPANDED" };
@@ -252,7 +252,7 @@ function Actura() {
   /* ── API fetching ── */
   const fetchData = useCallback(async () => {
     try {
-      const [statusRes, checkpointsRes, reputationRes, operatorRes, actionsRes, positionsRes, governanceRes, securityRes, artifactsRes, eventsRes] = await Promise.all([
+      const [statusRes, checkpointsRes, reputationRes, operatorRes, actionsRes, positionsRes, governanceRes, securityRes, artifactRes] = await Promise.all([
         fetch("/api/status").then(r => r.json()).catch(() => null),
         fetch("/api/checkpoints?limit=10").then(r => r.json()).catch(() => null),
         fetch("/api/reputation/history?limit=30").then(r => r.json()).catch(() => null),
@@ -261,8 +261,7 @@ function Actura() {
         fetch("/api/positions").then(r => r.json()).catch(() => null),
         fetch("/api/governance").then(r => r.json()).catch(() => null),
         fetch("/api/security").then(r => r.json()).catch(() => null),
-        fetch("/api/artifacts?limit=1").then(r => r.json()).catch(() => null),
-        fetch("/api/events?limit=1").then(r => r.json()).catch(() => null),
+        fetch("/api/artifact/latest").then(r => r.json()).catch(() => null),
       ]);
 
       if (statusRes) {
@@ -317,14 +316,7 @@ function Actura() {
       if (positionsRes?.positions) setLivePositions(positionsRes.positions);
       if (governanceRes) setGovernance(governanceRes);
       if (securityRes) setSecurity(securityRes);
-      if (artifactsRes || eventsRes) {
-        setAuditTrail({
-          totalArtifacts: artifactsRes?.total || 0,
-          latestCid: artifactsRes?.artifacts?.[0]?.cid || null,
-          latestIpfs: artifactsRes?.artifacts?.[0]?.ipfsUrl || null,
-          indexer: eventsRes?.indexer || null,
-        });
-      }
+      if (artifactRes?.aiReasoning) setLatestAi(artifactRes.aiReasoning);
 
       setStage(s => (s + 1) % STAGES.length);
       setTick(t => t + 1);
@@ -630,22 +622,44 @@ function Actura() {
             </div>
           </P>
 
-          {/* On-Chain Audit Trail — unique to main dashboard */}
-          <P title="On-Chain Audit Trail" tag={auditTrail ? `${auditTrail.totalArtifacts} artifacts` : "loading"}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.brd}` }}>
-              <Metric label="IPFS Artifacts" value={auditTrail?.totalArtifacts || 0} sub="pinned to Pinata" color={T.cyan} />
-              <Metric label="Indexer Block" value={auditTrail?.indexer?.lastIndexedBlock ? `#${(auditTrail.indexer.lastIndexedBlock / 1e6).toFixed(1)}M` : "—"} sub={auditTrail?.indexer?.running ? "syncing" : "stopped"} color={auditTrail?.indexer?.running ? T.up : T.dn} />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, marginBottom: 8 }}>
-              <Metric label="Reputation" value={auditTrail?.indexer?.eventBreakdown?.reputation_feedback || 0} sub="feedback txs" color={T.info} />
-              <Metric label="Val Requests" value={auditTrail?.indexer?.eventBreakdown?.validation_request || 0} sub="on-chain" color={T.warn} />
-              <Metric label="Val Responses" value={auditTrail?.indexer?.eventBreakdown?.validation_response || 0} sub="on-chain" color={T.up} />
-            </div>
-            {auditTrail?.latestCid && (
-              <div style={{ marginTop: 4, paddingTop: 6, borderTop: `1px solid ${T.brd}` }}>
-                <div style={{ fontSize: 8, color: T.fg3, letterSpacing: 1, marginBottom: 3 }}>LATEST ARTIFACT</div>
-                <div style={{ fontSize: 9.5, color: T.cyan, wordBreak: "break-all", cursor: "pointer" }} onClick={() => window.open(auditTrail.latestIpfs, "_blank")}>{auditTrail.latestCid}</div>
+          {/* AI Reasoning — the agent explains its latest decision */}
+          <P title="AI Reasoning" tag="latest decision">
+            {latestAi ? (
+              <div style={{ fontSize: 10, lineHeight: 1.7, color: T.fg }}>
+                <div style={{ color: T.info, fontWeight: 600, fontSize: 10.5, marginBottom: 6 }}>{latestAi.summary}</div>
+                <div style={{ marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.brd}` }}>
+                  <div style={{ fontSize: 8, color: T.fg3, letterSpacing: 1, marginBottom: 3 }}>MARKET CONTEXT</div>
+                  <div style={{ color: T.fg2, fontSize: 9.5 }}>{latestAi.marketContext}</div>
+                </div>
+                <div style={{ marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.brd}` }}>
+                  <div style={{ fontSize: 8, color: T.fg3, letterSpacing: 1, marginBottom: 3 }}>TRADE RATIONALE</div>
+                  <div style={{ color: T.fg2, fontSize: 9.5 }}>{latestAi.tradeRationale}</div>
+                </div>
+                {latestAi.confidenceFactors?.length > 0 && (
+                  <div style={{ marginBottom: 6 }}>
+                    <div style={{ fontSize: 8, color: T.fg3, letterSpacing: 1, marginBottom: 3 }}>CONFIDENCE FACTORS</div>
+                    {latestAi.confidenceFactors.map((f, i) => (
+                      <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 2 }}>
+                        <span style={{ color: T.up, flexShrink: 0, fontSize: 9 }}>+</span>
+                        <span style={{ color: T.fg2, fontSize: 9.5 }}>{f}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {latestAi.watchItems?.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 8, color: T.fg3, letterSpacing: 1, marginBottom: 3 }}>WATCH ITEMS</div>
+                    {latestAi.watchItems.map((w, i) => (
+                      <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 2 }}>
+                        <span style={{ color: T.warn, flexShrink: 0, fontSize: 9 }}>!</span>
+                        <span style={{ color: T.fg2, fontSize: 9.5 }}>{w}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
+            ) : (
+              <div style={{ color: T.fg3, fontSize: 10, textAlign: "center", padding: 16 }}>Awaiting first AI-reasoned decision...</div>
             )}
           </P>
           </div>
