@@ -294,6 +294,7 @@ async function runCycle(): Promise<void> {
   cycleCount++;
   const cycleStart = Date.now();
   const operatorControl = getOperatorControlState();
+  let takeProfitPrice: number | null = null;  // Dynamic TP — calculated at trade time
 
   // Step 0: Check if live feed is too stale to trade safely
   const feedStatus = getLiveFeedStatus();
@@ -713,6 +714,17 @@ async function runCycle(): Promise<void> {
     }
 
     // Always record position locally (for our risk engine tracking)
+    // Calculate dynamic take-profit price based on ATR and regime profile.
+    const atrValue = strategyOutput.indicators.atr;
+    const tpAtrMult = regimeGov?.profile.takeProfitAtrMultiple ?? 2.0;
+    if (atrValue !== null && atrValue > 0) {
+      if (strategyOutput.signal.direction === 'LONG') {
+        takeProfitPrice = strategyOutput.currentPrice + (tpAtrMult * atrValue);
+      } else if (strategyOutput.signal.direction === 'SHORT') {
+        takeProfitPrice = strategyOutput.currentPrice - (tpAtrMult * atrValue);
+      }
+    }
+
     riskEngine.openPosition({
       asset: config.tradingPair,
       side: strategyOutput.signal.direction as 'LONG' | 'SHORT',
@@ -722,6 +734,8 @@ async function runCycle(): Promise<void> {
       openedAt: new Date().toISOString(),
       ipfsCid: ipfsResult?.cid ?? null,
       txHash: checkpoint.onChainTxHash ?? null,
+      atr: atrValue,
+      takeProfitPrice,
     });
 
     // Persist immediately after opening a position so it survives crashes
@@ -830,6 +844,7 @@ async function runCycle(): Promise<void> {
     log.info(
       `  → ${strategyOutput.signal.direction} ${riskDecision.finalPositionSize.toFixed(4)} @ $${strategyOutput.currentPrice.toFixed(2)} | ` +
       `Stop: $${riskDecision.stopLossPrice?.toFixed(2) ?? 'N/A'} | ` +
+      `TP: $${takeProfitPrice?.toFixed(2) ?? 'N/A'} | ` +
       `IPFS: ${ipfsResult?.cid?.slice(0, 16) ?? 'none'}`
     );
   }

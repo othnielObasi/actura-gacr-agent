@@ -51,6 +51,8 @@ export interface Position {
   openedAt: string;
   ipfsCid?: string | null;     // IPFS artifact CID from opening checkpoint
   txHash?: string | null;      // On-chain tx hash from opening checkpoint
+  atr?: number | null;         // ATR at position open time (for dynamic TP)
+  takeProfitPrice?: number | null; // Calculated TP target price
 }
 
 // Slippage model
@@ -62,14 +64,14 @@ const SLIPPAGE_BPS = 10;  // 0.1% average slippage
 const MIN_PROFIT_FOR_TRAIL_PCT = (SLIPPAGE_BPS * 2) / 10000; // 2× one-way slippage = 0.20%
 
 // Take-profit: close position when unrealized PnL reaches this percentage.
-// Prevents the "runs up 5%, comes back to stop-loss" pattern.
-// Configurable via TAKE_PROFIT_PCT env var (default 3% for 4h candles).
+// Used as FALLBACK when no ATR-based TP target is set on the position.
+// Dynamic TP (based on ATR at open time) is preferred and set per-position.
 const TAKE_PROFIT_PCT = parseFloat(process.env.TAKE_PROFIT_PCT || '3') / 100;
 
 // Max hold duration: close positions that have been open too long.
 // Prevents capital from being stuck in sideways markets forever.
-// Default 4 hours — configurable via MAX_HOLD_HOURS env var.
-const MAX_HOLD_MS = parseFloat(process.env.MAX_HOLD_HOURS || '4') * 60 * 60 * 1000;
+// Default 12 hours — gives positions time to reach TP in low-vol regimes.
+const MAX_HOLD_MS = parseFloat(process.env.MAX_HOLD_HOURS || '12') * 60 * 60 * 1000;
 
 function applySlippage(price: number, side: 'LONG' | 'SHORT'): number {
   const slip = price * (SLIPPAGE_BPS / 10000);
@@ -272,6 +274,8 @@ export class RiskEngine {
     openedAt: string;
     ipfsCid?: string | null;
     txHash?: string | null;
+    atr?: number | null;
+    takeProfitPrice?: number | null;
   }): Position {
     const executionPrice = applySlippage(params.entryPrice, params.side);
     const trailingDist = params.stopLoss !== null ? Math.abs(executionPrice - params.stopLoss) : null;
@@ -288,6 +292,8 @@ export class RiskEngine {
       openedAt: params.openedAt,
       ipfsCid: params.ipfsCid ?? null,
       txHash: params.txHash ?? null,
+      atr: params.atr ?? null,
+      takeProfitPrice: params.takeProfitPrice ?? null,
     };
 
     this.openPositions.push(position);
@@ -319,6 +325,8 @@ export class RiskEngine {
     highWaterMark?: number;
     ipfsCid?: string | null;
     txHash?: string | null;
+    atr?: number | null;
+    takeProfitPrice?: number | null;
   }): Position {
     const trailingDist = pos.trailingStopDistance
       ?? (pos.stopLoss !== null ? Math.abs(pos.entryPrice - pos.stopLoss) : null);
@@ -335,6 +343,8 @@ export class RiskEngine {
       openedAt: pos.openedAt,
       ipfsCid: pos.ipfsCid ?? null,
       txHash: pos.txHash ?? null,
+      atr: pos.atr ?? null,
+      takeProfitPrice: pos.takeProfitPrice ?? null,
     };
 
     this.openPositions.push(position);
@@ -395,8 +405,8 @@ export class RiskEngine {
    * Update trailing stops and check all stop-losses / take-profits
    * Returns array of closed position IDs with reason
    */
-  updateStops(currentPrice: number): Array<{ id: number; pnl: number; reason: 'stop_loss' | 'take_profit' }> {
-    const closed: Array<{ id: number; pnl: number; reason: 'stop_loss' | 'take_profit' }> = [];
+  updateStops(currentPrice: number): Array<{ id: number; pnl: number; reason: 'stop_loss' | 'take_profit' | 'max_hold' }> {
+    const closed: Array<{ id: number; pnl: number; reason: 'stop_loss' | 'take_profit' | 'max_hold' }> = [];
 
     // Iterate in reverse so splicing doesn't skip elements
     for (let i = this.openPositions.length - 1; i >= 0; i--) {
@@ -422,15 +432,29 @@ export class RiskEngine {
         }
       }
 
-      // Check take-profit before stop-loss
-      const unrealizedPctForTP = pos.side === 'LONG'
-        ? (currentPrice - pos.entryPrice) / pos.entryPrice
-        : (pos.entryPrice - currentPrice) / pos.entryPrice;
-      if (TAKE_PROFIT_PCT > 0 && unrealizedPctForTP >= TAKE_PROFIT_PCT) {
+      // Check take-profit before stop-loss.
+      // Prefer ATR-based TP target (stored on position) over fixed percentage.
+      let tpHit = false;
+      if (pos.takeProfitPrice != null) {
+        // Dynamic ATR-based TP: check if price reached the target
+        tpHit = (pos.side === 'LONG' && currentPrice >= pos.takeProfitPrice) ||
+                (pos.side === 'SHORT' && currentPrice <= pos.takeProfitPrice);
+      } else {
+        // Fallback to fixed percentage TP
+        const unrealizedPctForTP = pos.side === 'LONG'
+          ? (currentPrice - pos.entryPrice) / pos.entryPrice
+          : (pos.entryPrice - currentPrice) / pos.entryPrice;
+        tpHit = TAKE_PROFIT_PCT > 0 && unrealizedPctForTP >= TAKE_PROFIT_PCT;
+      }
+      if (tpHit) {
         const pnl = this.closeAtIndex(i, currentPrice, /* skipSlippage */ false);
+        const unrealizedPctForTP = pos.side === 'LONG'
+          ? (currentPrice - pos.entryPrice) / pos.entryPrice
+          : (pos.entryPrice - currentPrice) / pos.entryPrice;
         closed.push({ id: pos.id, pnl, reason: 'take_profit' });
         log.info(`Take-profit hit: position #${pos.id}`, {
           side: pos.side, entry: pos.entryPrice, exit: currentPrice,
+          tpTarget: pos.takeProfitPrice ?? `${(TAKE_PROFIT_PCT * 100).toFixed(1)}%`,
           unrealizedPct: (unrealizedPctForTP * 100).toFixed(2) + '%',
           pnl: Math.round(pnl * 100) / 100,
         });
@@ -467,7 +491,7 @@ export class RiskEngine {
         const holdMs = Date.now() - new Date(pos.openedAt).getTime();
         if (holdMs >= MAX_HOLD_MS) {
           const pnl = this.closeAtIndex(i, currentPrice, /* skipSlippage */ false);
-          closed.push({ id: pos.id, pnl, reason: 'stop_loss' });
+          closed.push({ id: pos.id, pnl, reason: 'max_hold' });
           log.info(`Max hold duration exceeded: position #${pos.id}`, {
             side: pos.side, entry: pos.entryPrice, exit: currentPrice,
             holdHours: (holdMs / 3600000).toFixed(1),

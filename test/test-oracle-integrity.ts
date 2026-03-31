@@ -16,6 +16,7 @@ const ok = evaluateOracleIntegrity({
   highs: normal.highs,
   lows: normal.lows,
   timestamps: normal.timestamps,
+  staleAfterMinutes: 90, // test data uses hourly candles; last candle is ~1h old
 });
 assert(ok.passed === true, 'Healthy market data passes oracle integrity');
 assert(['healthy', 'watch'].includes(ok.status), 'Healthy data returns non-blocked status');

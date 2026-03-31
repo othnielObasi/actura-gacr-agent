@@ -22,7 +22,7 @@ export interface ClosedTrade {
   pnl: number;
   pnlPct: number;
   stopHit: boolean;
-  reason: 'stop_loss' | 'take_profit' | 'direction_flip' | 'reconciliation' | 'manual';
+  reason: 'stop_loss' | 'take_profit' | 'max_hold' | 'direction_flip' | 'reconciliation' | 'manual';
   openedAt: string;
   closedAt: string;
   durationMs: number;

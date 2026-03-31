@@ -44,7 +44,7 @@ export function evaluateOracleIntegrity(input: OracleIntegrityInput): OracleInte
   const maxExternalDeviationPct = input.maxExternalDeviationPct ?? 0.03;
   const maxSingleBarMovePct = input.maxSingleBarMovePct ?? 0.08;
   const maxSingleBarRangePct = input.maxSingleBarRangePct ?? 0.12;
-  const staleAfterMinutes = input.staleAfterMinutes ?? 90;
+  const staleAfterMinutes = input.staleAfterMinutes ?? 30;  // 30 min (tighter for production)
 
   const reasons: string[] = [];
   const blockers: string[] = [];
@@ -64,6 +64,21 @@ export function evaluateOracleIntegrity(input: OracleIntegrityInput): OracleInte
   else if (singleBarMovePct > maxSingleBarMovePct * 0.7) reasons.push(`single_bar_move_watch ${fmtPct(singleBarMovePct)}`);
 
   if (singleBarRangePct > maxSingleBarRangePct) blockers.push(`single_bar_range ${fmtPct(singleBarRangePct)} > ${fmtPct(maxSingleBarRangePct)}`);
+
+  // Multi-bar cumulative move: catch flash crashes spread across 2-3 bars
+  // that individually pass the single-bar check.
+  const maxMultiBarMovePct = 0.10;  // 10% over 3 bars
+  if (input.prices.length >= 4) {
+    const price3BarsAgo = input.prices[input.prices.length - 4];
+    const cumulativeMovePct = price3BarsAgo > 0
+      ? Math.abs(currentPrice - price3BarsAgo) / price3BarsAgo
+      : 0;
+    if (cumulativeMovePct > maxMultiBarMovePct) {
+      blockers.push(`multi_bar_move_3 ${fmtPct(cumulativeMovePct)} > ${fmtPct(maxMultiBarMovePct)}`);
+    } else if (cumulativeMovePct > maxMultiBarMovePct * 0.7) {
+      reasons.push(`multi_bar_move_watch ${fmtPct(cumulativeMovePct)}`);
+    }
+  }
 
   if (staleMinutes > staleAfterMinutes) blockers.push(`stale_price_feed ${staleMinutes.toFixed(1)}m > ${staleAfterMinutes}m`);
 
