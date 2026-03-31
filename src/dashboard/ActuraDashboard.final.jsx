@@ -74,11 +74,11 @@ function Dot({ color }) { return <span style={{ display: "inline-block", width: 
 function Badge({ children, color }) { return <span style={{ fontSize: 9, fontWeight: 700, color, background: `${color}14`, padding: "1px 6px", borderRadius: 2, whiteSpace: "nowrap" }}>{children}</span>; }
 
 /* Panel with header */
-function P({ title, tag, children, style: sx, noPad }) {
+function P({ title, tip, tag, children, style: sx, noPad }) {
   return (
     <div style={{ background: T.s1, border: `1px solid ${T.brd}`, borderRadius: 6, overflow: "hidden", display: "flex", flexDirection: "column", ...sx }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 12px", borderBottom: `1px solid ${T.brd}`, background: T.s2, flexShrink: 0 }}>
-        <span style={{ fontSize: 10.5, fontWeight: 700, color: T.fg, letterSpacing: 0.3 }}>{title}</span>
+        <span title={tip} style={{ fontSize: 10.5, fontWeight: 700, color: T.fg, letterSpacing: 0.3, cursor: tip ? "help" : "default" }}>{title}</span>
         {tag && <span style={{ fontSize: 8.5, color: T.fg3, fontWeight: 600 }}>{tag}</span>}
       </div>
       <div style={noPad ? { flex: 1 } : { padding: "8px 12px", flex: 1 }}>{children}</div>
@@ -398,7 +398,7 @@ function Actura() {
         {/* ═══ 2. MARKET + PIPELINE (the governance story starts here) ═══ */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
           {/* Market Intelligence */}
-          <P title="Market Intelligence" tag={`${regime} · ${profile}`}>
+          <P title="Market Intelligence" tip="Live ETH/USD price, capital, volatility regime, and oracle health from multiple data sources." tag={`${regime} · ${profile}`}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 0, marginBottom: 8, borderBottom: `1px solid ${T.brd}`, paddingBottom: 6 }}>
               <Metric label="ETH/USD" value={`$${fn(cPrice, 1)}`} color={T.w} />
               <Metric label="Capital" value={`$${fn(capital, 0)}`} sub={`${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%`} color={pnl >= 0 ? T.up : T.dn} />
@@ -409,7 +409,7 @@ function Actura() {
           </P>
 
           {/* Sentiment Intelligence */}
-          <P title="Market Sentiment" tag={sentiment ? `${sentiment.sources?.length || 0} sources` : "loading"}>
+          <P title="Market Sentiment" tip="Composite sentiment from Fear & Greed index, Alpha Vantage news, and Kraken funding proxy. Drives trade bias." tag={sentiment ? `${sentiment.sources?.length || 0} sources` : "loading"}>
             {sentiment ? (() => {
               const comp = sentiment.composite || 0;
               const fg = sentiment.fearGreed;
@@ -441,7 +441,7 @@ function Actura() {
           </P>
 
           {/* Live Data Feeds */}
-          <P title="Live Data Feeds" tag={feedsData?.status?.available ? "CONNECTED" : "OFFLINE"}>
+          <P title="Live Data Feeds" tip="Real-time connection status and freshness for all market data sources: Kraken, CoinGecko, sentiment APIs." tag={feedsData?.status?.available ? "CONNECTED" : "OFFLINE"}>
             {(() => {
               const tk = feedsData?.ticker;
               const st = feedsData?.status;
@@ -474,7 +474,7 @@ function Actura() {
         </div>
 
         {/* Governance Pipeline — THE HERO */}
-        <P title="Governance Pipeline" tag={`cycle ${cycleCount || tick}`}>
+        <P title="Governance Pipeline" tip="Every trade must pass all 8 deterministic governance stages before execution. This is the ERC-8004 trust backbone." tag={`cycle ${cycleCount || tick}`}>
             <div style={{ fontSize: 9.5, color: T.fg2, marginBottom: 8 }}>Every trade passes through 8 deterministic stages. Only trades that clear all gates execute.</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 4 }}>
               {STAGES.map((s, i) => {
@@ -512,7 +512,7 @@ function Actura() {
           </P>
 
         {/* ═══ 3. DECISION ENGINE ═══ */}
-        <P title="Decision Engine" tag={`${trades.length} decisions`} noPad>
+        <P title="Decision Engine" tip="Chronological log of every trade decision the agent has made, with direction, regime, edge score, and outcome." tag={`${trades.length} decisions`} noPad>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1000 }}>
               <thead>
@@ -550,7 +550,7 @@ function Actura() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
 
           {/* Trade Trust Proof — deterministic explainability */}
-          <P title="Trade Trust Proof" tag={`#${sel.id} · ${sel.approved ? "APPROVED" : "BLOCKED"}`}>
+          <P title="Trade Trust Proof" tip="Deterministic proof for the selected trade: confidence score, market regime, edge, oracle status, and trust tier." tag={`#${sel.id} · ${sel.approved ? "APPROVED" : "BLOCKED"}`}>
             <div style={{ padding: "4px 0", marginBottom: 6, borderBottom: `1px solid ${sel.approved ? T.up : T.dn}20` }}>
               <span style={{ fontSize: 12, fontWeight: 800, color: sel.approved ? T.up : T.dn }}>{sel.approved ? "▲ APPROVED" : "▼ BLOCKED"}</span>
             </div>
@@ -574,7 +574,7 @@ function Actura() {
           </P>
 
           {/* Artifact Drawer + Confidence */}
-          <P title="Artifact Drawer" tag={`trade ${sel.id}`}>
+          <P title="Artifact Drawer" tip="IPFS-pinned validation artifact for this trade. Immutable on-chain proof of the agent's reasoning and governance." tag={`trade ${sel.id}`}>
             <KV k="intent" v="signed_trade_intent" />
             <KV k="mandate" v={`max ${mandate.maxTrade}, daily loss ${mandate.maxDailyLoss}`} c={T.up} />
             <KV k="oracle" v={oracleStatus} c={oraC(oracleStatus)} />
@@ -604,7 +604,7 @@ function Actura() {
 
           {/* Execution + Positions */}
           <div style={{ display: "grid", gap: 10 }}>
-            <P title="Execution Simulation" tag={sim.st}>
+            <P title="Execution Simulation" tip="Simulated execution details: entry price, take-profit, stop-loss, and slippage estimate before committing capital." tag={sim.st}>
               {[["Expected Edge", fp(sim.edgePct, 2), sim.edgePct / 0.006, T.up], ["Slippage", `${sim.slip.toFixed(1)}bps`, sim.slip / 40, T.warn], ["Net Edge", fp(sim.net, 2), (sim.net + 0.005) / 0.01, sim.net > 0 ? T.up : T.dn]].map(([l, v, p, c]) => (
                 <div key={l} style={{ marginBottom: 6 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: T.fg3, marginBottom: 2 }}><span>{l}</span><span style={{ color: c }}>{v}</span></div>
@@ -616,7 +616,7 @@ function Actura() {
                 <div><div style={{ fontSize: 8, color: T.fg3 }}>GAS EST</div><div style={{ fontSize: 13, fontWeight: 700, color: T.info }}>${fn(sim.gas)}</div></div>
               </div>
             </P>
-            <P title="Positions + Exposure" tag={`${positions.length} active`}>
+            <P title="Positions + Exposure" tip="Currently open positions with entry price, unrealized P&L, and portfolio exposure percentage." tag={`${positions.length} active`}>
               {positions.map((p) => (
                 <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: `1px solid ${T.bg}50` }}>
                   <div><span style={{ color: sigC(p.side), fontWeight: 700 }}>#{p.id} {p.side} {fn(p.size, 4)}</span> <span style={{ color: T.fg3, fontSize: 9.5 }}>@ ${fn(p.entry)} · stop ${fn(p.stop)}</span></div>
@@ -637,7 +637,7 @@ function Actura() {
 
           {/* Trust + Capital Rights + Trade Performance */}
           <div style={{ display: "grid", gap: 10 }}>
-          <P title="Trust + Capital Ladder" tag={shortTier(tier)}>
+          <P title="Trust + Capital Ladder" tip="ERC-8004 trust tier progression. Higher tiers unlock larger position sizes as the agent builds on-chain reputation." tag={shortTier(tier)}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, marginBottom: 8 }}>
               <div><div style={{ fontSize: 8, color: T.fg3 }}>TRUST SCORE</div><div style={{ fontSize: 18, fontWeight: 700, color: truC(trustScore) }}>{fn(trustScore, 0)}</div><div style={{ fontSize: 9, color: T.fg2 }}>{trustLabel(trustScore)} · {tDelta >= 0 ? "+" : ""}{fn(tDelta, 0)}</div></div>
               <div><div style={{ fontSize: 8, color: T.fg3 }}>CAPITAL RIGHT</div><div style={{ fontSize: 18, fontWeight: 700, color: T.info }}>{sup.eff.toFixed(2)}x</div><div style={{ fontSize: 9, color: T.fg2 }}>{recoveryMode ? "recovery capped" : shortTier(tier)}</div></div>
@@ -658,7 +658,7 @@ function Actura() {
           </P>
 
           {/* AI Reasoning — the agent explains its latest decision */}
-          <P title="AI Reasoning" tag="latest decision">
+          <P title="AI Reasoning" tip="Natural language explanation of the agent's latest trade decision: market context, rationale, confidence factors, and watch items." tag="latest decision">
             {latestAi ? (
               <div style={{ fontSize: 10, lineHeight: 1.7, color: T.fg }}>
                 <div style={{ color: T.info, fontWeight: 600, fontSize: 10.5, marginBottom: 6 }}>{latestAi.summary}</div>
@@ -701,7 +701,7 @@ function Actura() {
 
           {/* ERC-8004 + MCP */}
           <div style={{ display: "grid", gap: 10 }}>
-            <P title="ERC-8004 Protocol" tag={erc.registrationStatus}>
+            <P title="ERC-8004 Protocol" tip="On-chain registration status, agent identity, contract address, and EIP-1271 / TEE security verification." tag={erc.registrationStatus}>
               <KV k="agentId" v={String(erc.agentId)} />
               <KV k="agentRegistry" v={erc.agentRegistry} c={T.info} />
               <KV k="ownerWallet" v={erc.ownerWallet} />
@@ -726,7 +726,7 @@ function Actura() {
                 </div>
               )}
             </P>
-            <P title="MCP Interface" tag={`${mcp.tools.total} tools`}>
+            <P title="MCP Interface" tip="Model Context Protocol tools exposed by the agent. Enables external systems to query state and trigger actions." tag={`${mcp.tools.total} tools`}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, marginBottom: 6, paddingBottom: 6, borderBottom: `1px solid ${T.brd}` }}>
                 <div><div style={{ fontSize: 8, color: T.fg3 }}>TOOLS</div><div style={{ fontSize: 15, fontWeight: 700, color: T.cyan }}>{mcp.tools.total}</div><div style={{ fontSize: 9, color: T.fg2 }}>public {mcp.tools.public} · restricted {mcp.tools.restricted} · operator {mcp.tools.operator}</div></div>
                 <div><div style={{ fontSize: 8, color: T.fg3 }}>RESOURCES / PROMPTS</div><div style={{ fontSize: 15, fontWeight: 700, color: T.info }}>{mcp.resources} / {mcp.prompts}</div><div style={{ fontSize: 9, color: T.fg2 }}>{mcp.mode}</div></div>
@@ -746,7 +746,7 @@ function Actura() {
 
           {/* Operator + Mandate + Alerts */}
           <div style={{ display: "grid", gap: 10 }}>
-            <P title="Operator Controls" tag={opState}>
+            <P title="Operator Controls" tip="Human operator oversight: pause/resume trading, adjust risk limits, and view recent operator actions." tag={opState}>
               <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
                 <button onClick={onPause} style={btn(T.warn)}>Pause</button>
                 <button onClick={onResume} style={btn(T.up)}>Resume</button>
@@ -760,7 +760,7 @@ function Actura() {
                 </div>
               ))}
             </P>
-            <P title="Mandate + Supervisory" tag={sup.act}>
+            <P title="Mandate + Supervisory" tip="Agent's trading mandate boundaries: allowed pairs, max drawdown, position limits, and supervisory compliance status." tag={sup.act}>
               <KV k="Capital" v={mandate.capital} />
               <KV k="Max trade size" v={mandate.maxTrade} />
               <KV k="Max daily loss" v={mandate.maxDailyLoss} />
@@ -771,7 +771,7 @@ function Actura() {
                 <KV k="Supervisory decision" v={sup.act} c={sup.ok ? T.up : T.dn} />
               </div>
             </P>
-            <P title="Watch Items" tag="live">
+            <P title="Watch Items" tip="Live monitoring alerts: price levels, regime shifts, and risk conditions the agent is actively tracking." tag="live">
               <div style={{ fontSize: 9.5, color: T.warn, lineHeight: 1.65 }}>
                 {[
                   regime === "RANGING" ? "Whipsaw risk elevated — favour reduced size." : "Trend continuation healthy — monitor reversal signals.",
