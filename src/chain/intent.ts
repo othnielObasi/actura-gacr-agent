@@ -16,6 +16,7 @@ export const TRADE_INTENT_TYPES: Record<string, TypedDataField[]> = {
     { name: 'maxSlippage', type: 'uint256' },
     { name: 'deadline', type: 'uint256' },
     { name: 'nonce', type: 'uint256' },
+    { name: 'reasoningHash', type: 'bytes32' },
   ],
 } as const;
 
@@ -27,6 +28,7 @@ export interface TradeIntentData {
   maxSlippage: bigint;
   deadline: bigint;
   nonce: bigint;
+  reasoningHash: string;
 }
 
 let nonceCounter = 0n;
@@ -46,9 +48,13 @@ export function buildTradeIntent(params: {
   amountWei: bigint;
   slippageBps: number;
   deadlineSeconds: number;
+  reasoning?: string;
 }): TradeIntentData {
   const wallet = getWallet();
   nonceCounter += 1n;
+  const reasoningHash = params.reasoning
+    ? ethers.keccak256(ethers.toUtf8Bytes(params.reasoning))
+    : ethers.ZeroHash;
   return {
     agent: wallet.address,
     asset: params.assetAddress,
@@ -57,6 +63,7 @@ export function buildTradeIntent(params: {
     maxSlippage: BigInt(params.slippageBps),
     deadline: BigInt(Math.floor(Date.now() / 1000) + params.deadlineSeconds),
     nonce: nonceCounter,
+    reasoningHash,
   };
 }
 
@@ -87,4 +94,13 @@ export function toRiskRouterPayload(intent: TradeIntentData, signature: string) 
 
 export function resetNonce(): void {
   nonceCounter = 0n;
+}
+
+/**
+ * Verify that a reasoning string matches the hash committed in the intent.
+ * Returns true if keccak256(reasoning) === reasoningHash.
+ */
+export function verifyReasoningIntegrity(reasoning: string, reasoningHash: string): boolean {
+  if (!reasoning || !reasoningHash || reasoningHash === ethers.ZeroHash) return false;
+  return ethers.keccak256(ethers.toUtf8Bytes(reasoning)) === reasoningHash;
 }

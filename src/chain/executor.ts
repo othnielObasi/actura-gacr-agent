@@ -107,6 +107,7 @@ export async function executeTrade(
       amountWei,
       slippageBps: 50,         // 0.5% max slippage
       deadlineSeconds: 300,     // 5 minute deadline
+      reasoning: (artifact as any).aiReasoning?.summary ?? '',
     });
 
     // ── Step 2: Sign with EIP-712 ──

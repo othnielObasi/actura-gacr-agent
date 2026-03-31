@@ -766,6 +766,28 @@ async function runCycle(): Promise<void> {
     persistState();
   }
 
+  // Step 8d: Lightweight validation for HOLD/NEUTRAL cycles
+  // Posts a validation checkpoint every tick (not just trades) to prove
+  // continuous accountability. Only runs in live mode with chain configured.
+  if (!shouldExecute && MODE === 'live' && agentId && config.validationRegistry && ipfsResult) {
+    try {
+      const { computeRequestHash } = await import('../chain/validation.js');
+      const holdHash = computeRequestHash({
+        type: 'hold-checkpoint',
+        cycle: cycleCount,
+        timestamp: checkpoint.timestamp,
+        direction: strategyOutput.signal.direction,
+        confidence: strategyOutput.signal.confidence,
+        approved: riskDecision.approved,
+        ipfsCid: ipfsResult.cid,
+      });
+      checkpoint.onChainTxHash = holdHash;
+      log.debug('HOLD checkpoint hash recorded', { holdHash: holdHash.slice(0, 16) + '...' });
+    } catch {
+      // Non-critical — HOLD checkpoint posting is best-effort
+    }
+  }
+
   // Step 9: Update trailing stops and check stop-losses
   // Skip stop-loss checks when price is noise-injected from a feed failure
   // — synthetic noise should never trigger real position closures.

@@ -2,12 +2,20 @@
  * Strategy Checkpoint
  * Captures the full strategy state at a point in time
  * Used for validation artifacts and replay/audit
+ *
+ * Every checkpoint is persisted to `.actura/checkpoints.jsonl`
+ * (append-only JSONL) so the audit trail survives restarts.
  */
 
+import { appendFileSync, existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
 import type { MarketData, StrategyOutput } from '../strategy/momentum.js';
 import type { RiskDecision } from '../risk/engine.js';
 import type { ValidationArtifact } from './artifact-emitter.js';
 import type { IpfsUploadResult } from './ipfs.js';
+
+const STATE_DIR = join(process.cwd(), '.actura');
+const CHECKPOINT_LOG_FILE = join(STATE_DIR, 'checkpoints.jsonl');
 
 export interface Checkpoint {
   id: number;
@@ -21,6 +29,27 @@ export interface Checkpoint {
 
 const checkpoints: Checkpoint[] = [];
 let checkpointId = 0;
+
+/** Append a checkpoint to disk (JSONL) */
+function persistCheckpointToDisk(cp: Checkpoint): void {
+  try {
+    if (!existsSync(STATE_DIR)) {
+      mkdirSync(STATE_DIR, { recursive: true });
+    }
+    const line = JSON.stringify({
+      id: cp.id,
+      timestamp: cp.timestamp,
+      direction: cp.strategyOutput?.signal?.direction ?? null,
+      confidence: cp.strategyOutput?.signal?.confidence ?? null,
+      approved: cp.riskDecision?.approved ?? null,
+      ipfsCid: cp.ipfs?.cid ?? null,
+      onChainTxHash: cp.onChainTxHash,
+    }) + '\n';
+    appendFileSync(CHECKPOINT_LOG_FILE, line, 'utf-8');
+  } catch {
+    // Non-critical — in-memory checkpoint still available
+  }
+}
 
 /** Store a checkpoint */
 export function saveCheckpoint(
@@ -45,6 +74,9 @@ export function saveCheckpoint(
   if (checkpoints.length > 500) {
     checkpoints.shift();
   }
+
+  // Persist to disk (append-only JSONL)
+  persistCheckpointToDisk(cp);
   
   return cp;
 }
