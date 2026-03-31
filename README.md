@@ -28,8 +28,16 @@ Unlike conventional trading bots, Actura produces a **complete audit trail** for
 | **Trust Policy Scorecard** | Four-dimensional trust scoring: Policy Compliance, Risk Discipline, Validation Completeness, Outcome Quality |
 | **Capital Trust Ladder** | Dynamic capital allocation based on earned trust tier (probation → limited → standard → elevated → elite) |
 | **On-chain risk enforcement** | Solidity smart contract (`ActuraRiskPolicy.sol`) enforces risk limits trustlessly at the contract level |
-| **Full audit trail** | Every decision produces an IPFS-pinned JSON artifact with AI reasoning, market snapshots, confidence intervals, and governance evidence. Artifacts are also saved locally to `./artifacts/` for re-pinning resilience |
+| **EIP-1271 signature verification** | Smart-contract wallet signature support — every signed TradeIntent is verified via EIP-1271 (auto-detects EOA vs contract wallets) before Risk Router submission |
+| **TEE attestation** | Software-based Trusted Execution Environment attestation — every artifact includes a signed attestation binding agent identity to runtime environment (code hash, git commit, OS fingerprint) |
+| **Full audit trail** | Every decision produces an IPFS-pinned JSON artifact with AI reasoning, market snapshots, confidence intervals, governance evidence, and TEE attestation. Artifacts are also saved locally to `./artifacts/` for re-pinning resilience |
+| **Sentiment-driven signals** | Multi-source sentiment scoring — Fear & Greed Index (40%), Alpha Vantage news (35%), Kraken funding rate proxy (25%) — adjusts confidence and position sizing |
+| **Kraken Challenge integration** | Full live/paper trading via Kraken CLI bridge — governed strategy → Kraken orders with stop-losses, TP targets, and ERC-8004 artifact preservation |
+| **Profit-locking trailing stops** | Tiered breakeven mechanism: >0.5% profit → 95% trail, >0.8% → 50% trail, >1.5% → 30% trail. Stops only ratchet tighter, never widen |
+| **Dynamic ATR take-profit** | Regime-aware TP targets: LOW=1.0×, NORMAL=1.2×, HIGH=1.5×, EXTREME=2.0× ATR. Retroactive TP assignment on restart for legacy positions |
 | **Regime Governance** | Deterministic volatility-regime profile switching with Bayesian confidence bias and hysteresis-based transitions |
+| **DEX routing** | Multi-DEX routing engine (Uniswap V3, Aerodrome) — compares fees, slippage, and liquidity to select optimal route |
+| **On-chain event indexer** | Real-time polling of ERC-8004 registry events (reputation, validation) for chain-state awareness |
 | **Performance Analytics** | Risk-adjusted metrics (Sharpe, Sortino, max drawdown, Calmar ratio, profit factor) computed in real time |
 | **MCP protocol server** | Exposes 12 tools, 8 resources, and 4 prompts via the Model Context Protocol with visibility-tiered access control |
 
@@ -134,90 +142,112 @@ npm test
 ## Architecture
 
 ```
-Market Data (Price Feed / DEX)
+Market Data (CoinGecko / Kraken / DEX)
         │
-        ▼
-┌─────────────────────────────────────────────┐
-│           STRUCTURE & REGIME DETECTION       │
-│  Volatility Classification · Trend Detection │
-│  Market State Aggregation                    │
-└──────────────────┬──────────────────────────┘
+        ├──────────────────────────────┐
+        ▼                              ▼
+┌─────────────────────────┐  ┌──────────────────────┐
+│   PRICE FEED LAYER      │  │   SENTIMENT FEED     │
+│  CoinGecko · Kraken     │  │  Fear & Greed Index  │
+│  Live / Simulation      │  │  Alpha Vantage News  │
+└───────────┬─────────────┘  │  Kraken Funding Rate │
+            │                └──────────┬───────────┘
+            ▼                           │
+┌─────────────────────────────────────────────────┐
+│           STRUCTURE & REGIME DETECTION           │
+│  Volatility Classification · Trend Detection     │
+│  Market State Aggregation · Sentiment Scoring    │
+└──────────────────┬──────────────────────────────┘
                    │
                    ▼
-┌─────────────────────────────────────────────┐
-│            STRATEGY ENGINE                   │
-│  SMA Crossover · Momentum Signals            │
-│  Volatility-Adjusted Sizing · ATR Stops      │
-│  Edge Filter · Confidence Scoring            │
-└──────────────────┬──────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│            STRATEGY ENGINE                       │
+│  SMA Crossover · Momentum Signals                │
+│  Volatility-Adjusted Sizing · ATR Stops          │
+│  Edge Filter · Confidence Scoring                │
+│  Sentiment-Adjusted Confidence                   │
+└──────────────────┬──────────────────────────────┘
                    │
                    ▼
-┌─────────────────────────────────────────────┐
-│         NEURO-SYMBOLIC REASONING             │
-│  Consecutive Loss Protection                 │
-│  Drawdown Recovery Mode                      │
-│  Directional Balance · Mean Reversion        │
-│  Volatility Spike Caution                    │
-└──────────────────┬──────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│         NEURO-SYMBOLIC REASONING                 │
+│  Consecutive Loss Protection                     │
+│  Drawdown Recovery Mode                          │
+│  Directional Balance · Mean Reversion            │
+│  Volatility Spike Caution                        │
+└──────────────────┬──────────────────────────────┘
                    │
                    ▼
-┌─────────────────────────────────────────────┐
-│          MANDATE ENFORCEMENT                 │
-│  Asset & Protocol Whitelisting               │
-│  Capital Limits · Human Approval Thresholds  │
-│  Daily Loss Budget · Trade Size Caps         │
-└──────────────────┬──────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│          MANDATE ENFORCEMENT                     │
+│  Asset & Protocol Whitelisting                   │
+│  Capital Limits · Human Approval Thresholds      │
+│  Daily Loss Budget · Trade Size Caps             │
+└──────────────────┬──────────────────────────────┘
                    │
                    ▼
-┌─────────────────────────────────────────────┐
-│         ORACLE INTEGRITY GUARD               │
-│  Median Deviation Check                      │
-│  External Price Comparison                   │
-│  Single-Bar Anomaly Detection                │
-│  Stale Feed Detection                        │
-└──────────────────┬──────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│         ORACLE INTEGRITY GUARD                   │
+│  Median Deviation Check                          │
+│  External Price Comparison                       │
+│  Single-Bar & Multi-Bar Anomaly Detection        │
+│  Stale Feed Detection                            │
+└──────────────────┬──────────────────────────────┘
                    │
                    ▼
-┌─────────────────────────────────────────────┐
-│        EXECUTION SIMULATOR                   │
-│  Slippage Estimation · Gas Cost Model        │
-│  Net Edge Calculation · Price Impact         │
-│  Worst-Case Analysis                         │
-└──────────────────┬──────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│        EXECUTION SIMULATOR                       │
+│  Slippage Estimation · Gas Cost Model            │
+│  Net Edge Calculation · Price Impact             │
+│  Worst-Case Analysis                             │
+└──────────────────┬──────────────────────────────┘
                    │
                    ▼
-┌─────────────────────────────────────────────┐
-│      SUPERVISORY META-AGENT                  │
-│  Trust-Aware Capital Steward                 │
-│  Dynamic Position Throttling                 │
-│  Drawdown-Sensitive Pause Logic              │
-│  Operator Emergency Controls                 │
-└──────────────────┬──────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│      SUPERVISORY META-AGENT                      │
+│  Trust-Aware Capital Steward                     │
+│  Dynamic Position Throttling                     │
+│  Drawdown-Sensitive Pause Logic                  │
+│  Operator Emergency Controls                     │
+└──────────────────┬──────────────────────────────┘
                    │
                    ▼
-┌─────────────────────────────────────────────┐
-│       RISK ENGINE (6 Checks)                 │
-│  Circuit Breaker · Signal Quality            │
-│  Position Size · Total Exposure              │
-│  Volatility Regime · Position Conflict       │
-└──────────────────┬──────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│       RISK ENGINE (6 Checks)                     │
+│  Circuit Breaker · Signal Quality                │
+│  Position Size · Total Exposure                  │
+│  Volatility Regime · Position Conflict           │
+│  Profit-Locking Trailing Stops · ATR Take-Profit │
+└──────────────────┬──────────────────────────────┘
                    │
-        ┌──────────┴──────────┐
-        ▼                     ▼
-   ┌─────────┐       ┌──────────────┐
-   │ EXECUTE │       │   ARTIFACT   │
-   │ ON-CHAIN│       │   EMITTER    │
-   │ (Risk   │       │ Trust Score  │
-   │ Router) │       │ IPFS Upload  │
-   └─────────┘       └──────┬───────┘
-                            │
-                            ▼
-                  ┌──────────────────┐
-                  │ TRUST SCORECARD  │
-                  │ Reputation Evo.  │
-                  │ Capital Ladder   │
-                  │ Recovery Mode    │
-                  └──────────────────┘
+        ┌──────────┼──────────┐
+        ▼          │          ▼
+   ┌──────────┐    │   ┌──────────────┐
+   │ EXECUTE  │    │   │   ARTIFACT   │
+   │ Kraken   │    │   │   EMITTER    │
+   │ CLI/API  │    │   │ Trust Score  │
+   │ (live/   │    │   │ IPFS Upload  │
+   │  paper)  │    │   │ TEE Attest.  │
+   └──────────┘    │   └──────┬───────┘
+                   │          │
+                   ▼          ▼
+          ┌──────────────────────────┐
+          │  ON-CHAIN EXECUTION      │
+          │  EIP-712 Sign Intent     │
+          │  EIP-1271 Verification   │
+          │  Risk Router Submission  │
+          │  Validation Registry     │
+          │  Reputation Feedback     │
+          └──────────┬───────────────┘
+                     │
+                     ▼
+           ┌──────────────────┐
+           │ TRUST SCORECARD  │
+           │ Reputation Evo.  │
+           │ Capital Ladder   │
+           │ Recovery Mode    │
+           │ Event Indexer    │
+           └──────────────────┘
 ```
 
 ### Project Structure
@@ -229,8 +259,10 @@ actura-gacr-agent/
 ├── scripts/
 │   ├── bootstrap-erc8004.ts          # One-command ERC-8004 setup
 │   ├── demo-onchain-path.ts          # End-to-end demo walkthrough
+│   ├── deploy-risk-policy.ts         # Deploy ActuraRiskPolicy contract
 │   ├── generate-registration.ts      # Spec-compliant registration JSON
-│   └── register-agent.ts             # Agent identity registration
+│   ├── register-agent.ts             # Agent identity registration
+│   └── kraken-cli-wrapper.py         # Python Kraken CLI wrapper
 ├── src/
 │   ├── agent/
 │   │   ├── index.ts                  # Main agent loop & entry point
@@ -238,50 +270,59 @@ actura-gacr-agent/
 │   │   ├── logger.ts                 # Structured logging with levels
 │   │   ├── operator-control.ts       # Human oversight (pause/resume/stop)
 │   │   ├── retry.ts                  # Exponential backoff retry logic
-│   │   ├── scheduler.ts              # Cron-based cycle scheduling
+│   │   ├── scheduler.ts             # Cron-based cycle scheduling
 │   │   ├── state.ts                  # Persistent state (survives restarts)
 │   │   ├── supervisory-meta-agent.ts # Trust-aware capital steward
+│   │   ├── trade-log.ts             # Structured trade history logging
 │   │   └── validator.ts              # Config validation at startup
 │   ├── analytics/
 │   │   └── performance-metrics.ts    # Sharpe, Sortino, max drawdown, Calmar, profit factor
 │   ├── chain/
 │   │   ├── agent-mandate.ts          # Mandate enforcement engine
+│   │   ├── dex-router.ts            # Multi-DEX routing (Uniswap V3, Aerodrome)
+│   │   ├── eip1271.ts               # EIP-1271 smart-contract signature verification
+│   │   ├── event-indexer.ts         # On-chain event indexer (reputation, validation)
 │   │   ├── execution-simulator.ts    # Pre-trade simulation & cost analysis
 │   │   ├── executor.ts               # On-chain trade execution flow
 │   │   ├── feedback-auth.ts          # Reputation feedback authorization
 │   │   ├── identity.ts               # ERC-8004 identity registration
 │   │   ├── intent.ts                 # EIP-712 signed trade intents
 │   │   ├── reputation.ts             # On-chain reputation submission
+│   │   ├── risk-policy-client.ts    # On-chain risk policy contract client
 │   │   ├── risk-router.ts            # Hackathon Risk Router integration
 │   │   ├── sdk.ts                    # Ethers.js provider & wallet setup
 │   │   └── validation.ts             # On-chain validation artifacts
 │   ├── dashboard/
 │   │   ├── server.ts                 # Express dashboard & REST API
-│   │   ├── UI_VERSIONS.md            # Dashboard versioning guide
-│   │   ├── public/
-│   │   │   ├── index.html            # Web UI with live charts (main entry)
-│   │   │   ├── index.v1.html         # Preserved v1 dashboard
-│   │   │   ├── index.v2.html         # Browser wrapper for v2 React dashboard
-│   │   │   └── ui-switcher.html      # Switch between v1 and v2
-│   │   └── versions/
-│   │       └── ActuraDashboard.v2.jsx # Tabbed control-plane dashboard (React)
+│   │   └── public/
+│   │       ├── index.html            # Web UI with live charts
+│   │       ├── trades.html           # Trade history view
+│   │       └── judge.html            # Hackathon judge evaluation view
 │   ├── data/
-│   │   ├── market-state.ts           # Market state aggregation
-│   │   └── price-feed.ts             # Price feed (simulated / live)
+│   │   ├── kraken-bridge.ts         # Governed trade → Kraken order bridge
+│   │   ├── kraken-cli.ts           # Kraken CLI wrapper (order placement)
+│   │   ├── kraken-feed.ts          # Kraken market data (ticker, balance, orders)
+│   │   ├── live-price-feed.ts      # Live CoinGecko/Kraken price feed
+│   │   ├── market-state.ts          # Market state aggregation
+│   │   ├── price-feed.ts            # Price feed (simulated / live)
+│   │   └── sentiment-feed.ts       # Multi-source sentiment aggregator
 │   ├── mcp/
 │   │   ├── server.ts                 # MCP JSON-RPC server with health & discovery
 │   │   ├── tools.ts                  # 12 MCP tools (public/restricted/operator)
 │   │   ├── resources.ts              # 8 MCP resources (trust, market, mandate, etc.)
 │   │   └── prompts.ts                # 4 MCP prompts (explain, summarize, report, audit)
 │   ├── risk/
-│   │   ├── engine.ts                 # Risk engine (6 checks, trailing stops)
+│   │   ├── engine.ts                 # Risk engine (6 checks, trailing stops, ATR TP)
 │   │   ├── circuit-breaker.ts        # State machine: ARMED → TRIPPED → COOLING
 │   │   └── volatility.ts             # EWMA volatility with regime detection
 │   ├── security/
-│   │   └── oracle-integrity.ts       # Oracle manipulation detection
+│   │   ├── oracle-integrity.ts       # Oracle manipulation detection
+│   │   └── tee-attestation.ts       # Software-based TEE attestation
+│   ├── social/
+│   │   └── share.ts                 # Social proof & sharing
 │   ├── strategy/
 │   │   ├── adaptive-learning.ts      # Bounded self-improvement with Bayesian context bias
-│   │   ├── ai-reasoning.ts           # AI-powered trade explanations
+│   │   ├── ai-reasoning.ts           # AI-powered trade explanations (Claude/Gemini/OpenAI)
 │   │   ├── edge-filter.ts            # Minimum edge threshold filter
 │   │   ├── indicators.ts             # SMA, EMA, EWMA, RSI, ATR
 │   │   ├── momentum.ts               # Core volatility-adjusted momentum strategy
@@ -290,12 +331,12 @@ actura-gacr-agent/
 │   │   ├── signals.ts                # Signal generation & classification
 │   │   └── structure-regime.ts       # Market structure & regime detection
 │   └── trust/
-│       ├── artifact-emitter.ts       # Validation artifact builder
+│       ├── artifact-emitter.ts       # Validation artifact builder (incl. TEE attestation)
 │       ├── checkpoint.ts             # Strategy checkpoints & replay
 │       ├── ipfs.ts                   # IPFS upload via Pinata + local backup
 │       ├── reputation-evolution.ts   # Trust tier evolution & regime-aware recovery
 │       └── trust-policy-scorecard.ts # Four-dimensional trust scoring
-└── test/                             # Comprehensive test suite (18 test files)
+└── test/                             # Comprehensive test suite (24 test files)
 ```
 
 ---

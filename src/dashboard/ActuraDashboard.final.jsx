@@ -146,6 +146,7 @@ function Actura() {
   const [agentRunning, setAgentRunning] = useState(false);
   const [cycleCount, setCycleCount] = useState(0);
   const [sentiment, setSentiment] = useState(null);
+  const [security, setSecurity] = useState(null);
 
   /* ── Tier mapping from API tier names ── */
   const tierMap = { probation: "TIER_1_PROBATION", limited: "TIER_2_LIMITED", standard: "TIER_3_STANDARD", elevated: "TIER_4_EXPANDED", elite: "TIER_4_EXPANDED" };
@@ -250,7 +251,7 @@ function Actura() {
   /* ── API fetching ── */
   const fetchData = useCallback(async () => {
     try {
-      const [statusRes, checkpointsRes, reputationRes, operatorRes, actionsRes, positionsRes, governanceRes] = await Promise.all([
+      const [statusRes, checkpointsRes, reputationRes, operatorRes, actionsRes, positionsRes, governanceRes, securityRes] = await Promise.all([
         fetch("/api/status").then(r => r.json()).catch(() => null),
         fetch("/api/checkpoints?limit=10").then(r => r.json()).catch(() => null),
         fetch("/api/reputation/history?limit=30").then(r => r.json()).catch(() => null),
@@ -258,6 +259,7 @@ function Actura() {
         fetch("/api/operator/actions?limit=6").then(r => r.json()).catch(() => null),
         fetch("/api/positions").then(r => r.json()).catch(() => null),
         fetch("/api/governance").then(r => r.json()).catch(() => null),
+        fetch("/api/security").then(r => r.json()).catch(() => null),
       ]);
 
       if (statusRes) {
@@ -311,6 +313,7 @@ function Actura() {
 
       if (positionsRes?.positions) setLivePositions(positionsRes.positions);
       if (governanceRes) setGovernance(governanceRes);
+      if (securityRes) setSecurity(securityRes);
 
       setStage(s => (s + 1) % STAGES.length);
       setTick(t => t + 1);
@@ -627,7 +630,20 @@ function Actura() {
               <KV k="lastFeedbackTag" v={erc.lastFeedbackTag} c={T.warn} />
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
                 <Badge color={T.up}>identity ready</Badge><Badge color={T.info}>intent signed</Badge><Badge color={T.warn}>validation wired</Badge><Badge color={T.info}>reputation wired</Badge>
+                <Badge color={security?.eip1271?.enabled ? T.up : T.fg3}>EIP-1271</Badge>
+                <Badge color={security?.teeAttestation?.valid ? T.cyan : T.fg3}>TEE attested</Badge>
               </div>
+              {security && (
+                <div style={{ marginTop: 8, paddingTop: 6, borderTop: `1px solid ${T.brd}` }}>
+                  <div style={{ fontSize: 8, color: T.fg3, letterSpacing: 1, marginBottom: 4 }}>SECURITY LAYER</div>
+                  <KV k="EIP-1271" v={security.eip1271?.enabled ? "✓ active (auto-detect EOA/contract)" : "—"} c={security.eip1271?.enabled ? T.up : T.fg3} />
+                  <KV k="TEE type" v={security.teeAttestation?.type || "—"} c={T.cyan} />
+                  <KV k="TEE commit" v={security.teeAttestation?.gitCommit || "—"} c={T.info} />
+                  <KV k="TEE codeHash" v={security.teeAttestation?.codeHash || "—"} c={T.purple} />
+                  <KV k="TEE nonce" v={security.teeAttestation?.nonce || "—"} />
+                  <KV k="TEE valid" v={security.teeAttestation?.valid ? "✓ verified" : "✗ invalid"} c={security.teeAttestation?.valid ? T.up : T.dn} />
+                </div>
+              )}
             </P>
             <P title="MCP Interface" tag={`${mcp.tools.total} tools`}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, marginBottom: 6, paddingBottom: 6, borderBottom: `1px solid ${T.brd}` }}>

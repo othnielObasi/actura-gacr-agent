@@ -21,6 +21,7 @@ import { getKrakenFeedStatus, fetchKrakenTicker, fetchKrakenBalance, fetchKraken
 import { getCliStatus, checkCliHealth } from '../data/kraken-cli.js';
 import { getKrakenAccountSnapshot, krakenPreflight } from '../data/kraken-bridge.js';
 import { getIndexedEvents, getIndexerStatus } from '../chain/event-indexer.js';
+import { generateAttestationSummary } from '../security/tee-attestation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_PORT = parseInt(process.env.PORT || '3000', 10);
@@ -397,6 +398,33 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
       artifactCount: stats.totalTrades ?? 0,
     });
     res.json({ post, twitterUrl: buildTwitterIntentUrl(post) });
+  });
+
+  /** Security status: TEE attestation + EIP-1271 capability */
+  app.get('/api/security', async (_req, res) => {
+    try {
+      const tee = await generateAttestationSummary();
+      res.json({
+        teeAttestation: tee,
+        eip1271: {
+          enabled: true,
+          verificationMethod: 'auto-detect',
+          supportedTypes: ['eoa', 'eip1271-contract'],
+          note: 'Every TradeIntent is EIP-1271 verified before Risk Router submission',
+        },
+      });
+    } catch (e) {
+      res.json({
+        teeAttestation: null,
+        eip1271: {
+          enabled: true,
+          verificationMethod: 'auto-detect',
+          supportedTypes: ['eoa', 'eip1271-contract'],
+          note: 'Every TradeIntent is EIP-1271 verified before Risk Router submission',
+        },
+        error: String(e),
+      });
+    }
   });
 
   httpServer = app.listen(port, () => {
