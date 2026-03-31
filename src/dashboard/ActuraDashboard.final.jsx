@@ -147,6 +147,7 @@ function Actura() {
   const [cycleCount, setCycleCount] = useState(0);
   const [sentiment, setSentiment] = useState(null);
   const [security, setSecurity] = useState(null);
+  const [tradeStats, setTradeStats] = useState(null);
 
   /* ── Tier mapping from API tier names ── */
   const tierMap = { probation: "TIER_1_PROBATION", limited: "TIER_2_LIMITED", standard: "TIER_3_STANDARD", elevated: "TIER_4_EXPANDED", elite: "TIER_4_EXPANDED" };
@@ -251,7 +252,7 @@ function Actura() {
   /* ── API fetching ── */
   const fetchData = useCallback(async () => {
     try {
-      const [statusRes, checkpointsRes, reputationRes, operatorRes, actionsRes, positionsRes, governanceRes, securityRes] = await Promise.all([
+      const [statusRes, checkpointsRes, reputationRes, operatorRes, actionsRes, positionsRes, governanceRes, securityRes, statsRes] = await Promise.all([
         fetch("/api/status").then(r => r.json()).catch(() => null),
         fetch("/api/checkpoints?limit=10").then(r => r.json()).catch(() => null),
         fetch("/api/reputation/history?limit=30").then(r => r.json()).catch(() => null),
@@ -260,6 +261,7 @@ function Actura() {
         fetch("/api/positions").then(r => r.json()).catch(() => null),
         fetch("/api/governance").then(r => r.json()).catch(() => null),
         fetch("/api/security").then(r => r.json()).catch(() => null),
+        fetch("/api/trades/stats").then(r => r.json()).catch(() => null),
       ]);
 
       if (statusRes) {
@@ -314,6 +316,7 @@ function Actura() {
       if (positionsRes?.positions) setLivePositions(positionsRes.positions);
       if (governanceRes) setGovernance(governanceRes);
       if (securityRes) setSecurity(securityRes);
+      if (statsRes) setTradeStats(statsRes);
 
       setStage(s => (s + 1) % STAGES.length);
       setTick(t => t + 1);
@@ -597,7 +600,8 @@ function Actura() {
         {/* ═══ 5. TRUST LAYER + PROTOCOL + OPERATOR — 3 columns ═══ */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
 
-          {/* Trust + Capital Rights */}
+          {/* Trust + Capital Rights + Trade Performance */}
+          <div style={{ display: "grid", gap: 10 }}>
           <P title="Trust + Capital Ladder" tag={shortTier(tier)}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, marginBottom: 8 }}>
               <div><div style={{ fontSize: 8, color: T.fg3 }}>TRUST SCORE</div><div style={{ fontSize: 18, fontWeight: 700, color: truC(trustScore) }}>{fn(trustScore, 0)}</div><div style={{ fontSize: 9, color: T.fg2 }}>{trustLabel(trustScore)} · {tDelta >= 0 ? "+" : ""}{fn(tDelta, 0)}</div></div>
@@ -617,6 +621,33 @@ function Actura() {
               })}
             </div>
           </P>
+
+          {/* Trade Performance — fills the gap under Trust card */}
+          {tradeStats && (() => {
+            const ts = tradeStats;
+            const totalPnl = ts.totalPnl || 0;
+            const pnlColor = totalPnl >= 0 ? T.up : T.dn;
+            const wr = ts.winRate || 0;
+            const wrColor = wr >= 50 ? T.up : wr >= 30 ? T.warn : T.dn;
+            const avgDurH = ts.avgDurationMs ? (ts.avgDurationMs / 3600000).toFixed(1) : "—";
+            const profitFactor = ts.avgWin && ts.avgLoss ? Math.abs(ts.avgWin / ts.avgLoss).toFixed(2) : "—";
+            return (
+              <P title="Trade Performance" tag={`${ts.totalTrades || 0} trades`}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.brd}` }}>
+                  <Metric label="Total P&L" value={`$${fn(totalPnl, 2)}`} sub={`${totalPnl >= 0 ? "+" : ""}${fn(totalPnl / 100, 2)}%`} color={pnlColor} />
+                  <Metric label="Win Rate" value={`${fn(wr, 0)}%`} sub={`${ts.wins || 0}W / ${ts.losses || 0}L`} color={wrColor} />
+                  <Metric label="Profit Factor" value={profitFactor} sub={`avg hold ${avgDurH}h`} color={profitFactor !== "—" && parseFloat(profitFactor) >= 1 ? T.up : T.warn} />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
+                  <Metric label="Best Trade" value={`$${fn(ts.bestTrade || 0, 2)}`} color={T.up} />
+                  <Metric label="Worst Trade" value={`$${fn(ts.worstTrade || 0, 2)}`} color={T.dn} />
+                  <Metric label="Avg Win" value={`$${fn(ts.avgWin || 0, 2)}`} color={T.up} />
+                  <Metric label="Avg Loss" value={`$${fn(ts.avgLoss || 0, 2)}`} color={T.dn} />
+                </div>
+              </P>
+            );
+          })()}
+          </div>
 
           {/* ERC-8004 + MCP */}
           <div style={{ display: "grid", gap: 10 }}>
