@@ -70,8 +70,8 @@ const TAKE_PROFIT_PCT = parseFloat(process.env.TAKE_PROFIT_PCT || '3') / 100;
 
 // Max hold duration: close positions that have been open too long.
 // Prevents capital from being stuck in sideways markets forever.
-// Default 12 hours — gives positions time to reach TP in low-vol regimes.
-const MAX_HOLD_MS = parseFloat(process.env.MAX_HOLD_HOURS || '12') * 60 * 60 * 1000;
+// Default 6 hours — gives enough time for TP but frees capital before drift.
+const MAX_HOLD_MS = parseFloat(process.env.MAX_HOLD_HOURS || '6') * 60 * 60 * 1000;
 
 function applySlippage(price: number, side: 'LONG' | 'SHORT'): number {
   const slip = price * (SLIPPAGE_BPS / 10000);
@@ -412,9 +412,9 @@ export class RiskEngine {
     for (let i = this.openPositions.length - 1; i >= 0; i--) {
       const pos = this.openPositions[i];
 
-      // Update trailing stop — but only after position has moved beyond
-      // the cost dead-zone. Below that threshold the initial ATR stop stays
-      // fixed so we don't exit near break-even where fees make it a loss.
+      // Update trailing stop with profit-locking tiers.
+      // As unrealized profit grows, the trailing distance tightens so that
+      // gains are protected rather than given back on a reversal.
       if (pos.trailingStopDistance !== null) {
         const unrealizedPct = pos.side === 'LONG'
           ? (currentPrice - pos.entryPrice) / pos.entryPrice
@@ -422,12 +422,32 @@ export class RiskEngine {
         const beyondCostZone = unrealizedPct > MIN_PROFIT_FOR_TRAIL_PCT;
 
         if (beyondCostZone) {
+          // Determine effective trailing distance based on profit tier.
+          // Deeper in profit → tighter trail → more profit locked in.
+          let effectiveTrailDist = pos.trailingStopDistance;
+          if (unrealizedPct >= 0.015) {
+            // >1.5% profit: trail at 30% of original distance
+            effectiveTrailDist = pos.trailingStopDistance * 0.30;
+          } else if (unrealizedPct >= 0.008) {
+            // >0.8% profit: trail at 50% of original distance
+            effectiveTrailDist = pos.trailingStopDistance * 0.50;
+          } else if (unrealizedPct >= 0.005) {
+            // >0.5% profit: breakeven stop (trail = distance to entry)
+            effectiveTrailDist = Math.abs(currentPrice - pos.entryPrice) * 0.95;
+          }
+
           if (pos.side === 'LONG' && currentPrice > pos.highWaterMark) {
             pos.highWaterMark = currentPrice;
-            pos.stopLoss = currentPrice - pos.trailingStopDistance;
+            const newStop = currentPrice - effectiveTrailDist;
+            if (pos.stopLoss === null || newStop > pos.stopLoss) {
+              pos.stopLoss = newStop;
+            }
           } else if (pos.side === 'SHORT' && currentPrice < pos.highWaterMark) {
             pos.highWaterMark = currentPrice;
-            pos.stopLoss = currentPrice + pos.trailingStopDistance;
+            const newStop = currentPrice + effectiveTrailDist;
+            if (pos.stopLoss === null || newStop < pos.stopLoss) {
+              pos.stopLoss = newStop;
+            }
           }
         }
       }

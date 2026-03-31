@@ -23,6 +23,7 @@ import { retry } from './retry.js';
 import { saveState, loadState, savePriceHistory, loadPriceHistory, type PersistedState } from './state.js';
 import { runStrategy, resetStrategy, type MarketData } from '../strategy/momentum.js';
 import { RiskEngine } from '../risk/engine.js';
+import { atr as computeATR } from '../strategy/indicators.js';
 import { buildTradeArtifact, enrichArtifact, attachGovernanceEvidence } from '../trust/artifact-emitter.js';
 import { getLastTrustScore } from '../trust/trust-policy-scorecard.js';
 import { evaluateSupervisoryDecision, applySupervisorySizing, summarizeSupervisoryDecision } from './supervisory-meta-agent.js';
@@ -117,6 +118,29 @@ async function initAgent(): Promise<void> {
     // so we can compare restored positions against current price
     marketData = await loadInitialMarketData();
     const startupPrice = marketData.prices[marketData.prices.length - 1];
+
+    // ── Retroactive TP assignment ──
+    // Legacy positions (opened before dynamic TP was implemented) lack a
+    // takeProfitPrice.  Compute one now using current ATR so these positions
+    // can actually reach take-profit instead of sitting until max-hold.
+    const startupATR = computeATR(marketData.highs, marketData.lows, marketData.prices, 14);
+    if (startupATR !== null && startupATR > 0) {
+      const tpMult = regimeGovernance.getCurrentProfile().takeProfitAtrMultiple ?? 2.0;
+      for (const pos of riskEngine.getOpenPositions()) {
+        if (pos.takeProfitPrice == null) {
+          const tpPrice = pos.side === 'LONG'
+            ? pos.entryPrice + (tpMult * startupATR)
+            : pos.entryPrice - (tpMult * startupATR);
+          pos.takeProfitPrice = Math.round(tpPrice * 100) / 100;
+          pos.atr = startupATR;
+          log.info('Retroactive TP assigned to legacy position', {
+            positionId: pos.id, side: pos.side, entry: pos.entryPrice,
+            takeProfitPrice: pos.takeProfitPrice, atr: Math.round(startupATR * 100) / 100,
+            tpMultiple: tpMult,
+          });
+        }
+      }
+    }
 
     // ── Reconnect diagnostics ──
     // Log structured before/after snapshot so we can debug offline drift.

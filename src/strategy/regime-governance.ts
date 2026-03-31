@@ -14,10 +14,10 @@ export interface RegimeProfile {
 }
 
 export const PROFILES: Record<RegimeProfileName, RegimeProfile> = Object.freeze({
-  LOW_VOL: { name: 'LOW_VOL', stopLossAtrMultiple: 1.35, takeProfitAtrMultiple: 1.5, basePositionPct: 0.022, confidenceThreshold: 0.085 },
-  NORMAL: { name: 'NORMAL', stopLossAtrMultiple: 1.50, takeProfitAtrMultiple: 2.0, basePositionPct: 0.020, confidenceThreshold: 0.10 },
-  HIGH_VOL: { name: 'HIGH_VOL', stopLossAtrMultiple: 1.75, takeProfitAtrMultiple: 2.5, basePositionPct: 0.016, confidenceThreshold: 0.12 },
-  EXTREME_DEFENSIVE: { name: 'EXTREME_DEFENSIVE', stopLossAtrMultiple: 2.00, takeProfitAtrMultiple: 3.0, basePositionPct: 0.012, confidenceThreshold: 0.15 },
+  LOW_VOL: { name: 'LOW_VOL', stopLossAtrMultiple: 1.35, takeProfitAtrMultiple: 1.0, basePositionPct: 0.022, confidenceThreshold: 0.085 },
+  NORMAL: { name: 'NORMAL', stopLossAtrMultiple: 1.50, takeProfitAtrMultiple: 1.2, basePositionPct: 0.020, confidenceThreshold: 0.10 },
+  HIGH_VOL: { name: 'HIGH_VOL', stopLossAtrMultiple: 1.75, takeProfitAtrMultiple: 1.5, basePositionPct: 0.016, confidenceThreshold: 0.12 },
+  EXTREME_DEFENSIVE: { name: 'EXTREME_DEFENSIVE', stopLossAtrMultiple: 2.00, takeProfitAtrMultiple: 2.0, basePositionPct: 0.012, confidenceThreshold: 0.15 },
 });
 
 export type VolRegime = LearningOutcome['regime'];
