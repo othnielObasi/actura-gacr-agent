@@ -812,9 +812,13 @@ async function runCycle(): Promise<void> {
       if (krakenResult.success) {
         (checkpoint as any).krakenOrderId = krakenResult.orderId;
         (checkpoint as any).krakenPaperTrade = krakenResult.paperTrade;
-        ipfsResult = ipfsResult || (krakenResult.artifactIpfsCid
-          ? { cid: krakenResult.artifactIpfsCid, uri: krakenResult.artifactIpfsUri!, gatewayUrl: '' }
-          : null);
+        if (!ipfsResult && krakenResult.artifactIpfsCid) {
+          ipfsResult = { cid: krakenResult.artifactIpfsCid, uri: krakenResult.artifactIpfsUri!, gatewayUrl: '', size: 0 };
+          checkpoint.ipfs = ipfsResult;
+        }
+        if (!checkpoint.onChainTxHash && krakenResult.validationTxHash) {
+          checkpoint.onChainTxHash = krakenResult.validationTxHash;
+        }
         log.info('Kraken order executed', {
           orderId: krakenResult.orderId,
           paper: krakenResult.paperTrade,
