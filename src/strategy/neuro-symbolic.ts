@@ -130,11 +130,12 @@ const regimeConfidenceRule: SymbolicRule = (signal, confidence, ctx) => {
   const smaSeparation = Math.abs(ctx.smaFast - ctx.smaSlow) / ctx.smaSlow;
 
   if (smaSeparation < 0.005) {
-    // Ranging — SMAs almost touching
+    // Ranging — SMAs almost touching, scale penalty by how close they are
+    const penalty = 0.08 + 0.07 * (1 - smaSeparation / 0.005); // 0.08–0.15 range
     result.fired = true;
     result.action = 'reduce_confidence';
     result.reason = `SMA separation only ${(smaSeparation * 100).toFixed(2)}% — ranging market, reducing confidence`;
-    result.confidenceAdjustment = -0.25;
+    result.confidenceAdjustment = -penalty;
   } else if (smaSeparation > 0.03) {
     // Strong trend
     result.fired = true;
