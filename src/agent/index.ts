@@ -57,7 +57,7 @@ const DATA_SOURCE = process.env.DATA_SOURCE || 'live'; // 'live' | 'simulated'
 
 // ──── Agent State ────
 const INITIAL_CAPITAL = 10000;
-const MAX_OPEN_POSITIONS = 2;
+const MAX_OPEN_POSITIONS = 4;
 
 let marketData: MarketData;
 let riskEngine: RiskEngine;

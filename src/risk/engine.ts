@@ -70,8 +70,8 @@ const TAKE_PROFIT_PCT = parseFloat(process.env.TAKE_PROFIT_PCT || '3') / 100;
 
 // Max hold duration: close positions that have been open too long.
 // Prevents capital from being stuck in sideways markets forever.
-// Default 6 hours — gives enough time for TP but frees capital before drift.
-const MAX_HOLD_MS = parseFloat(process.env.MAX_HOLD_HOURS || '6') * 60 * 60 * 1000;
+// Default 4 hours — frees capital faster to increase trade throughput.
+const MAX_HOLD_MS = parseFloat(process.env.MAX_HOLD_HOURS || '4') * 60 * 60 * 1000;
 
 function applySlippage(price: number, side: 'LONG' | 'SHORT'): number {
   const slip = price * (SLIPPAGE_BPS / 10000);
