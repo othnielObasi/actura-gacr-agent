@@ -198,12 +198,13 @@ export function generateSignal(input: SignalInput): TradingSignal {
     direction = alphaScore >= 0 ? 'LONG' : 'SHORT';
   }
 
-  // Momentum contradiction override: if 5-period return strongly opposes SMA direction, force NEUTRAL
-  // Prevents shorting into rallies or longing into selloffs when SMA lags
+  // Momentum contradiction override: if 5-period return strongly opposes SMA direction,
+  // flip to follow momentum at reduced confidence instead of deadlocking to NEUTRAL.
+  // This prevents shorting into rallies while still allowing the agent to trade.
   const momentumContradiction = (direction === 'SHORT' && m5 > 0.015) || (direction === 'LONG' && m5 < -0.015);
   if (momentumContradiction) {
-    direction = 'NEUTRAL';
-    confidence = 0;
+    direction = m5 > 0 ? 'LONG' : 'SHORT';
+    confidence = clamp(confidence * 0.5, 0, 1); // halve confidence — momentum-only signal is weaker
   }
 
   // Expected edge filter (additional Sharpe module)
