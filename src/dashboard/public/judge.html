@@ -174,23 +174,60 @@
         <div class="grid3" id="tradeStats"></div>
       </div>
 
-      <!-- 6. MCP Surface -->
-      <h2>6. MCP Interface</h2>
+      <!-- 6. PRISM External Intelligence -->
+      <h2>6. PRISM Market Intelligence (Strykr)</h2>
+      <div class="grid3" style="margin-bottom:12px">
+        <div class="card">
+          <div class="card-title">AI Signal</div>
+          <div class="metric" id="prismDirection">—</div>
+          <div class="metric-sub">Direction: <span id="prismStrength">—</span> | Net Score: <span id="prismNetScore">—</span></div>
+        </div>
+        <div class="card">
+          <div class="card-title">PRISM RSI</div>
+          <div class="metric cyan" id="prismRsi">—</div>
+          <div class="metric-sub">External RSI from 20+ data sources</div>
+        </div>
+        <div class="card">
+          <div class="card-title">PRISM MACD</div>
+          <div class="metric cyan" id="prismMacd">—</div>
+          <div class="metric-sub">Histogram: <span id="prismMacdHist">—</span></div>
+        </div>
+      </div>
+      <div class="grid3" style="margin-bottom:12px">
+        <div class="card">
+          <div class="card-title">Daily Volatility</div>
+          <div class="metric blue" id="prismVol">—</div>
+          <div class="metric-sub">PRISM-computed daily vol</div>
+        </div>
+        <div class="card">
+          <div class="card-title">External Sharpe</div>
+          <div class="metric blue" id="prismSharpe">—</div>
+          <div class="metric-sub">Market-wide Sharpe ratio</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Max Drawdown (Market)</div>
+          <div class="metric warn" id="prismMaxDD">—</div>
+          <div class="metric-sub">Current DD: <span id="prismCurrentDD">—</span></div>
+        </div>
+      </div>
+
+      <!-- 7. MCP Surface -->
+      <h2>7. MCP Interface</h2>
       <div class="card">
         <div class="card-title">Model Context Protocol Tools</div>
         <div id="mcpTools" style="display:flex;gap:4px;flex-wrap:wrap"></div>
         <div class="metric-sub" style="margin-top:8px" id="mcpEndpoint">—</div>
       </div>
 
-      <!-- 7. Governance Pipeline -->
-      <h2>7. Governance Pipeline (8-Stage Gate)</h2>
+      <!-- 8. Governance Pipeline -->
+      <h2>8. Governance Pipeline (8-Stage Gate)</h2>
       <div class="card">
         <div id="govPipeline" style="display:flex;gap:6px;flex-wrap:wrap"></div>
         <div class="metric-sub" style="margin-top:8px">Every trade passes through: Signal → Risk → Governance → Security → Simulation → Validation → Signing → Submission</div>
       </div>
 
-      <!-- 8. Links -->
-      <h2>8. Verification Links</h2>
+      <!-- 9. Verification Links -->
+      <h2>9. Verification Links</h2>
       <div class="card">
         <div class="kv"><span class="kv-key">Dashboard</span><span class="kv-val"><a href="/" id="dashLink">Main Dashboard</a></span></div>
         <div class="kv"><span class="kv-key">Trade History</span><span class="kv-val"><a href="/trades">Trade Log</a></span></div>
@@ -239,13 +276,14 @@
 
     async function load() {
       try {
-        const [status, checkpoints, reputation, tradeStats, artifacts, health] = await Promise.all([
+        const [status, checkpoints, reputation, tradeStats, artifacts, health, prism] = await Promise.all([
           fetch('/api/status').then(r=>r.json()).catch(()=>null),
           fetch('/api/checkpoints?limit=5').then(r=>r.json()).catch(()=>null),
           fetch('/api/reputation/history?limit=10').then(r=>r.json()).catch(()=>null),
           fetch('/api/performance').then(r=>r.json()).catch(()=>null),
           fetch('/api/artifacts?limit=10').then(r=>r.json()).catch(()=>null),
           fetch('/api/health').then(r=>r.json()).catch(()=>null),
+          fetch('/api/prism').then(r=>r.json()).catch(()=>null),
         ]);
 
         document.getElementById('loading').style.display = 'none';
@@ -343,6 +381,28 @@
           ].map(([k, v]) => `<div><div style="font-size:8px;color:#7c8a9e;text-transform:uppercase;letter-spacing:1px">${k}</div><div style="font-size:16px;font-weight:700;color:#edf2f7">${v}</div></div>`).join('');
         } else {
           tsEl.innerHTML = '<div style="color:#7c8a9e">No trades recorded yet</div>';
+        }
+
+        // PRISM Market Intelligence
+        if (prism?.signal) {
+          const ps = prism.signal;
+          const dirEl = document.getElementById('prismDirection');
+          dirEl.textContent = (ps.direction || '—').toUpperCase();
+          dirEl.className = 'metric ' + (ps.direction === 'bullish' ? 'green' : ps.direction === 'bearish' ? 'red' : 'cyan');
+          document.getElementById('prismStrength').textContent = ps.strength || '—';
+          document.getElementById('prismNetScore').textContent = ps.netScore != null ? ps.netScore : '—';
+          document.getElementById('prismRsi').textContent = ps.rsi != null ? ps.rsi.toFixed(1) : '—';
+          document.getElementById('prismMacd').textContent = ps.macd != null ? ps.macd.toFixed(2) : '—';
+          document.getElementById('prismMacdHist').textContent = ps.macdHistogram != null ? ps.macdHistogram.toFixed(2) : '—';
+        }
+        if (prism?.risk) {
+          const pr = prism.risk;
+          document.getElementById('prismVol').textContent = pr.dailyVolatility != null ? pr.dailyVolatility.toFixed(2) + '%' : '—';
+          document.getElementById('prismSharpe').textContent = pr.sharpeRatio != null ? pr.sharpeRatio.toFixed(2) : '—';
+          const sharpeClass = pr.sharpeRatio > 0 ? 'green' : pr.sharpeRatio < 0 ? 'red' : 'cyan';
+          document.getElementById('prismSharpe').className = 'metric ' + sharpeClass;
+          document.getElementById('prismMaxDD').textContent = pr.maxDrawdown != null ? pr.maxDrawdown.toFixed(1) + '%' : '—';
+          document.getElementById('prismCurrentDD').textContent = pr.currentDrawdown != null ? pr.currentDrawdown.toFixed(1) + '%' : '—';
         }
 
         // MCP

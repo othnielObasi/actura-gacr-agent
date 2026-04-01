@@ -41,6 +41,7 @@ import { routeTrade, getDexFeeBps, type RoutingDecision, type DexId } from '../c
 import { generateSimulatedData, appendCandle } from '../data/price-feed.js';
 import { fetchLivePrice, fetchOHLCHistory, buildLiveCandle, getLiveFeedStatus } from '../data/live-price-feed.js';
 import { fetchSentiment, type SentimentResult } from '../data/sentiment-feed.js';
+import { fetchPrismData, prismConfidenceModifier, type PrismData } from '../data/prism-feed.js';
 import { getKrakenFeedStatus } from '../data/kraken-feed.js';
 import { checkTradeOnChain, recordTradeOnChain, recordCloseOnChain, getOnChainRiskState } from '../chain/risk-policy-client.js';
 import { executeKrakenTrade, closeKrakenPosition, getKrakenAccountSnapshot, krakenPreflight } from '../data/kraken-bridge.js';
@@ -407,16 +408,43 @@ async function runCycle(): Promise<void> {
     marketData.timestamps = marketData.timestamps.slice(-200);
   }
 
-  // Step 2: Run strategy (with sentiment)
+  // Step 2: Run strategy (with sentiment + PRISM)
   const capital = riskEngine.getCapital();
   let sentiment: SentimentResult | null = null;
+  let prism: PrismData = { signal: null, risk: null, sources: [] };
   try {
-    sentiment = await fetchSentiment();
-    lastSentiment = sentiment;
+    const [sentimentResult, prismResult] = await Promise.all([
+      fetchSentiment().catch((err: any) => {
+        log.warn('Sentiment fetch failed — proceeding without', { error: err.message?.slice(0, 80) });
+        return null;
+      }),
+      fetchPrismData('ETH').catch((err: any) => {
+        log.warn('PRISM fetch failed — proceeding without', { error: err.message?.slice(0, 80) });
+        return { signal: null, risk: null, sources: [] } as PrismData;
+      }),
+    ]);
+    sentiment = sentimentResult;
+    if (sentiment) lastSentiment = sentiment;
+    prism = prismResult;
   } catch (err: any) {
-    log.warn('Sentiment fetch failed — proceeding without', { error: err.message?.slice(0, 80) });
+    log.warn('Data feed fetch failed', { error: err.message?.slice(0, 80) });
   }
   const strategyOutput = runStrategy(marketData, capital, sentiment?.composite ?? null);
+
+  // Step 2+: PRISM confidence modifier — boost/dampen based on external AI signals
+  const prismModifier = prismConfidenceModifier(prism.signal, strategyOutput.signal.direction);
+  if (prismModifier !== 0) {
+    const prePrismConf = strategyOutput.signal.confidence;
+    strategyOutput.signal.confidence = Math.max(0, Math.min(1, strategyOutput.signal.confidence + prismModifier));
+    log.info('PRISM confidence adjustment', {
+      direction: strategyOutput.signal.direction,
+      prismDirection: prism.signal?.direction,
+      prismStrength: prism.signal?.strength,
+      modifier: prismModifier.toFixed(3),
+      confBefore: prePrismConf.toFixed(3),
+      confAfter: strategyOutput.signal.confidence.toFixed(3),
+    });
+  }
 
   // Step 2a: Oracle integrity guard — block suspicious or stale market states
   const oracleIntegrity = evaluateOracleIntegrity({
@@ -643,6 +671,7 @@ async function runCycle(): Promise<void> {
     signal: strategyOutput.signal.direction,
     gates: {
       strategy:   { dir: strategyOutput.signal.direction, conf: +(strategyOutput.signal.confidence).toFixed(3) },
+      prism:      prism.signal ? { dir: prism.signal.direction, str: prism.signal.strength, mod: +prismModifier.toFixed(3), rsi: prism.signal.rsi?.toFixed(1) ?? null } : null,
       oracle:     { pass: oracleIntegrity.passed },
       neuro:      { dir: cognitive.adjustedSignal, conf: +cognitive.adjustedConfidence.toFixed(3), rules: cognitive.rulesFired },
       regime:     regimeGov ? { profile: regimeGov.profileName, conf: +regimeGov.adjustedConfidence.toFixed(3), threshold: regimeGov.profile.confidenceThreshold } : null,
@@ -696,6 +725,27 @@ async function runCycle(): Promise<void> {
       })),
       originalSignal: cognitive.originalSignal,
       originalConfidence: cognitive.originalConfidence,
+    };
+  }
+
+  // Add PRISM data to artifact
+  if (prism.signal || prism.risk) {
+    (artifact as any).prism = {
+      signal: prism.signal ? {
+        direction: prism.signal.direction,
+        strength: prism.signal.strength,
+        netScore: prism.signal.netScore,
+        rsi: prism.signal.rsi,
+        macd: prism.signal.macd,
+        macdHistogram: prism.signal.macdHistogram,
+      } : null,
+      risk: prism.risk ? {
+        dailyVolatility: prism.risk.dailyVolatility,
+        sharpeRatio: prism.risk.sharpeRatio,
+        maxDrawdown: prism.risk.maxDrawdown,
+        currentDrawdown: prism.risk.currentDrawdown,
+      } : null,
+      confidenceModifier: prismModifier,
     };
   }
 

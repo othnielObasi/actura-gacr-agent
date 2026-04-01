@@ -19,6 +19,7 @@ import { getOperatorControlState, getOperatorActionReceipts, pauseTrading, resum
 import { buildRegistrationJson } from '../chain/identity.js';
 import { generateTradePost, generateDailySummaryPost, buildTwitterIntentUrl } from '../social/share.js';
 import { getKrakenFeedStatus, fetchKrakenTicker, fetchKrakenBalance, fetchKrakenOpenOrders, fetchKrakenTradeHistory } from '../data/kraken-feed.js';
+import { fetchPrismData } from '../data/prism-feed.js';
 import { getCliStatus, checkCliHealth } from '../data/kraken-cli.js';
 import { getKrakenAccountSnapshot, krakenPreflight } from '../data/kraken-bridge.js';
 import { getIndexedEvents, getIndexerStatus } from '../chain/event-indexer.js';
@@ -318,6 +319,16 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
     const health = getHealthCheck();
     const statusCode = health.status === 'healthy' ? 200 : 503;
     res.status(statusCode).json(health);
+  });
+
+  /** PRISM external market intelligence */
+  app.get('/api/prism', async (_req, res) => {
+    try {
+      const data = await fetchPrismData('ETH');
+      res.json(data);
+    } catch (err: any) {
+      res.json({ signal: null, risk: null, sources: [], error: err.message });
+    }
   });
 
   /** Recent logs */
