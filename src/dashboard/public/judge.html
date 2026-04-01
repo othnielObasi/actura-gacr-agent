@@ -134,7 +134,41 @@
       </div>
 
       <!-- 5. PnL & Performance -->
-      <h2>5. Performance</h2>
+      <h2>5. Performance — Risk-Adjusted Metrics</h2>
+      <div class="grid3" style="margin-bottom:12px">
+        <div class="card">
+          <div class="card-title">Sharpe Ratio</div>
+          <div class="metric cyan" id="sharpe">—</div>
+          <div class="metric-sub">Risk-adjusted return (excess return / volatility)</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Sortino Ratio</div>
+          <div class="metric cyan" id="sortino">—</div>
+          <div class="metric-sub">Downside-risk-adjusted return</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Max Drawdown</div>
+          <div class="metric warn" id="maxDD">—</div>
+          <div class="metric-sub">Worst peak-to-trough decline</div>
+        </div>
+      </div>
+      <div class="grid3" style="margin-bottom:12px">
+        <div class="card">
+          <div class="card-title">Calmar Ratio</div>
+          <div class="metric blue" id="calmar">—</div>
+          <div class="metric-sub">Return / max drawdown</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Profit Factor</div>
+          <div class="metric blue" id="profitFactor">—</div>
+          <div class="metric-sub">Gross profit / gross loss</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Total Return</div>
+          <div class="metric green" id="totalReturn">—</div>
+          <div class="metric-sub">Net return since inception</div>
+        </div>
+      </div>
       <div class="card">
         <div class="card-title">Trade Stats</div>
         <div class="grid3" id="tradeStats"></div>
@@ -209,7 +243,7 @@
           fetch('/api/status').then(r=>r.json()).catch(()=>null),
           fetch('/api/checkpoints?limit=5').then(r=>r.json()).catch(()=>null),
           fetch('/api/reputation/history?limit=10').then(r=>r.json()).catch(()=>null),
-          fetch('/api/trades/stats').then(r=>r.json()).catch(()=>null),
+          fetch('/api/performance').then(r=>r.json()).catch(()=>null),
           fetch('/api/artifacts?limit=10').then(r=>r.json()).catch(()=>null),
           fetch('/api/health').then(r=>r.json()).catch(()=>null),
         ]);
@@ -278,13 +312,34 @@
         document.getElementById('dataSources').textContent = 'CoinGecko → DeFiLlama → Kraken';
         document.getElementById('dexRouting').textContent = 'Uniswap V3 (testnet) · Aerodrome (mainnet-ready)';
 
-        // Trade Stats
+        // Trade Stats + Risk-Adjusted Metrics
         const tsEl = document.getElementById('tradeStats');
         if (tradeStats) {
+          // Risk-adjusted metrics cards
+          const s = tradeStats;
+          const fmt = (v, suffix='') => v != null && v !== 0 ? v.toFixed(2) + suffix : '—';
+          document.getElementById('sharpe').textContent = fmt(s.sharpeRatio);
+          document.getElementById('sortino').textContent = fmt(s.sortinoRatio);
+          document.getElementById('maxDD').textContent = s.maxDrawdownPct != null ? s.maxDrawdownPct.toFixed(2) + '%' : '—';
+          document.getElementById('calmar').textContent = fmt(s.calmarRatio);
+          document.getElementById('profitFactor').textContent = fmt(s.profitFactor);
+          document.getElementById('totalReturn').textContent = s.totalReturnPct != null ? s.totalReturnPct.toFixed(2) + '%' : '—';
+
+          // Color coding
+          const sharpeEl = document.getElementById('sharpe');
+          sharpeEl.className = 'metric ' + (s.sharpeRatio > 0 ? 'green' : s.sharpeRatio < 0 ? 'red' : 'cyan');
+          const sortinoEl = document.getElementById('sortino');
+          sortinoEl.className = 'metric ' + (s.sortinoRatio > 0 ? 'green' : s.sortinoRatio < 0 ? 'red' : 'cyan');
+          const returnEl = document.getElementById('totalReturn');
+          returnEl.className = 'metric ' + (s.totalReturnPct > 0 ? 'green' : s.totalReturnPct < 0 ? 'red' : 'cyan');
+
           tsEl.innerHTML = [
-            ['Total Trades', tradeStats.totalTrades || 0],
-            ['Win Rate', (tradeStats.winRate || 0).toFixed(1) + '%'],
-            ['Total PnL', '$' + (tradeStats.totalPnl || 0).toFixed(2)],
+            ['Total Trades', s.totalTrades || 0],
+            ['Win Rate', (s.winRate || 0).toFixed(1) + '%'],
+            ['Total PnL', '$' + (s.totalPnl || 0).toFixed(2)],
+            ['Avg Win', '$' + (s.avgWin || 0).toFixed(2)],
+            ['Avg Loss', '$' + (s.avgLoss || 0).toFixed(2)],
+            ['Equity', '$' + (s.currentEquity || 0).toFixed(0)],
           ].map(([k, v]) => `<div><div style="font-size:8px;color:#7c8a9e;text-transform:uppercase;letter-spacing:1px">${k}</div><div style="font-size:16px;font-weight:700;color:#edf2f7">${v}</div></div>`).join('');
         } else {
           tsEl.innerHTML = '<div style="color:#7c8a9e">No trades recorded yet</div>';

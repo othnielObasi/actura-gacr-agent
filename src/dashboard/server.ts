@@ -10,7 +10,8 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import type { Server } from 'http';
 import { getAgentState, getHealthCheck, getLogs, getErrors } from '../agent/index.js';
-import { getRecentTrades, getTradeStats } from '../agent/trade-log.js';
+import { getRecentTrades, getTradeStats, loadClosedTrades } from '../agent/trade-log.js';
+import { computeRiskAdjustedMetrics, type EquityPoint } from '../analytics/performance-metrics.js';
 import { getCheckpoints, getTradeCheckpoints } from '../trust/checkpoint.js';
 import { config } from '../agent/config.js';
 import { getReputationTimeline } from '../trust/trust-policy-scorecard.js';
@@ -277,6 +278,39 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
   /** Trade statistics */
   app.get('/api/trades/stats', (_req, res) => {
     res.json(getTradeStats());
+  });
+
+  /** Risk-adjusted performance metrics (Sharpe, Sortino, Calmar, Max DD) */
+  app.get('/api/performance', (_req, res) => {
+    const trades = loadClosedTrades();
+    const stats = getTradeStats();
+
+    // Build equity curve from closed trades
+    const initialCapital = 10_000;
+    let equity = initialCapital;
+    const equityPoints: EquityPoint[] = [{ timestamp: trades[0]?.closedAt || new Date().toISOString(), equity: initialCapital }];
+    for (const t of trades) {
+      equity += t.pnl;
+      equityPoints.push({ timestamp: t.closedAt, equity });
+    }
+
+    const metrics = computeRiskAdjustedMetrics(
+      equityPoints,
+      trades.map(t => ({ pnl: t.pnl })),
+    );
+
+    res.json({
+      ...stats,
+      sharpeRatio: Math.round(metrics.sharpeRatio * 1000) / 1000,
+      sortinoRatio: Math.round(metrics.sortinoRatio * 1000) / 1000,
+      maxDrawdownPct: Math.round(metrics.maxDrawdown * 10000) / 100,
+      calmarRatio: Math.round(metrics.calmarRatio * 1000) / 1000,
+      profitFactor: Math.round(metrics.profitFactor * 100) / 100,
+      totalReturnPct: Math.round(metrics.totalReturn * 10000) / 100,
+      volatility: Math.round(metrics.volatility * 10000) / 100,
+      currentEquity: Math.round(equity * 100) / 100,
+      equityPoints: equityPoints.length,
+    });
   });
 
   /** Health check — for monitoring / uptime checks */
