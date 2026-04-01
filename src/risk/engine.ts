@@ -199,28 +199,21 @@ export class RiskEngine {
       detail: volOk ? 'Acceptable' : 'Extreme — rejected',
     });
 
-    // Check 6: Position conflict — auto-close opposing positions
-    // Previously this blocked the trade and said "close opposing position
-    // first" but there was no mechanism to do so, trapping the agent in a
-    // losing position until stop-loss fired.
+    // Check 6: Position conflict — detect opposing positions (deferred close)
+    // We do NOT close opposing positions here because downstream gates
+    // (on-chain risk policy, execution simulator) may still block the trade.
+    // Closing eagerly and then failing leaves us with 0 positions and a loss.
+    // Instead, mark them for deferred closing at execution time.
     const opposingPositions = this.openPositions.filter(p =>
       p.side !== strategyOutput.signal.direction && strategyOutput.signal.direction !== 'NEUTRAL'
     );
-    if (opposingPositions.length > 0) {
-      for (const opp of opposingPositions) {
-        const pnl = this.closePositionById(opp.id, currentPrice);
-        log.info(`Auto-closed opposing position #${opp.id} (${opp.side}) for direction flip`, {
-          entry: opp.entryPrice, exit: currentPrice, pnl: Math.round(pnl * 100) / 100,
-        });
-      }
-    }
     checks.push({
       name: 'position_conflict',
       passed: true,
-      value: opposingPositions.length > 0 ? `FLIPPED (closed ${opposingPositions.length})` : 'CLEAR',
-      limit: 'auto-close opposing',
+      value: opposingPositions.length > 0 ? `WILL_FLIP (${opposingPositions.length})` : 'CLEAR',
+      limit: 'deferred close at execution',
       detail: opposingPositions.length > 0
-        ? `Closed ${opposingPositions.length} opposing position(s) to allow direction change`
+        ? `${opposingPositions.length} opposing position(s) will be closed at execution time`
         : `${this.openPositions.length} open`,
     });
 
@@ -262,6 +255,23 @@ export class RiskEngine {
       explanation,
       timestamp,
     };
+  }
+
+  /**
+   * Close all positions opposing the given direction.
+   * Called at execution time AFTER all gates have approved the trade.
+   */
+  closeOpposingPositions(direction: 'LONG' | 'SHORT', currentPrice: number): number {
+    const opposing = this.openPositions.filter(p => p.side !== direction);
+    let totalPnl = 0;
+    for (const opp of opposing) {
+      const pnl = this.closePositionById(opp.id, currentPrice);
+      totalPnl += pnl;
+      log.info(`Closed opposing position #${opp.id} (${opp.side}) for direction flip`, {
+        entry: opp.entryPrice, exit: currentPrice, pnl: Math.round(pnl * 100) / 100,
+      });
+    }
+    return totalPnl;
   }
 
   /** Open a position with slippage */

@@ -740,6 +740,16 @@ async function runCycle(): Promise<void> {
     }
 
     // Always record position locally (for our risk engine tracking)
+    // First, close any opposing positions (deferred from risk evaluation).
+    // This is done here — AFTER all gates pass — so we don't lose positions
+    // when downstream checks (on-chain risk policy, simulator) block the trade.
+    if (strategyOutput.signal.direction === 'LONG' || strategyOutput.signal.direction === 'SHORT') {
+      riskEngine.closeOpposingPositions(
+        strategyOutput.signal.direction as 'LONG' | 'SHORT',
+        strategyOutput.currentPrice,
+      );
+    }
+
     // Calculate dynamic take-profit price based on ATR and regime profile.
     const atrValue = strategyOutput.indicators.atr;
     const tpAtrMult = regimeGov?.profile.takeProfitAtrMultiple ?? 2.0;
