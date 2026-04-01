@@ -204,9 +204,9 @@ export function generateSignal(input: SignalInput): TradingSignal {
     };
   }
 
-  // If structure is RANGING or STRESSED, require stronger signals
-  if (structure.regime === 'RANGING') confidence = clamp(confidence - 0.08, 0, 1);
-  if (structure.regime === 'STRESSED') confidence = clamp(confidence - 0.15, 0, 1);
+  // Note: structure regime already applies confidence multiplier (0.80 for RANGING, 0.55 for STRESSED).
+  // Only add extra penalty for STRESSED (high-risk); RANGING multiplier alone is sufficient.
+  if (structure.regime === 'STRESSED') confidence = clamp(confidence - 0.10, 0, 1);
 
   // Determine direction (NEUTRAL if weak)
   let direction: SignalDirection = 'NEUTRAL';

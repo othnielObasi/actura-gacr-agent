@@ -138,9 +138,9 @@ export function evaluateSupervisoryDecision(input: SupervisoryInput): Supervisor
     }
   } else if (input.structureRegime === 'RANGING') {
     restrictions.push('range_regime');
-    reason.push('ranging regime — smaller capital allowance');
-    tier = downgradeTier(tier.name);
-    status = canTrade ? 'throttled' : status;
+    reason.push('ranging regime — noted (strategy already applies confidence discount)');
+    // No tier downgrade — the signal-level 0.80 multiplier is sufficient.
+    // Double-penalizing RANGING was blocking all trades for 500+ cycles.
   }
 
   if (input.volatilityRegime === 'extreme' && (input.trustScore ?? 75) < 90) {

@@ -64,11 +64,14 @@ export function classifyStructureRegime(input: StructureRegimeInput): StructureR
     sizeMultiplier = 1.05;
     parts.push(`trend: ADX ${a.toFixed(1)}, CHOP ${c.toFixed(1)}, AC1 ${ac.toFixed(2)}`);
   }
-  // Ranging detection: weak trend or high chop
-  else if (a <= 18 || c >= 55 || Math.abs(ac) <= 0.05) {
+  // Ranging detection: require at least 2 of 3 conditions to avoid false positives
+  // (single low-autocorr alone with decent ADX + CHOP is not a clear range)
+  else if (
+    ((a <= 18 ? 1 : 0) + (c >= 55 ? 1 : 0) + (Math.abs(ac) <= 0.05 ? 1 : 0)) >= 2
+  ) {
     regime = 'RANGING';
-    confidenceMultiplier = 0.75;
-    sizeMultiplier = 0.80;
+    confidenceMultiplier = 0.80;
+    sizeMultiplier = 0.85;
     parts.push(`range: ADX ${a.toFixed(1)}, CHOP ${c.toFixed(1)}, AC1 ${ac.toFixed(2)}`);
   } else {
     regime = 'UNCERTAIN';
