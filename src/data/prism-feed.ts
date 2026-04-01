@@ -208,13 +208,19 @@ export async function fetchPrismData(symbol: string = 'ETH'): Promise<PrismData>
 }
 
 /**
- * Convert PRISM signal to a confidence modifier (-0.15 to +0.15).
- * This is blended into the existing signal confidence, NOT used standalone.
+ * Convert PRISM signal to a confidence modifier (0 to +0.15).
+ * CONFIRMATION-ONLY: PRISM can boost confidence when it agrees,
+ * but never penalizes the primary strategy when it disagrees.
+ *
+ * Rationale: PRISM uses technical indicators (RSI, MACD) while our
+ * sentiment feed uses crowd psychology (Fear & Greed). These can
+ * legitimately disagree (price rising during extreme fear). Letting
+ * PRISM veto the primary signal killed valid trades (e.g. cycle 517).
  *
  * Logic:
  *   - If PRISM direction agrees with our signal → boost confidence
- *   - If PRISM direction disagrees → reduce confidence
- *   - Strength scales the magnitude
+ *   - If PRISM direction disagrees → no penalty (return 0)
+ *   - Strength scales the boost magnitude
  */
 export function prismConfidenceModifier(
   prismSignal: PrismSignal | null,
@@ -228,14 +234,12 @@ export function prismConfidenceModifier(
   const weAreShort = ourDirection === 'SHORT';
 
   const agrees = (prismBullish && weAreLong) || (prismBearish && weAreShort);
-  const disagrees = (prismBullish && weAreShort) || (prismBearish && weAreLong);
 
   const strengthMultiplier = prismSignal.strength === 'strong' ? 1.0
     : prismSignal.strength === 'moderate' ? 0.65
     : 0.35;
 
-  // Max boost: ±0.15 * strength
+  // Confirmation-only: boost when aligned, ignore when conflicting
   if (agrees) return 0.15 * strengthMultiplier;
-  if (disagrees) return -0.15 * strengthMultiplier;
-  return 0;  // PRISM is neutral
+  return 0;
 }
