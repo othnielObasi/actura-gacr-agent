@@ -108,10 +108,14 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
   app.use(express.static(path.join(__dirname, 'public')));
   app.use('/versions', express.static(path.join(__dirname, 'versions')));
 
-  // CORS — restrict to localhost origins only
+  // CORS — allow localhost and production domains
   app.use((_req, res, next) => {
     const origin = _req.headers.origin;
-    if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+    const allowed = origin && (
+      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+      /^https:\/\/(app|api)\.actura\.nov-tia\.com$/.test(origin)
+    );
+    if (allowed) {
       res.header('Access-Control-Allow-Origin', origin);
     }
     res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
