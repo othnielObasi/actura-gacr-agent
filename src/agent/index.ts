@@ -251,6 +251,28 @@ async function initAgent(): Promise<void> {
       const { initChain } = await import('../chain/sdk.js');
       initChain();
       startIndexer(agentId);
+
+      // Reconcile on-chain position count with local state.
+      // If the on-chain contract thinks more positions are open than local
+      // state tracks (e.g., after a bug or crash), call recordClose(0) to
+      // decrement the on-chain counter for each phantom position.
+      try {
+        const onChainState = await getOnChainRiskState();
+        if (onChainState) {
+          const localOpen = riskEngine.getOpenPositions().length;
+          const chainOpen = onChainState.positions;
+          if (chainOpen > localOpen) {
+            const phantomCount = chainOpen - localOpen;
+            log.warn(`On-chain position count (${chainOpen}) > local (${localOpen}) — reconciling ${phantomCount} phantom position(s)`);
+            for (let i = 0; i < phantomCount; i++) {
+              await recordCloseOnChain(0); // zero PnL — just decrement counter
+            }
+            log.info('On-chain position count reconciled');
+          }
+        }
+      } catch (syncErr) {
+        log.warn('On-chain position sync failed (non-critical)', { error: String(syncErr) });
+      }
     } catch (e) {
       log.warn('Event indexer failed to start — chain not configured', { error: String(e) });
     }
@@ -615,6 +637,25 @@ async function runCycle(): Promise<void> {
     }
   }
 
+  // ── Gate Trace: single structured log showing signal at each gate ──
+  const gateTrace = {
+    cycle: cycleCount,
+    signal: strategyOutput.signal.direction,
+    gates: {
+      strategy:   { dir: strategyOutput.signal.direction, conf: +(strategyOutput.signal.confidence).toFixed(3) },
+      oracle:     { pass: oracleIntegrity.passed },
+      neuro:      { dir: cognitive.adjustedSignal, conf: +cognitive.adjustedConfidence.toFixed(3), rules: cognitive.rulesFired },
+      regime:     regimeGov ? { profile: regimeGov.profileName, conf: +regimeGov.adjustedConfidence.toFixed(3), threshold: regimeGov.profile.confidenceThreshold } : null,
+      supervisory:{ canTrade: supervisory.canTrade, tier: supervisory.trustTier },
+      mandate:    { approved: mandateDecision.approved },
+      risk:       { approved: riskDecision.approved, failed: riskDecision.checks.filter(c => !c.passed).map(c => c.name) },
+      simulator:  { allowed: executionSimulation.allowed, reason: executionSimulation.reason },
+      onChain:    onChainRiskCheck ? { approved: onChainRiskCheck.approved, reason: onChainRiskCheck.reason } : 'skipped',
+    },
+    execute: shouldExecute,
+  };
+  log.info('Gate trace', gateTrace);
+
   // Step 5: Build validation artifact (ALWAYS — even for rejected trades)
   let artifact = buildTradeArtifact(strategyOutput, riskDecision, agentId);
   artifact = await attachGovernanceEvidence(artifact, {
@@ -744,10 +785,32 @@ async function runCycle(): Promise<void> {
     // This is done here — AFTER all gates pass — so we don't lose positions
     // when downstream checks (on-chain risk policy, simulator) block the trade.
     if (strategyOutput.signal.direction === 'LONG' || strategyOutput.signal.direction === 'SHORT') {
-      riskEngine.closeOpposingPositions(
+      const flipped = riskEngine.closeOpposingPositions(
         strategyOutput.signal.direction as 'LONG' | 'SHORT',
         strategyOutput.currentPrice,
       );
+      // Record each flip on-chain so openPositionCount stays in sync
+      for (const f of flipped) {
+        recordCloseOnChain(f.pnl)
+          .catch(e => log.warn('recordCloseOnChain (flip) failed', { error: String(e) }));
+        const now = new Date().toISOString();
+        const pnlPct = f.entry > 0 ? (f.pnl / f.entry) * 100 : 0;
+        recordClosedTrade({
+          id: f.id,
+          asset: config.tradingPair,
+          side: f.side as 'LONG' | 'SHORT',
+          size: 0,
+          entryPrice: f.entry,
+          exitPrice: f.exit,
+          pnl: f.pnl,
+          pnlPct,
+          stopHit: false,
+          reason: 'direction_flip',
+          openedAt: now,  // approximate — original open time lost
+          closedAt: now,
+          durationMs: 0,
+        });
+      }
     }
 
     // Calculate dynamic take-profit price based on ATR and regime profile.

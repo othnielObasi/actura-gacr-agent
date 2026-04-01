@@ -260,18 +260,19 @@ export class RiskEngine {
   /**
    * Close all positions opposing the given direction.
    * Called at execution time AFTER all gates have approved the trade.
+   * Returns details of each closed position for on-chain recording.
    */
-  closeOpposingPositions(direction: 'LONG' | 'SHORT', currentPrice: number): number {
+  closeOpposingPositions(direction: 'LONG' | 'SHORT', currentPrice: number): Array<{ id: number; side: string; pnl: number; entry: number; exit: number }> {
     const opposing = this.openPositions.filter(p => p.side !== direction);
-    let totalPnl = 0;
+    const results: Array<{ id: number; side: string; pnl: number; entry: number; exit: number }> = [];
     for (const opp of opposing) {
       const pnl = this.closePositionById(opp.id, currentPrice);
-      totalPnl += pnl;
+      results.push({ id: opp.id, side: opp.side, pnl, entry: opp.entryPrice, exit: currentPrice });
       log.info(`Closed opposing position #${opp.id} (${opp.side}) for direction flip`, {
         entry: opp.entryPrice, exit: currentPrice, pnl: Math.round(pnl * 100) / 100,
       });
     }
-    return totalPnl;
+    return results;
   }
 
   /** Open a position with slippage */

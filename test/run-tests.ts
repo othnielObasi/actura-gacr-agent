@@ -28,6 +28,7 @@ const tests = [
   { name: 'EIP-1271 Signature Verification', cmd: cmdFor('test/test-eip1271.ts') },
   { name: 'Kraken Feed', cmd: cmdFor('test/test-kraken-feed.ts') },
   { name: 'Event Indexer', cmd: cmdFor('test/test-event-indexer.ts') },
+  { name: 'Pipeline Integration', cmd: cmdFor('test/test-pipeline-integration.ts') },
 ];
 
 console.log('');
