@@ -161,8 +161,8 @@ export function generateSignal(input: SignalInput): TradingSignal {
   const rsiPenalty = isBullish ? overboughtPenalty : oversoldPenalty;
   const meanRevPenalty = 0.6 * rsiPenalty + 0.5 * zExtremePenalty;
 
-  // Sentiment nudge: composite [-1,+1] scaled to ~15% of trend weight
-  const sentimentScore = (sentimentComposite ?? 0) * 0.25;
+  // Sentiment nudge: composite [-1,+1] — light touch to avoid overriding price action
+  const sentimentScore = (sentimentComposite ?? 0) * 0.12;
 
   const alphaScore =
     trendScore +
