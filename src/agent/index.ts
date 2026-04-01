@@ -197,6 +197,10 @@ async function initAgent(): Promise<void> {
           stopLoss: pos.stopLoss, currentPrice: startupPrice,
           closedAt: closePrice, pnl: Math.round(pnl * 100) / 100,
         });
+        // Decrement on-chain position counter so the risk policy stays in sync
+        recordCloseOnChain(pnl).catch(e =>
+          log.warn('recordCloseOnChain failed during reconciliation', { error: String(e) }),
+        );
       }
     }
 
