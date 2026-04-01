@@ -210,7 +210,7 @@ export function generateSignal(input: SignalInput): TradingSignal {
 
   // Determine direction (NEUTRAL if weak)
   let direction: SignalDirection = 'NEUTRAL';
-  if (confidence >= 0.12) {
+  if (confidence >= 0.08) {
     direction = alphaScore >= 0 ? 'LONG' : 'SHORT';
   }
 
@@ -229,8 +229,8 @@ export function generateSignal(input: SignalInput): TradingSignal {
     atr,
     confidence,
     side: direction,
-    costBps: costBps ?? 10, // sandbox tuning (use 18+ for live)
-    minEdgeMultiple: 1.5
+    costBps: costBps ?? 5, // sandbox testnet: 5 bps (use 18+ for live)
+    minEdgeMultiple: 1.2
   });
 
   if (!edge.allowed && direction !== 'NEUTRAL') {

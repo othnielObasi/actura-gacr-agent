@@ -153,12 +153,12 @@ export class RiskEngine {
     });
 
     // Check 2: Signal quality
-    const signalOk = strategyOutput.signal.direction !== 'NEUTRAL' && strategyOutput.signal.confidence > 0.1;
+    const signalOk = strategyOutput.signal.direction !== 'NEUTRAL' && strategyOutput.signal.confidence > 0.05;
     checks.push({
       name: 'signal_quality',
       passed: signalOk,
       value: `${strategyOutput.signal.direction} (${strategyOutput.signal.confidence})`,
-      limit: 'confidence > 0.1',
+      limit: 'confidence > 0.05',
       detail: strategyOutput.signal.reason,
     });
 
