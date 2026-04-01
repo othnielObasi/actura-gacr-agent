@@ -200,9 +200,9 @@
           <div class="metric-sub">PRISM-computed daily vol</div>
         </div>
         <div class="card">
-          <div class="card-title">External Sharpe</div>
+          <div class="card-title">Win Days</div>
           <div class="metric blue" id="prismSharpe">—</div>
-          <div class="metric-sub">Market-wide Sharpe ratio</div>
+          <div class="metric-sub">% of positive days (ETH)</div>
         </div>
         <div class="card">
           <div class="card-title">Max Drawdown (Market)</div>
@@ -398,8 +398,8 @@
         if (prism?.risk) {
           const pr = prism.risk;
           document.getElementById('prismVol').textContent = pr.dailyVolatility != null ? pr.dailyVolatility.toFixed(2) + '%' : '—';
-          document.getElementById('prismSharpe').textContent = pr.sharpeRatio != null ? pr.sharpeRatio.toFixed(2) : '—';
-          const sharpeClass = pr.sharpeRatio > 0 ? 'green' : pr.sharpeRatio < 0 ? 'red' : 'cyan';
+          document.getElementById('prismSharpe').textContent = pr.positiveDaysPct != null ? pr.positiveDaysPct.toFixed(1) + '%' : '—';
+          const sharpeClass = pr.positiveDaysPct > 50 ? 'green' : pr.positiveDaysPct < 50 ? 'red' : 'cyan';
           document.getElementById('prismSharpe').className = 'metric ' + sharpeClass;
           document.getElementById('prismMaxDD').textContent = pr.maxDrawdown != null ? pr.maxDrawdown.toFixed(1) + '%' : '—';
           document.getElementById('prismCurrentDD').textContent = pr.currentDrawdown != null ? pr.currentDrawdown.toFixed(1) + '%' : '—';

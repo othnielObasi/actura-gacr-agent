@@ -491,9 +491,9 @@ function Actura() {
             {prism.risk && (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 0 }}>
                 <Metric label="Daily Vol" value={`${prism.risk.dailyVolatility.toFixed(2)}%`} sub={`annual ${prism.risk.annualVolatility.toFixed(1)}%`} color={T.warn} />
-                <Metric label="Sharpe" value={prism.risk.sharpeRatio.toFixed(2)} color={prism.risk.sharpeRatio > 0 ? T.up : T.dn} />
-                <Metric label="Max Drawdown" value={`${prism.risk.maxDrawdown.toFixed(1)}%`} sub={`current ${prism.risk.currentDrawdown.toFixed(1)}%`} color={T.dn} />
                 <Metric label="Win Days" value={`${prism.risk.positiveDaysPct.toFixed(1)}%`} sub={`avg ret ${prism.risk.avgDailyReturn.toFixed(3)}%`} color={prism.risk.positiveDaysPct > 50 ? T.up : T.dn} />
+                <Metric label="Max Drawdown" value={`${prism.risk.maxDrawdown.toFixed(1)}%`} sub={`current ${prism.risk.currentDrawdown.toFixed(1)}%`} color={T.dn} />
+                <Metric label="Positive Days" value={`${prism.risk.positiveDaysPct.toFixed(1)}%`} sub={`avg ret ${prism.risk.avgDailyReturn.toFixed(3)}%`} color={prism.risk.positiveDaysPct > 50 ? T.up : T.dn} />
               </div>
             )}
           </P>
