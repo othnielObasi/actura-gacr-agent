@@ -13,9 +13,6 @@
 
 import { classifyStructureRegime, type StructureRegime } from './structure-regime.js';
 import { evaluateEdge } from './edge-filter.js';
-import { createLogger } from '../agent/logger.js';
-
-const log = createLogger('SIGNAL-DBG');
 
 export type SignalDirection = 'LONG' | 'SHORT' | 'NEUTRAL';
 
@@ -178,19 +175,6 @@ export function generateSignal(input: SignalInput): TradingSignal {
   // Keep conservative to reduce overtrading.
   const rawConf = clamp(sigmoid(Math.abs(alphaScore) * 2.2) - 0.5, 0, 0.5) * 2; // maps to ~[0..1]
   let confidence = clamp(rawConf * volConfidence * structure.confidenceMultiplier, 0, 1);
-
-  // Diagnostic trace — temporary
-  log.info('Signal trace', {
-    smaFast: smaFast?.toFixed(2), smaSlow: smaSlow?.toFixed(2), price: currentPrice.toFixed(2),
-    isBullish, maSep: maSep.toFixed(5), trendStrength: trendStrength.toFixed(3),
-    m5: m5.toFixed(5), m20: m20.toFixed(5), rsi: r?.toFixed(1), zscore: z?.toFixed(2),
-    adx: adx?.toFixed(1), chop: choppiness?.toFixed(1), ac1: autocorr1?.toFixed(3),
-    trendScore: trendScore.toFixed(4), momentumScore: momentumScore.toFixed(4),
-    sentimentScore: sentimentScore.toFixed(4), meanRevPenalty: meanRevPenalty.toFixed(4),
-    alphaScore: alphaScore.toFixed(4), rawConf: rawConf.toFixed(4),
-    volConf: volConfidence.toFixed(3), structMult: structure.confidenceMultiplier.toFixed(3),
-    regime: structure.regime, confidence: confidence.toFixed(4),
-  });
 
   // Guard against NaN propagation from indicator calculations
   if (!Number.isFinite(confidence) || !Number.isFinite(alphaScore)) {
