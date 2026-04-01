@@ -31,6 +31,8 @@ Unlike conventional trading bots, Actura produces a **complete audit trail** for
 | **EIP-1271 signature verification** | Smart-contract wallet signature support — every signed TradeIntent is verified via EIP-1271 (auto-detects EOA vs contract wallets) before Risk Router submission |
 | **TEE attestation** | Software-based Trusted Execution Environment attestation — every artifact includes a signed attestation binding agent identity to runtime environment (code hash, git commit, OS fingerprint) |
 | **Full audit trail** | Every decision produces an IPFS-pinned JSON artifact with AI reasoning, market snapshots, confidence intervals, governance evidence, and TEE attestation. Artifacts are also saved locally to `./artifacts/` for re-pinning resilience |
+| **PRISM Intelligence** | Real-time technical signal integration via Strykr PRISM API — RSI, MACD, Bollinger Bands, directional bias. Confirmation-only confidence modifier (+0–15%) — boosts when PRISM agrees with the primary strategy, never penalizes |
+| **AI Reasoning (3-tier LLM)** | Every trade decision includes a natural-language AI explanation generated via Claude → Gemini → OpenAI failover chain. Summaries are embedded in IPFS artifacts |
 | **Sentiment-driven signals** | Multi-source sentiment scoring — Fear & Greed Index (40%), Alpha Vantage news (35%), Kraken funding rate proxy (25%) — adjusts confidence and position sizing |
 | **Kraken Challenge integration** | Full live/paper trading via Kraken CLI bridge — governed strategy → Kraken orders with stop-losses, TP targets, and ERC-8004 artifact preservation |
 | **Profit-locking trailing stops** | Tiered breakeven mechanism: >0.5% profit → 95% trail, >0.8% → 50% trail, >1.5% → 30% trail. Stops only ratchet tighter, never widen |
@@ -51,7 +53,7 @@ Actura is **live on Base Sepolia** with verifiable on-chain state:
 |---|---|
 | **Agent ID** | **338** (ERC-8004 Identity Registry) |
 | **Registration Tx** | [`0x72ffa1b1...`](https://sepolia.basescan.org/tx/0x72ffa1b1463ce258e9223992d92996c2fbbdab86a445d8d2d85e90486279ce42) |
-| **ActuraRiskPolicy** | [`0x08cfD473718e523FDD5F9921F1e0BACc6d529AE9`](https://sepolia.basescan.org/address/0x08cfD473718e523FDD5F9921F1e0BACc6d529AE9) |
+| **ActuraRiskPolicy** | [`0x27C9766b30BAB8b59998f7F3e80E0eb92c8a9AC9`](https://sepolia.basescan.org/address/0x27C9766b30BAB8b59998f7F3e80E0eb92c8a9AC9) |
 | **Risk Policy Deploy Tx** | [`0xc3c484e2...`](https://sepolia.basescan.org/tx/0xc3c484e22603215a04cb64ff4a689c8ddf8b47d55da4b0382782a3233600dfec) |
 | **Identity Registry** | [`0x7177a686...Dd09A`](https://sepolia.basescan.org/address/0x7177a6867296406881E20d6647232314736Dd09A) |
 | **Owner Wallet** | [`0xE8684cfb...DdCD7`](https://sepolia.basescan.org/address/0xE8684cfbA08541C607898E55BAB58302204DdCD7) |
@@ -151,6 +153,7 @@ Market Data (CoinGecko / Kraken / DEX)
 │  CoinGecko · Kraken     │  │  Fear & Greed Index  │
 │  Live / Simulation      │  │  Alpha Vantage News  │
 └───────────┬─────────────┘  │  Kraken Funding Rate │
+            │                │  PRISM (Strykr) API  │
             │                └──────────┬───────────┘
             ▼                           │
 ┌─────────────────────────────────────────────────┐
@@ -305,6 +308,7 @@ actura-gacr-agent/
 │   │   ├── live-price-feed.ts      # Live CoinGecko/Kraken price feed
 │   │   ├── market-state.ts          # Market state aggregation
 │   │   ├── price-feed.ts            # Price feed (simulated / live)
+│   │   ├── prism-feed.ts           # PRISM (Strykr) technical signal & risk feed
 │   │   └── sentiment-feed.ts       # Multi-source sentiment aggregator
 │   ├── mcp/
 │   │   ├── server.ts                 # MCP JSON-RPC server with health & discovery
@@ -480,6 +484,10 @@ Each operator action creates an auditable receipt with timestamp, reason, actor,
 | `/api/operator/pause` | POST | Pause trading |
 | `/api/operator/resume` | POST | Resume trading |
 | `/api/operator/emergency-stop` | POST | Emergency stop |
+| `/api/prism` | GET | PRISM signal & risk data (direction, RSI, MACD, Bollinger, volatility) |
+| `/api/performance` | GET | Risk-adjusted metrics (Sharpe, Sortino, max drawdown, Calmar, profit factor) |
+| `/api/artifacts` | GET | Browse all decision artifacts with IPFS CIDs |
+| `/api/artifact/latest` | GET | Full JSON of the most recent decision artifact |
 
 ### MCP Server (port 3001)
 
@@ -697,7 +705,9 @@ npm start         # Run built version
 | `MAX_POSITION_PCT` | Max position size (%) | `10` |
 | `MAX_DAILY_LOSS_PCT` | Daily loss circuit breaker (%) | `2` |
 | `MAX_DRAWDOWN_PCT` | Max drawdown circuit breaker (%) | `8` |
-| `TRADING_INTERVAL_MS` | Cycle interval (ms) | `60000` |
+| `TRADING_INTERVAL_MS` | Cycle interval (ms) | `120000` |
+| `PRISM_API_KEY` | Strykr PRISM API key | — |
+| `MAX_HOLD_HOURS` | Max position hold time (hours) | `4` |
 | `MODE` | `simulation` or `live` | `simulation` |
 | `ALLOWED_ASSETS` | Comma-separated allowed assets | `WETH/USDC,ETH,USDC` |
 | `ALLOWED_PROTOCOLS` | Comma-separated allowed protocols | `uniswap` |
