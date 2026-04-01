@@ -583,6 +583,8 @@ async function runCycle(): Promise<void> {
     : { selectedDex: 'uniswap' as DexId, quotes: [], savingsBps: 0, rationale: ['no trade'], timestamp: new Date().toISOString(), routingVersion: '1.0' };
 
   // Step 4b: Execution simulation — required pre-trade safety stage (uses DEX-specific fees)
+  // On testnet, use minimal fee assumptions — Base Sepolia has no real DEX fees.
+  const isTestnet = config.chainId === 84532;
   const executionSimulation = simulateExecution({
     strategyOutput,
     riskDecision,
@@ -591,7 +593,7 @@ async function runCycle(): Promise<void> {
     // Only charge gas when Risk Router is configured for real on-chain execution.
     gasUsd: config.riskRouterAddress ? 0.35 : 0,
     dexId: dexRouting.selectedDex,
-    dexFeeBps: getDexFeeBps(dexRouting.selectedDex),
+    dexFeeBps: isTestnet ? 5 : getDexFeeBps(dexRouting.selectedDex),
   });
   if (shouldExecute && !executionSimulation.allowed) {
     shouldExecute = false;
