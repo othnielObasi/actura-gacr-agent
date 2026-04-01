@@ -149,6 +149,7 @@ function Actura() {
   const [security, setSecurity] = useState(null);
   const [latestAi, setLatestAi] = useState(null);
   const [feedsData, setFeedsData] = useState(null);
+  const [prism, setPrism] = useState(null);
 
   /* ── Tier mapping from API tier names ── */
   const tierMap = { probation: "TIER_1_PROBATION", limited: "TIER_2_LIMITED", standard: "TIER_3_STANDARD", elevated: "TIER_4_EXPANDED", elite: "TIER_4_EXPANDED" };
@@ -253,7 +254,7 @@ function Actura() {
   /* ── API fetching ── */
   const fetchData = useCallback(async () => {
     try {
-      const [statusRes, checkpointsRes, reputationRes, operatorRes, actionsRes, positionsRes, governanceRes, securityRes, artifactRes, feedsRes] = await Promise.all([
+      const [statusRes, checkpointsRes, reputationRes, operatorRes, actionsRes, positionsRes, governanceRes, securityRes, artifactRes, feedsRes, prismRes] = await Promise.all([
         fetch("/api/status").then(r => r.json()).catch(() => null),
         fetch("/api/checkpoints?limit=10").then(r => r.json()).catch(() => null),
         fetch("/api/reputation/history?limit=30").then(r => r.json()).catch(() => null),
@@ -264,6 +265,7 @@ function Actura() {
         fetch("/api/security").then(r => r.json()).catch(() => null),
         fetch("/api/artifact/latest").then(r => r.json()).catch(() => null),
         fetch("/api/feeds/kraken").then(r => r.json()).catch(() => null),
+        fetch("/api/prism").then(r => r.json()).catch(() => null),
       ]);
 
       if (statusRes) {
@@ -320,6 +322,7 @@ function Actura() {
       if (securityRes) setSecurity(securityRes);
       if (artifactRes?.aiReasoning) setLatestAi(artifactRes.aiReasoning);
       if (feedsRes) setFeedsData(feedsRes);
+      if (prismRes) setPrism(prismRes);
 
       setStage(s => (s + 1) % STAGES.length);
       setTick(t => t + 1);
@@ -454,6 +457,7 @@ function Actura() {
                 { name: "Fear & Greed", ok: sentiment?.fearGreed != null, detail: sentiment?.fearGreed != null ? `${Math.round((sentiment.fearGreed + 1) * 50)}/100` : "—", sub: sentiment?.fearGreed != null ? (sentiment.fearGreed < -0.4 ? "Extreme Fear" : sentiment.fearGreed < 0 ? "Fear" : "Greed") : "" },
                 { name: "Alpha Vantage", ok: sentiment?.newsSentiment != null, detail: sentiment?.newsSentiment != null ? `${sentiment.newsSentiment.toFixed(3)}` : "—", sub: sentOk ? `${sentiment.sources.length} sources` : "" },
                 { name: "Funding Proxy", ok: sentiment?.fundingRate != null, detail: sentiment?.fundingRate != null ? `${sentiment.fundingRate.toFixed(3)}` : "—", sub: sentiment?.fundingRate != null ? (sentiment.fundingRate > 0.1 ? "Longs crowd" : sentiment.fundingRate < -0.1 ? "Shorts crowd" : "Balanced") : "" },
+                { name: "PRISM (Strykr)", ok: prism?.signal != null, detail: prism?.signal ? `${prism.signal.direction.toUpperCase()} · ${prism.signal.strength}` : "—", sub: prism?.signal ? `RSI ${prism.signal.rsi?.toFixed(0) || "—"} · MACD ${prism.signal.macdHistogram?.toFixed(1) || "—"}` : "" },
               ];
               return React.createElement(React.Fragment, null,
                 priceAge !== null && React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.brd}` } },
@@ -472,6 +476,28 @@ function Actura() {
             })()}
           </P>
         </div>
+
+        {/* PRISM AI Market Intelligence (Strykr) */}
+        {prism?.signal && (
+          <P title="PRISM AI Intelligence (Strykr)" tip="External AI-powered market signals from Strykr's PRISM platform. Aggregates 20+ data sources to produce directional signals, RSI, MACD, Bollinger bands, and risk metrics. Used as confidence modifier for our primary strategy." tag={prism.signal.direction.toUpperCase()}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr 1fr", gap: 0, marginBottom: 6, paddingBottom: 6, borderBottom: `1px solid ${T.brd}` }}>
+              <Metric label="Direction" value={prism.signal.direction.toUpperCase()} color={prism.signal.direction === "bullish" ? T.up : prism.signal.direction === "bearish" ? T.dn : T.warn} />
+              <Metric label="Strength" value={prism.signal.strength} sub={`net ${prism.signal.netScore}`} color={prism.signal.strength === "strong" ? T.up : prism.signal.strength === "moderate" ? T.warn : T.fg3} />
+              <Metric label="RSI" value={prism.signal.rsi != null ? prism.signal.rsi.toFixed(1) : "—"} sub={prism.signal.rsi > 70 ? "overbought" : prism.signal.rsi < 30 ? "oversold" : "normal"} color={prism.signal.rsi > 70 ? T.dn : prism.signal.rsi < 30 ? T.up : T.fg2} />
+              <Metric label="MACD" value={prism.signal.macd != null ? prism.signal.macd.toFixed(1) : "—"} sub={`hist ${prism.signal.macdHistogram?.toFixed(1) || "—"}`} color={prism.signal.macdHistogram > 0 ? T.up : T.dn} />
+              <Metric label="Bollinger" value={prism.signal.bollingerUpper != null ? `$${prism.signal.bollingerUpper.toFixed(0)}` : "—"} sub={prism.signal.bollingerLower != null ? `low $${prism.signal.bollingerLower.toFixed(0)}` : "—"} color={T.info} />
+              <Metric label="Price" value={prism.signal.currentPrice ? `$${prism.signal.currentPrice.toFixed(2)}` : "—"} sub="PRISM source" color={T.fg2} />
+            </div>
+            {prism.risk && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 0 }}>
+                <Metric label="Daily Vol" value={`${prism.risk.dailyVolatility.toFixed(2)}%`} sub={`annual ${prism.risk.annualVolatility.toFixed(1)}%`} color={T.warn} />
+                <Metric label="Sharpe" value={prism.risk.sharpeRatio.toFixed(2)} color={prism.risk.sharpeRatio > 0 ? T.up : T.dn} />
+                <Metric label="Max Drawdown" value={`${prism.risk.maxDrawdown.toFixed(1)}%`} sub={`current ${prism.risk.currentDrawdown.toFixed(1)}%`} color={T.dn} />
+                <Metric label="Win Days" value={`${prism.risk.positiveDaysPct.toFixed(1)}%`} sub={`avg ret ${prism.risk.avgDailyReturn.toFixed(3)}%`} color={prism.risk.positiveDaysPct > 50 ? T.up : T.dn} />
+              </div>
+            )}
+          </P>
+        )}
 
         {/* Governance Pipeline — THE HERO */}
         <P title="Governance Pipeline" tip="Every trade must pass all 8 deterministic governance stages before execution. This is the ERC-8004 trust backbone." tag={`cycle ${cycleCount || tick}`}>
