@@ -130,6 +130,9 @@ let pendingOutcomes: ACEOutcome[] = [];
 let totalOutcomesRecorded = 0;
 let cyclesSinceReflection = 0;
 let lastContextPrefix = '';
+let preReflectionWinRate = 0;    // overfitting: track pre-reflection baseline
+let postReflectionOutcomes: ACEOutcome[] = []; // overfitting: monitor post-change perf
+let previousWeights: ScorecardWeights | null = null; // overfitting: rollback snapshot
 
 function getDefaultWeights(): ScorecardWeights {
   return {
@@ -184,8 +187,12 @@ export function getACEStatus() {
 export function recordACEOutcome(outcome: ACEOutcome): void {
   if (!ACE_ENABLED) return;
   pendingOutcomes.push(outcome);
+  postReflectionOutcomes.push(outcome);
   totalOutcomesRecorded++;
   log.info(`Recorded outcome: ${outcome.direction} ${outcome.pnlPct > 0 ? 'WIN' : 'LOSS'} ${(outcome.pnlPct * 100).toFixed(2)}% (pending: ${pendingOutcomes.length})`);
+
+  // Overfitting guard: auto-revert if post-reflection performance degrades significantly
+  checkPerformanceDegradation();
 }
 
 /**
@@ -209,11 +216,39 @@ export async function runACEReflection(cycleNumber: number): Promise<ACEReflecti
   log.info(`Starting ACE reflection (${pendingOutcomes.length} new outcomes, cycle ${cycleNumber})`);
 
   try {
+    // Overfitting guard 1: require minimum regime diversity
+    const regimes = new Set(pendingOutcomes.map(o => o.regime));
+    if (regimes.size < 2 && pendingOutcomes.length < 10) {
+      log.info(`ACE skipping reflection: only ${regimes.size} regime(s) in ${pendingOutcomes.length} outcomes — need diversity or 10+ trades`);
+      return null;
+    }
+
+    // Overfitting guard 2: holdout validation — split 80/20
+    const shuffled = [...pendingOutcomes].sort(() => Math.random() - 0.5);
+    const holdoutSize = Math.max(1, Math.floor(shuffled.length * 0.2));
+    const trainSet = shuffled.slice(0, shuffled.length - holdoutSize);
+    const holdoutSet = shuffled.slice(shuffled.length - holdoutSize);
+
+    // Snapshot current state for potential rollback
+    previousWeights = { ...currentWeights };
+    preReflectionWinRate = pendingOutcomes.filter(o => o.pnlPct > 0).length / pendingOutcomes.length;
+    postReflectionOutcomes = [];
+
     // Expire stale playbook rules
     expireStaleRules();
 
-    // Call LLM for reflection
-    const reflection = await callReflectionLLM(geminiKey, pendingOutcomes, cycleNumber);
+    // Call LLM with training set only (holdout not shown to LLM)
+    const reflection = await callReflectionLLM(geminiKey, trainSet, cycleNumber);
+
+    // Overfitting guard 3: validate weight changes against holdout set
+    if (reflection.weightChanges.length > 0 && holdoutSet.length > 0) {
+      const holdoutOk = validateAgainstHoldout(reflection.weightChanges, holdoutSet);
+      if (!holdoutOk) {
+        log.warn('ACE holdout validation failed — discarding weight changes (keeping insights + rules)');
+        reflection.weightChanges = [];
+        reflection.insights.push('[OVERFITTING GUARD] Weight changes rejected by holdout validation');
+      }
+    }
 
     // Apply weight changes (bounded by CAGE)
     for (const wc of reflection.weightChanges) {
@@ -651,6 +686,83 @@ function appendReflection(reflection: ACEReflection): void {
     appendFileSync(REFLECTIONS_FILE, JSON.stringify(reflection) + '\n', 'utf-8');
   } catch (error) {
     log.error('Failed to append reflection', { error: String(error) });
+  }
+}
+
+// ── Overfitting Protection ──
+
+/**
+ * Holdout validation: check if proposed weight changes would have improved
+ * signal quality on the holdout set (trades the LLM didn't see).
+ */
+function validateAgainstHoldout(
+  weightChanges: ACEReflection['weightChanges'],
+  holdout: ACEOutcome[],
+): boolean {
+  if (holdout.length === 0) return true;
+
+  // Build proposed weights
+  const proposed = { ...currentWeights };
+  for (const wc of weightChanges) {
+    proposed[wc.parameter] = wc.to;
+  }
+
+  // Simple directional check: do proposed weights align better with holdout outcomes?
+  let currentAligned = 0;
+  let proposedAligned = 0;
+
+  for (const o of holdout) {
+    const isWin = o.pnlPct > 0;
+    // Rough signal score: higher absolute score should correlate with wins
+    const curScore = Math.abs(
+      (o.ret5 ?? 0) * currentWeights.ret5 +
+      (o.ret20 ?? 0) * currentWeights.ret20 +
+      (o.rsi !== undefined && o.rsi !== null ? (o.rsi > 70 ? -1 : o.rsi < 30 ? 1 : 0) : 0) * currentWeights.rsi
+    );
+    const propScore = Math.abs(
+      (o.ret5 ?? 0) * proposed.ret5 +
+      (o.ret20 ?? 0) * proposed.ret20 +
+      (o.rsi !== undefined && o.rsi !== null ? (o.rsi > 70 ? -1 : o.rsi < 30 ? 1 : 0) : 0) * proposed.rsi
+    );
+
+    // Winners should have higher scores, losers lower
+    if (isWin) {
+      if (curScore > 0.01) currentAligned++;
+      if (propScore > 0.01) proposedAligned++;
+    } else {
+      // For losses, lower score = better (we want to avoid these)
+      if (curScore < 0.01) currentAligned++;
+      if (propScore < 0.01) proposedAligned++;
+    }
+  }
+
+  // Proposed must not be worse than current
+  const pass = proposedAligned >= currentAligned;
+  log.info(`Holdout validation: current=${currentAligned}/${holdout.length}, proposed=${proposedAligned}/${holdout.length} → ${pass ? 'PASS' : 'FAIL'}`);
+  return pass;
+}
+
+/**
+ * Auto-revert weights if post-reflection performance degrades significantly.
+ * Requires 5+ trades after a reflection to evaluate.
+ */
+function checkPerformanceDegradation(): void {
+  if (!previousWeights || postReflectionOutcomes.length < 5) return;
+
+  const postWinRate = postReflectionOutcomes.filter(o => o.pnlPct > 0).length / postReflectionOutcomes.length;
+
+  // Only revert if win rate dropped by >15 percentage points
+  if (preReflectionWinRate - postWinRate > 0.15) {
+    log.warn(`ACE OVERFITTING REVERT: post-reflection win rate ${(postWinRate * 100).toFixed(0)}% vs pre ${(preReflectionWinRate * 100).toFixed(0)}% — reverting weights`);
+    currentWeights = { ...previousWeights };
+    persistWeights();
+    previousWeights = null;
+    postReflectionOutcomes = [];
+  } else if (postReflectionOutcomes.length >= 10) {
+    // After 10 trades, stop monitoring — weights are accepted
+    log.info(`ACE weights accepted: post-reflection win rate ${(postWinRate * 100).toFixed(0)}% (baseline ${(preReflectionWinRate * 100).toFixed(0)}%)`);
+    previousWeights = null;
+    postReflectionOutcomes = [];
   }
 }
 
