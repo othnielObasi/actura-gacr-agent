@@ -18,6 +18,7 @@ import { getReputationTimeline } from '../trust/trust-policy-scorecard.js';
 import { getOperatorControlState, getOperatorActionReceipts, pauseTrading, resumeTrading, emergencyStop } from '../agent/operator-control.js';
 import { buildRegistrationJson } from '../chain/identity.js';
 import { generateTradePost, generateDailySummaryPost, buildTwitterIntentUrl } from '../social/share.js';
+import { getACEStatus, getActivePlaybookRules } from '../strategy/ace-engine.js';
 import { getKrakenFeedStatus, fetchKrakenTicker, fetchKrakenBalance, fetchKrakenOpenOrders, fetchKrakenTradeHistory } from '../data/kraken-feed.js';
 import { fetchPrismData } from '../data/prism-feed.js';
 import { getCliStatus, checkCliHealth } from '../data/kraken-cli.js';
@@ -473,6 +474,33 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
         },
         error: String(e),
       });
+    }
+  });
+
+  /** ACE (Agentic Context Engineering) status */
+  app.get('/api/ace/status', (_req, res) => {
+    try {
+      res.json(getACEStatus());
+    } catch (e) {
+      res.status(500).json({ error: 'Failed to get ACE status' });
+    }
+  });
+
+  /** ACE playbook rules */
+  app.get('/api/ace/playbook', (_req, res) => {
+    try {
+      const rules = getActivePlaybookRules();
+      const status = getACEStatus();
+      res.json({
+        rules,
+        totalRules: rules.length,
+        maxRules: status.maxRules,
+        reflectionCount: status.reflectionCount,
+        lastReflection: status.lastReflection,
+        weights: status.weights,
+      });
+    } catch (e) {
+      res.status(500).json({ error: 'Failed to get ACE playbook' });
     }
   });
 

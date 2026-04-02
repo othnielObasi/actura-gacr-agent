@@ -13,6 +13,7 @@
 
 import { classifyStructureRegime, type StructureRegime } from './structure-regime.js';
 import { evaluateEdge } from './edge-filter.js';
+import { getACEWeights, applyPlaybookRules, isACEEnabled } from './ace-engine.js';
 
 export type SignalDirection = 'LONG' | 'SHORT' | 'NEUTRAL';
 
@@ -151,18 +152,20 @@ export function generateSignal(input: SignalInput): TradingSignal {
   // - trend provides direction bias
   // - momentum supports direction
   // - penalties reduce chasing into extremes
+  // Weights sourced from ACE (learned) or defaults (hardcoded)
+  const w = getACEWeights();
   const directionSign = isBullish ? 1 : -1;
 
-  const trendScore = directionSign * (0.6 * trendStrength);
-  const momentumScore = 1.8 * m5 + 1.1 * m20; // returns already carry direction — do NOT multiply by directionSign
-  const crossoverBoost = crossedUp || crossedDown ? 0.15 : 0;
+  const trendScore = directionSign * (w.trend * trendStrength);
+  const momentumScore = w.ret5 * m5 + w.ret20 * m20; // returns already carry direction — do NOT multiply by directionSign
+  const crossoverBoost = crossedUp || crossedDown ? w.crossover : 0;
 
   // Penalties: if bullish, penalize overbought; if bearish penalize oversold
   const rsiPenalty = isBullish ? overboughtPenalty : oversoldPenalty;
-  const meanRevPenalty = 0.6 * rsiPenalty + 0.5 * zExtremePenalty;
+  const meanRevPenalty = w.rsi * rsiPenalty + w.zscore * zExtremePenalty;
 
   // Sentiment nudge: composite [-1,+1] — light touch to avoid overriding price action
-  const sentimentScore = (sentimentComposite ?? 0) * 0.12;
+  const sentimentScore = (sentimentComposite ?? 0) * w.sentiment;
 
   const alphaScore =
     trendScore +
@@ -205,6 +208,31 @@ export function generateSignal(input: SignalInput): TradingSignal {
   if (momentumContradiction) {
     direction = m5 > 0 ? 'LONG' : 'SHORT';
     confidence = clamp(confidence * 0.5, 0, 1); // halve confidence — momentum-only signal is weaker
+  }
+
+  // ACE playbook rules: apply learned filters to adjust confidence
+  if (isACEEnabled() && direction !== 'NEUTRAL') {
+    const aceResult = applyPlaybookRules({
+      direction,
+      regime: (volRatio ?? 1) < 0.5 ? 'low' : (volRatio ?? 1) > 1.5 ? 'high' : (volRatio ?? 1) > 2.0 ? 'extreme' : 'normal',
+      rsi: r,
+      ret5: m5,
+      adx: adx ?? null,
+      zscore: z,
+      sentimentComposite: sentimentComposite ?? null,
+      confidence,
+    });
+    if (aceResult.modifier === -1.0) {
+      // BLOCK rule fired
+      direction = 'NEUTRAL';
+      confidence = 0;
+    } else {
+      confidence = clamp(confidence + aceResult.modifier, 0, 1);
+      if (confidence < 0.08) {
+        direction = 'NEUTRAL';
+        confidence = 0;
+      }
+    }
   }
 
   // Expected edge filter (additional Sharpe module)

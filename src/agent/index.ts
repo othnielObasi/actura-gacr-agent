@@ -31,6 +31,7 @@ import { generateReasoning } from '../strategy/ai-reasoning.js';
 import { applySymbolicReasoning, recordOutcome } from '../strategy/neuro-symbolic.js';
 import { runAdaptation, recordTradeOutcome, getAdaptiveParams, getAdaptationSummary, type AdaptationArtifact } from '../strategy/adaptive-learning.js';
 import { RegimeGovernanceController, mapVolToRegime } from '../strategy/regime-governance.js';
+import { loadACEState, recordACEOutcome, runACEReflection, getACEStatus, getActivePlaybookRules, isACEEnabled } from '../strategy/ace-engine.js';
 import { uploadArtifact } from '../trust/ipfs.js';
 import { saveCheckpoint, getCheckpoints, getTradeCheckpoints } from '../trust/checkpoint.js';
 import { computeMarketState } from '../data/market-state.js';
@@ -236,6 +237,9 @@ async function initAgent(): Promise<void> {
 
   resetStrategy();
   regimeGovernance.reset();
+
+  // Load ACE (Agentic Context Engineering) state — weights, playbook, reflections
+  loadACEState();
 
   log.info('Agent initialized', {
     capital: riskEngine.getCapital(),
@@ -989,6 +993,24 @@ async function runCycle(): Promise<void> {
         confidence: strategyOutput.signal.confidence,
         timestamp: new Date().toISOString(),
       });
+      // ACE: record enriched outcome with feature vector for LLM reflection
+      recordACEOutcome({
+        direction: pos.side as 'LONG' | 'SHORT',
+        entryPrice: pos.entryPrice,
+        exitPrice: currentPrice,
+        pnlPct,
+        stopHit: closed.reason === 'stop_loss',
+        regime: riskDecision.volatility.regime as any,
+        confidence: strategyOutput.signal.confidence,
+        ret5: strategyOutput.signal.ret5 ?? undefined,
+        ret20: strategyOutput.signal.ret20 ?? undefined,
+        rsi: strategyOutput.signal.rsi ?? undefined,
+        adx: strategyOutput.signal.adx ?? undefined,
+        zscore: strategyOutput.signal.zscore ?? undefined,
+        sentimentComposite: strategyOutput.signal.sentimentComposite ?? undefined,
+        alphaScore: strategyOutput.signal.alphaScore ?? undefined,
+        timestamp: new Date().toISOString(),
+      });
     }
   }
 
@@ -998,6 +1020,18 @@ async function runCycle(): Promise<void> {
     for (const adapt of adaptations) {
       log.info(`Adaptation: ${adapt.parameter} ${adapt.previousValue} → ${adapt.newValue} (${adapt.trigger})`);
     }
+
+    // ACE reflection: LLM-powered learning from trade outcomes
+    if (isACEEnabled()) {
+      const aceReflection = await runACEReflection(cycleCount);
+      if (aceReflection) {
+        log.info(`ACE: ${aceReflection.insights.length} insights, ${aceReflection.newRules.length} rules, ${aceReflection.weightChanges.length} weight changes`);
+        for (const wc of aceReflection.weightChanges) {
+          log.info(`ACE weight: ${wc.parameter} ${wc.from} → ${wc.to} (${wc.reasoning.slice(0, 80)})`);
+        }
+      }
+    }
+
     persistState();
   }
 
