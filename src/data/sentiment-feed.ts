@@ -333,6 +333,10 @@ export async function fetchSentiment(): Promise<SentimentResult> {
 
   const composite = totalWeight > 0 ? weightedSum / totalWeight : 0;
 
+  if (totalWeight === 0) {
+    log.warn('All sentiment sources returned null — composite forced to 0 (neutral). Check API keys and network.');
+  }
+
   return {
     composite,
     fearGreed: fg,

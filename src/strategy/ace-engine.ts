@@ -28,9 +28,9 @@ const log = createLogger('ACE');
 // ── Configuration ──
 
 const ACE_ENABLED = process.env.ACE_ENABLED !== 'false';
-const ACE_MIN_OUTCOMES = parseInt(process.env.ACE_MIN_OUTCOMES || '5');
+const ACE_MIN_OUTCOMES = parseInt(process.env.ACE_MIN_OUTCOMES || '3');
 const ACE_MAX_RULES = parseInt(process.env.ACE_MAX_RULES || '20');
-const ACE_REFLECTION_COOLDOWN = parseInt(process.env.ACE_REFLECTION_COOLDOWN || '10');
+const ACE_REFLECTION_COOLDOWN = parseInt(process.env.ACE_REFLECTION_COOLDOWN || '5');
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent';
 
@@ -216,10 +216,10 @@ export async function runACEReflection(cycleNumber: number): Promise<ACEReflecti
   log.info(`Starting ACE reflection (${pendingOutcomes.length} new outcomes, cycle ${cycleNumber})`);
 
   try {
-    // Overfitting guard 1: require minimum regime diversity
+    // Overfitting guard 1: require minimum regime diversity (relaxed: allow single-regime after 5 trades)
     const regimes = new Set(pendingOutcomes.map(o => o.regime));
-    if (regimes.size < 2 && pendingOutcomes.length < 10) {
-      log.info(`ACE skipping reflection: only ${regimes.size} regime(s) in ${pendingOutcomes.length} outcomes — need diversity or 10+ trades`);
+    if (regimes.size < 2 && pendingOutcomes.length < 5) {
+      log.info(`ACE skipping reflection: only ${regimes.size} regime(s) in ${pendingOutcomes.length} outcomes — need diversity or 5+ trades`);
       return null;
     }
 
