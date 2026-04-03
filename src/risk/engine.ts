@@ -262,12 +262,13 @@ export class RiskEngine {
    * Called at execution time AFTER all gates have approved the trade.
    * Returns details of each closed position for on-chain recording.
    */
-  closeOpposingPositions(direction: 'LONG' | 'SHORT', currentPrice: number): Array<{ id: number; side: string; pnl: number; entry: number; exit: number }> {
+  closeOpposingPositions(direction: 'LONG' | 'SHORT', currentPrice: number): Array<{ id: number; side: string; pnl: number; entry: number; exit: number; size: number }> {
     const opposing = this.openPositions.filter(p => p.side !== direction);
-    const results: Array<{ id: number; side: string; pnl: number; entry: number; exit: number }> = [];
+    const results: Array<{ id: number; side: string; pnl: number; entry: number; exit: number; size: number }> = [];
     for (const opp of opposing) {
+      const size = opp.size;
       const pnl = this.closePositionById(opp.id, currentPrice);
-      results.push({ id: opp.id, side: opp.side, pnl, entry: opp.entryPrice, exit: currentPrice });
+      results.push({ id: opp.id, side: opp.side, pnl, entry: opp.entryPrice, exit: currentPrice, size });
       log.info(`Closed opposing position #${opp.id} (${opp.side}) for direction flip`, {
         entry: opp.entryPrice, exit: currentPrice, pnl: Math.round(pnl * 100) / 100,
       });
@@ -416,8 +417,8 @@ export class RiskEngine {
    * Update trailing stops and check all stop-losses / take-profits
    * Returns array of closed position IDs with reason
    */
-  updateStops(currentPrice: number): Array<{ id: number; pnl: number; reason: 'stop_loss' | 'take_profit' | 'max_hold' }> {
-    const closed: Array<{ id: number; pnl: number; reason: 'stop_loss' | 'take_profit' | 'max_hold' }> = [];
+  updateStops(currentPrice: number): Array<{ id: number; pnl: number; reason: 'stop_loss' | 'take_profit' | 'max_hold'; size: number; entryPrice: number }> {
+    const closed: Array<{ id: number; pnl: number; reason: 'stop_loss' | 'take_profit' | 'max_hold'; size: number; entryPrice: number }> = [];
 
     // Iterate in reverse so splicing doesn't skip elements
     for (let i = this.openPositions.length - 1; i >= 0; i--) {
@@ -478,11 +479,13 @@ export class RiskEngine {
         tpHit = TAKE_PROFIT_PCT > 0 && unrealizedPctForTP >= TAKE_PROFIT_PCT;
       }
       if (tpHit) {
+        const size = pos.size;
+        const entry = pos.entryPrice;
         const pnl = this.closeAtIndex(i, currentPrice, /* skipSlippage */ false);
         const unrealizedPctForTP = pos.side === 'LONG'
           ? (currentPrice - pos.entryPrice) / pos.entryPrice
           : (pos.entryPrice - currentPrice) / pos.entryPrice;
-        closed.push({ id: pos.id, pnl, reason: 'take_profit' });
+        closed.push({ id: pos.id, pnl, reason: 'take_profit', size, entryPrice: entry });
         log.info(`Take-profit hit: position #${pos.id}`, {
           side: pos.side, entry: pos.entryPrice, exit: currentPrice,
           tpTarget: pos.takeProfitPrice ?? `${(TAKE_PROFIT_PCT * 100).toFixed(1)}%`,
@@ -506,8 +509,10 @@ export class RiskEngine {
           const closePrice = gapped ? pos.stopLoss : currentPrice;
           // Stop-loss closes skip exit slippage: the stop price already
           // represents the intended risk boundary.
+          const size = pos.size;
+          const entry = pos.entryPrice;
           const pnl = this.closeAtIndex(i, closePrice, /* skipSlippage */ true);
-          closed.push({ id: pos.id, pnl, reason: 'stop_loss' });
+          closed.push({ id: pos.id, pnl, reason: 'stop_loss', size, entryPrice: entry });
           log.info(`Stop-loss hit: position #${pos.id}`, {
             side: pos.side, entry: pos.entryPrice, exit: closePrice,
             pnl: Math.round(pnl * 100) / 100,
@@ -521,8 +526,10 @@ export class RiskEngine {
       if (MAX_HOLD_MS > 0) {
         const holdMs = Date.now() - new Date(pos.openedAt).getTime();
         if (holdMs >= MAX_HOLD_MS) {
+          const size = pos.size;
+          const entry = pos.entryPrice;
           const pnl = this.closeAtIndex(i, currentPrice, /* skipSlippage */ false);
-          closed.push({ id: pos.id, pnl, reason: 'max_hold' });
+          closed.push({ id: pos.id, pnl, reason: 'max_hold', size, entryPrice: entry });
           log.info(`Max hold duration exceeded: position #${pos.id}`, {
             side: pos.side, entry: pos.entryPrice, exit: currentPrice,
             holdHours: (holdMs / 3600000).toFixed(1),

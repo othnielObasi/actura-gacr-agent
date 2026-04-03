@@ -185,9 +185,14 @@ contract ActuraRiskPolicy {
 
     /**
      * @notice Record a position close and update PnL
+     * @param pnl Realized PnL in USD (6 decimals, signed)
+     * @param amountUsd Original position size in USD (6 decimals) to release from exposure
      */
-    function recordClose(int256 pnl) external onlyAgent {
+    function recordClose(int256 pnl, uint256 amountUsd) external onlyAgent {
         if (openPositionCount > 0) openPositionCount--;
+        
+        // Release exposure
+        totalExposure = totalExposure > amountUsd ? totalExposure - amountUsd : 0;
         
         // Update capital
         uint256 oldCapital = currentCapital;
@@ -286,5 +291,14 @@ contract ActuraRiskPolicy {
     function forceResetCircuitBreaker() external onlyOwner {
         circuitBreakerActive = false;
         emit CircuitBreakerReset(currentCapital);
+    }
+
+    /**
+     * @notice Emergency reset of exposure tracking (owner-only recovery)
+     * @dev Use when recordClose txns fail and exposure becomes stale
+     */
+    function resetExposure() external onlyOwner {
+        totalExposure = 0;
+        openPositionCount = 0;
     }
 }

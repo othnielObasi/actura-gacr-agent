@@ -21,7 +21,8 @@ const log = createLogger('RISK-POLICY');
 const RISK_POLICY_ABI = [
   'function checkTrade(address asset, uint8 side, uint256 amountUsd) external view returns (bool approved, string reason)',
   'function recordTrade(address asset, uint8 side, uint256 amountUsd) external',
-  'function recordClose(int256 pnl) external',
+  'function recordClose(int256 pnl, uint256 amountUsd) external',
+  'function resetExposure() external',
   'function dailyReset() external',
   'function getRiskState() external view returns (uint256 capital, uint256 peak, int256 daily, uint256 positions, uint256 exposure, bool cbActive, uint256 drawdownBps)',
   'function circuitBreakerActive() external view returns (bool)',
@@ -132,21 +133,43 @@ export async function recordTradeOnChain(
 
 /**
  * Record a position close and PnL on-chain.
+ * @param pnlUsd Realized PnL in USD
+ * @param amountUsd Original position notional to release from exposure tracking
  */
-export async function recordCloseOnChain(pnlUsd: number): Promise<string | null> {
+export async function recordCloseOnChain(pnlUsd: number, amountUsd: number = 0): Promise<string | null> {
   const c = getWriteContract();
   if (!c) return null;
 
   try {
     const pnl6 = ethers.parseUnits(Math.abs(pnlUsd).toFixed(2), 6);
     const signedPnl = pnlUsd >= 0 ? pnl6 : -pnl6;
+    const amount6 = ethers.parseUnits(Math.abs(amountUsd).toFixed(2), 6);
 
-    const tx = await c.recordClose(signedPnl);
+    const tx = await c.recordClose(signedPnl, amount6);
     const receipt = await waitForTx(tx);
-    log.info('Position close recorded on-chain', { txHash: receipt.hash, pnlUsd: pnlUsd.toFixed(2) });
+    log.info('Position close recorded on-chain', { txHash: receipt.hash, pnlUsd: pnlUsd.toFixed(2), amountUsd: amountUsd.toFixed(2) });
     return receipt.hash;
   } catch (error) {
     log.warn('recordClose on-chain failed (non-critical)', { error: String(error) });
+    return null;
+  }
+}
+
+/**
+ * Emergency reset of exposure tracking (owner-only).
+ * Use when recordClose txns fail and exposure becomes stale.
+ */
+export async function resetExposureOnChain(): Promise<string | null> {
+  const c = getWriteContract();
+  if (!c) return null;
+
+  try {
+    const tx = await c.resetExposure();
+    const receipt = await waitForTx(tx);
+    log.info('Exposure reset on-chain', { txHash: receipt.hash });
+    return receipt.hash;
+  } catch (error) {
+    log.warn('resetExposure on-chain failed', { error: String(error) });
     return null;
   }
 }

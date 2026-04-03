@@ -198,8 +198,8 @@ async function initAgent(): Promise<void> {
           stopLoss: pos.stopLoss, currentPrice: startupPrice,
           closedAt: closePrice, pnl: Math.round(pnl * 100) / 100,
         });
-        // Decrement on-chain position counter so the risk policy stays in sync
-        recordCloseOnChain(pnl).catch(e =>
+        // Decrement on-chain position counter and release exposure
+        recordCloseOnChain(pnl, pos.size * pos.entryPrice).catch(e =>
           log.warn('recordCloseOnChain failed during reconciliation', { error: String(e) }),
         );
       }
@@ -274,7 +274,7 @@ async function initAgent(): Promise<void> {
             const phantomCount = chainOpen - localOpen;
             log.warn(`On-chain position count (${chainOpen}) > local (${localOpen}) — reconciling ${phantomCount} phantom position(s)`);
             for (let i = 0; i < phantomCount; i++) {
-              await recordCloseOnChain(0); // zero PnL — just decrement counter
+              await recordCloseOnChain(0, 0); // zero PnL — just decrement counter
             }
             log.info('On-chain position count reconciled');
           }
@@ -853,7 +853,7 @@ async function runCycle(): Promise<void> {
       );
       // Record each flip on-chain so openPositionCount stays in sync
       for (const f of flipped) {
-        recordCloseOnChain(f.pnl)
+        recordCloseOnChain(f.pnl, f.size * f.entry)
           .catch(e => log.warn('recordCloseOnChain (flip) failed', { error: String(e) }));
         const now = new Date().toISOString();
         const pnlPct = f.entry > 0 ? (f.pnl / f.entry) * 100 : 0;
@@ -942,7 +942,7 @@ async function runCycle(): Promise<void> {
 
     // Record closes on-chain in ActuraRiskPolicy
     for (const closed of closedPositions) {
-      recordCloseOnChain(closed.pnl)
+      recordCloseOnChain(closed.pnl, closed.size * closed.entryPrice)
         .catch(e => log.warn('recordCloseOnChain failed (non-critical)', { error: String(e) }));
     }
 
