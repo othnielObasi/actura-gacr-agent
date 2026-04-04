@@ -14,9 +14,9 @@ export interface RegimeProfile {
 }
 
 export const PROFILES: Record<RegimeProfileName, RegimeProfile> = Object.freeze({
-  LOW_VOL: { name: 'LOW_VOL', stopLossAtrMultiple: 1.2, takeProfitAtrMultiple: 1.8, basePositionPct: 0.022, confidenceThreshold: 0.05 },
-  NORMAL: { name: 'NORMAL', stopLossAtrMultiple: 1.3, takeProfitAtrMultiple: 1.8, basePositionPct: 0.020, confidenceThreshold: 0.08 },
-  HIGH_VOL: { name: 'HIGH_VOL', stopLossAtrMultiple: 1.5, takeProfitAtrMultiple: 2.0, basePositionPct: 0.016, confidenceThreshold: 0.14 },
+  LOW_VOL: { name: 'LOW_VOL', stopLossAtrMultiple: 1.2, takeProfitAtrMultiple: 2.2, basePositionPct: 0.022, confidenceThreshold: 0.04 },
+  NORMAL: { name: 'NORMAL', stopLossAtrMultiple: 1.3, takeProfitAtrMultiple: 2.5, basePositionPct: 0.020, confidenceThreshold: 0.05 },
+  HIGH_VOL: { name: 'HIGH_VOL', stopLossAtrMultiple: 1.5, takeProfitAtrMultiple: 2.8, basePositionPct: 0.016, confidenceThreshold: 0.08 },
   EXTREME_DEFENSIVE: { name: 'EXTREME_DEFENSIVE', stopLossAtrMultiple: 1.8, takeProfitAtrMultiple: 2.5, basePositionPct: 0.012, confidenceThreshold: 0.22 },
 });
 

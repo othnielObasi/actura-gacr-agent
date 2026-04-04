@@ -130,13 +130,13 @@ const regimeConfidenceRule: SymbolicRule = (signal, confidence, ctx) => {
   const smaSeparation = Math.abs(ctx.smaFast - ctx.smaSlow) / ctx.smaSlow;
 
   if (smaSeparation < 0.005) {
-    // Ranging — SMAs almost touching. Apply a gentle nudge; the structure
-    // regime classifier already applies a confidence multiplier, so this
-    // is a small additive caution — not a second heavy penalty.
-    const penalty = 0.03 + 0.03 * (1 - smaSeparation / 0.005); // 0.03–0.06 range
+    // Ranging — SMAs almost touching. Structure regime already applies a
+    // 0.80 confidence multiplier for RANGING, so only apply a tiny nudge
+    // here to avoid double-penalizing and killing all signals in chop.
+    const penalty = 0.01; // minimal — structure regime handles the heavy lifting
     result.fired = true;
     result.action = 'reduce_confidence';
-    result.reason = `SMA separation only ${(smaSeparation * 100).toFixed(2)}% — ranging market, mild confidence reduction`;
+    result.reason = `SMA separation only ${(smaSeparation * 100).toFixed(2)}% — ranging market, minimal nudge (structure regime already penalizing)`;
     result.confidenceAdjustment = -penalty;
   } else if (smaSeparation > 0.03) {
     // Strong trend

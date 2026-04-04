@@ -218,8 +218,8 @@ export async function runACEReflection(cycleNumber: number): Promise<ACEReflecti
   try {
     // Overfitting guard 1: require minimum regime diversity (relaxed: allow single-regime after 5 trades)
     const regimes = new Set(pendingOutcomes.map(o => o.regime));
-    if (regimes.size < 2 && pendingOutcomes.length < 5) {
-      log.info(`ACE skipping reflection: only ${regimes.size} regime(s) in ${pendingOutcomes.length} outcomes — need diversity or 5+ trades`);
+    if (regimes.size < 2 && pendingOutcomes.length < 3) {
+      log.info(`ACE skipping reflection: only ${regimes.size} regime(s) in ${pendingOutcomes.length} outcomes — need diversity or 3+ trades`);
       return null;
     }
 

@@ -176,9 +176,10 @@ function buildReasoningPrompt(
     const fgLabel = fgRaw !== null ? (fgRaw <= 20 ? 'Extreme Fear' : fgRaw <= 40 ? 'Fear' : fgRaw <= 60 ? 'Neutral' : fgRaw <= 80 ? 'Greed' : 'Extreme Greed') : 'N/A';
     sentimentBlock = `\n\nSENTIMENT (25% weight in signal scorecard):
 - Composite: ${sentiment.composite.toFixed(2)} (${sentiment.composite > 0.15 ? 'BULLISH' : sentiment.composite < -0.15 ? 'BEARISH' : 'NEUTRAL'})
-- Fear & Greed Index: ${fgRaw ?? 'N/A'}/100 (${fgLabel})
+- Fear & Greed Index: ${fgRaw ?? 'N/A'}/100 (${fgLabel})${fgRaw !== null && (fgRaw <= 20 || fgRaw >= 80) ? ' [CONTRARIAN ADJUSTED]' : ''}
 - News sentiment: ${sentiment.newsSentiment?.toFixed(2) ?? 'N/A'} (Alpha Vantage crypto news)
-- Funding proxy: ${sentiment.fundingRate?.toFixed(2) ?? 'N/A'} (Kraken VWAP deviation)
+- Social sentiment: ${(sentiment as any).socialSentiment?.toFixed(2) ?? 'N/A'} (PRISM crowd data)
+- Funding rate: ${sentiment.fundingRate?.toFixed(2) ?? 'N/A'} (PRISM aggregated / Kraken fallback)
 - Active sources: ${sentiment.sources.join(', ')}`;
   }
 

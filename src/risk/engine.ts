@@ -437,14 +437,14 @@ export class RiskEngine {
           // Determine effective trailing distance based on profit tier.
           // Deeper in profit → tighter trail → more profit locked in.
           let effectiveTrailDist = pos.trailingStopDistance;
-          if (unrealizedPct >= 0.015) {
-            // >1.5% profit: trail at 30% of original distance
-            effectiveTrailDist = pos.trailingStopDistance * 0.30;
+          if (unrealizedPct >= 0.025) {
+            // >2.5% profit: trail at 40% of original distance — lock solid gains
+            effectiveTrailDist = pos.trailingStopDistance * 0.40;
+          } else if (unrealizedPct >= 0.015) {
+            // >1.5% profit: trail at 60% of original distance
+            effectiveTrailDist = pos.trailingStopDistance * 0.60;
           } else if (unrealizedPct >= 0.008) {
-            // >0.8% profit: trail at 50% of original distance
-            effectiveTrailDist = pos.trailingStopDistance * 0.50;
-          } else if (unrealizedPct >= 0.005) {
-            // >0.5% profit: breakeven stop (trail = distance to entry)
+            // >0.8% profit: breakeven stop
             effectiveTrailDist = Math.abs(currentPrice - pos.entryPrice) * 0.95;
           }
 
@@ -522,18 +522,29 @@ export class RiskEngine {
         }
       }
 
-      // Check max hold duration — close stale positions to free capital
+      // Check max hold duration — close stale positions to free capital.
+      // Use stop-loss price as floor to avoid unbounded losses from time-based exits.
       if (MAX_HOLD_MS > 0) {
         const holdMs = Date.now() - new Date(pos.openedAt).getTime();
         if (holdMs >= MAX_HOLD_MS) {
+          // Cap loss at stop-loss level: if current price is worse than SL, use SL instead
+          let exitPrice = currentPrice;
+          if (pos.stopLoss !== null) {
+            if (pos.side === 'LONG' && currentPrice < pos.stopLoss) {
+              exitPrice = pos.stopLoss;
+            } else if (pos.side === 'SHORT' && currentPrice > pos.stopLoss) {
+              exitPrice = pos.stopLoss;
+            }
+          }
           const size = pos.size;
           const entry = pos.entryPrice;
-          const pnl = this.closeAtIndex(i, currentPrice, /* skipSlippage */ false);
+          const pnl = this.closeAtIndex(i, exitPrice, /* skipSlippage */ false);
           closed.push({ id: pos.id, pnl, reason: 'max_hold', size, entryPrice: entry });
           log.info(`Max hold duration exceeded: position #${pos.id}`, {
-            side: pos.side, entry: pos.entryPrice, exit: currentPrice,
+            side: pos.side, entry: pos.entryPrice, exit: exitPrice,
             holdHours: (holdMs / 3600000).toFixed(1),
             pnl: Math.round(pnl * 100) / 100,
+            cappedAtStop: exitPrice !== currentPrice,
           });
         }
       }

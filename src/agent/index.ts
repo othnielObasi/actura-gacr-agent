@@ -764,6 +764,7 @@ async function runCycle(): Promise<void> {
       fearGreed: sentiment.fearGreed,
       newsSentiment: sentiment.newsSentiment,
       fundingRate: sentiment.fundingRate,
+      socialSentiment: (sentiment as any).socialSentiment ?? null,
       sources: sentiment.sources,
     };
   }

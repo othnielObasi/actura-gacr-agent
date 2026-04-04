@@ -197,7 +197,7 @@ export function generateSignal(input: SignalInput): TradingSignal {
 
   // Determine direction (NEUTRAL if weak)
   let direction: SignalDirection = 'NEUTRAL';
-  if (confidence >= 0.08) {
+  if (confidence >= 0.05) {
     direction = alphaScore >= 0 ? 'LONG' : 'SHORT';
   }
 
@@ -228,7 +228,7 @@ export function generateSignal(input: SignalInput): TradingSignal {
       confidence = 0;
     } else {
       confidence = clamp(confidence + aceResult.modifier, 0, 1);
-      if (confidence < 0.08) {
+      if (confidence < 0.05) {
         direction = 'NEUTRAL';
         confidence = 0;
       }

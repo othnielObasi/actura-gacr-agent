@@ -19,6 +19,7 @@ export interface SentimentResult {
   fearGreed: number | null;   // -1 to +1
   newsSentiment: number | null; // -1 to +1
   fundingRate: number | null; // -1 to +1
+  socialSentiment: number | null; // -1 to +1 (PRISM social)
   sources: string[];          // which sources contributed
   fetchedAt: string;
 }
@@ -34,22 +35,28 @@ const FETCH_TIMEOUT_MS = 6000;
 const FEAR_GREED_TTL_MS = 5 * 60 * 1000;    // 5 min cache (updates hourly upstream)
 const NEWS_TTL_MS = 60 * 60 * 1000;          // 60 min cache (Alpha Vantage free tier: 25 req/day)
 const FUNDING_TTL_MS = 5 * 60 * 1000;        // 5 min cache
+const SOCIAL_TTL_MS = 5 * 60 * 1000;         // 5 min cache
 
 const FEAR_GREED_URL = 'https://api.alternative.me/fng/?limit=1';
 const ALPHAVANTAGE_API_KEY = process.env.ALPHAVANTAGE_API_KEY || '';
 const ALPHAVANTAGE_NEWS_URL = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=CRYPTO:ETH,CRYPTO:BTC&limit=50&apikey=${ALPHAVANTAGE_API_KEY}`;
 const KRAKEN_TICKER_URL = 'https://api.kraken.com/0/public/Ticker?pair=ETHUSD';
 
-// Weights for composite (sum to 1.0)
-const WEIGHT_FEAR_GREED = 0.40;
-const WEIGHT_NEWS = 0.35;
+const PRISM_BASE_URL = 'https://api.prismapi.ai';
+const PRISM_API_KEY = process.env.PRISM_API_KEY || '';
+
+// Weights for composite (sum to 1.0) — balanced across 4 independent sources
+const WEIGHT_FEAR_GREED = 0.25;
+const WEIGHT_NEWS = 0.25;
 const WEIGHT_FUNDING = 0.25;
+const WEIGHT_SOCIAL = 0.25;
 
 // ──── Cache ────
 
 let fearGreedCache: CachedValue<number> | null = null;
 let newsCache: CachedValue<number> | null = null;
 let fundingCache: CachedValue<number> | null = null;
+let socialCache: CachedValue<number> | null = null;
 
 // ──── Fear & Greed Index ────
 
@@ -79,9 +86,23 @@ async function fetchFearGreed(): Promise<number | null> {
     const raw = Number(data?.data?.[0]?.value);
     if (!Number.isFinite(raw)) return fearGreedCache?.value ?? null;
 
-    // Normalize: 0-100 → [-1, +1]
-    const normalized = (raw - 50) / 50;
+    // Normalize: 0-100 → [-1, +1] with contrarian extremes
+    // At extremes (<20 or >80), fear/greed historically marks reversals.
+    // Dampen the raw signal toward neutral at extremes to avoid always-bearish bias.
+    let normalized = (raw - 50) / 50;
     const classification = data?.data?.[0]?.value_classification ?? 'unknown';
+
+    if (raw <= 20) {
+      // Extreme fear → contrarian: dampen bearishness, shift toward neutral/bullish
+      // F&G=0 → +0.3 (mild bullish), F&G=10 → -0.1, F&G=20 → -0.2
+      normalized = -0.2 + (20 - raw) / 20 * 0.5;
+      log.info('Fear & Greed: contrarian override (extreme fear)', { raw, original: ((raw - 50) / 50).toFixed(2), contrarian: normalized.toFixed(2) });
+    } else if (raw >= 80) {
+      // Extreme greed → contrarian: dampen bullishness, shift toward neutral/bearish
+      // F&G=80 → +0.2, F&G=90 → +0.1, F&G=100 → -0.3
+      normalized = 0.2 - (raw - 80) / 20 * 0.5;
+      log.info('Fear & Greed: contrarian override (extreme greed)', { raw, original: ((raw - 50) / 50).toFixed(2), contrarian: normalized.toFixed(2) });
+    }
 
     fearGreedCache = { value: normalized, fetchedAt: Date.now() };
     log.info('Fear & Greed fetched', { raw, normalized: normalized.toFixed(2), classification });
@@ -300,16 +321,154 @@ async function fetchFundingProxy(): Promise<number | null> {
 
 // ──── Composite ────
 
+// ──── PRISM Social Sentiment ────
+
+/**
+ * Fetch crowd social sentiment from PRISM API.
+ * Returns a normalized [-1, +1] score based on social media analysis.
+ */
+async function fetchSocialSentiment(): Promise<number | null> {
+  if (socialCache && Date.now() - socialCache.fetchedAt < SOCIAL_TTL_MS) {
+    return socialCache.value;
+  }
+
+  if (!PRISM_API_KEY) {
+    return socialCache?.value ?? null;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'X-API-Key': PRISM_API_KEY,
+    };
+
+    const res = await fetch(`${PRISM_BASE_URL}/social/ETH/sentiment`, {
+      signal: controller.signal,
+      headers,
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      log.warn('PRISM social sentiment API error', { status: res.status });
+      return socialCache?.value ?? null;
+    }
+
+    const data = await res.json() as any;
+
+    // Extract sentiment score — PRISM returns various formats
+    // Look for a normalized score or compute from bullish/bearish ratio
+    let normalized: number | null = null;
+
+    if (typeof data?.sentiment_score === 'number') {
+      // Direct score, typically -1 to +1 or 0-100
+      const raw = data.sentiment_score;
+      normalized = raw > 1 || raw < -1 ? (raw - 50) / 50 : raw;
+    } else if (typeof data?.data?.sentiment_score === 'number') {
+      const raw = data.data.sentiment_score;
+      normalized = raw > 1 || raw < -1 ? (raw - 50) / 50 : raw;
+    } else if (typeof data?.bullish === 'number' && typeof data?.bearish === 'number') {
+      const total = data.bullish + data.bearish + (data.neutral ?? 0);
+      if (total > 0) {
+        normalized = (data.bullish - data.bearish) / total;
+      }
+    } else if (typeof data?.data?.bullish === 'number' && typeof data?.data?.bearish === 'number') {
+      const d = data.data;
+      const total = d.bullish + d.bearish + (d.neutral ?? 0);
+      if (total > 0) {
+        normalized = (d.bullish - d.bearish) / total;
+      }
+    }
+
+    if (normalized === null || !Number.isFinite(normalized)) {
+      log.warn('PRISM social: could not extract sentiment score');
+      return socialCache?.value ?? null;
+    }
+
+    normalized = Math.max(-1, Math.min(1, normalized));
+    socialCache = { value: normalized, fetchedAt: Date.now() };
+    log.info('PRISM social sentiment fetched', { normalized: normalized.toFixed(2) });
+    return normalized;
+  } catch (err: any) {
+    log.warn('PRISM social sentiment failed', { error: err.message?.slice(0, 80) });
+    return socialCache?.value ?? null;
+  }
+}
+
+// ──── PRISM Real Funding Rate ────
+
+/**
+ * Fetch real perpetual funding rates from PRISM.
+ * Positive funding = longs paying shorts = crowded longs = contrarian bearish.
+ * Negative funding = shorts paying longs = crowded shorts = contrarian bullish.
+ */
+async function fetchPrismFunding(): Promise<number | null> {
+  if (!PRISM_API_KEY) return null;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    const res = await fetch(`${PRISM_BASE_URL}/dex/ETH/funding/all`, {
+      signal: controller.signal,
+      headers: { 'Accept': 'application/json', 'X-API-Key': PRISM_API_KEY },
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) return null;
+
+    const data = await res.json() as any;
+    const rates = data?.data ?? data?.rates ?? data;
+
+    // Average funding rates across exchanges
+    let totalRate = 0;
+    let count = 0;
+    const rateValues = Array.isArray(rates) ? rates : Object.values(rates);
+    for (const item of rateValues) {
+      const rate = typeof item === 'number' ? item : (item?.funding_rate ?? item?.rate ?? null);
+      if (typeof rate === 'number' && Number.isFinite(rate)) {
+        totalRate += rate;
+        count++;
+      }
+    }
+
+    if (count === 0) return null;
+
+    const avgRate = totalRate / count;
+    // Funding rates are typically tiny (0.0001 = 0.01%)
+    // Normalize: ±0.05% → ±1.0, inverted (positive funding = bearish)
+    const normalized = Math.max(-1, Math.min(1, -Math.tanh(avgRate * 2000)));
+    log.info('PRISM funding fetched', { avgRate: (avgRate * 100).toFixed(4) + '%', normalized: normalized.toFixed(2), exchanges: count });
+    return normalized;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Fetch all sentiment sources in parallel and return weighted composite.
  * Gracefully degrades: if a source fails, remaining sources are re-weighted.
  */
 export async function fetchSentiment(): Promise<SentimentResult> {
-  const [fg, news, funding] = await Promise.all([
+  const [fg, news, funding, social] = await Promise.all([
     fetchFearGreed(),
     fetchNewsSentiment(),
     fetchFundingProxy(),
+    fetchSocialSentiment(),
   ]);
+
+  // Try PRISM real funding as upgrade over Kraken VWAP proxy
+  let effectiveFunding = funding;
+  let fundingSource = 'funding_proxy';
+  if (PRISM_API_KEY) {
+    const prismFunding = await fetchPrismFunding();
+    if (prismFunding !== null) {
+      effectiveFunding = prismFunding;
+      fundingSource = 'prism_funding';
+    }
+  }
 
   const sources: string[] = [];
   let weightedSum = 0;
@@ -325,10 +484,15 @@ export async function fetchSentiment(): Promise<SentimentResult> {
     totalWeight += WEIGHT_NEWS;
     sources.push('news');
   }
-  if (funding !== null) {
-    weightedSum += funding * WEIGHT_FUNDING;
+  if (effectiveFunding !== null) {
+    weightedSum += effectiveFunding * WEIGHT_FUNDING;
     totalWeight += WEIGHT_FUNDING;
-    sources.push('funding_proxy');
+    sources.push(fundingSource);
+  }
+  if (social !== null) {
+    weightedSum += social * WEIGHT_SOCIAL;
+    totalWeight += WEIGHT_SOCIAL;
+    sources.push('prism_social');
   }
 
   const composite = totalWeight > 0 ? weightedSum / totalWeight : 0;
@@ -341,7 +505,8 @@ export async function fetchSentiment(): Promise<SentimentResult> {
     composite,
     fearGreed: fg,
     newsSentiment: news,
-    fundingRate: funding,
+    fundingRate: effectiveFunding,
+    socialSentiment: social,
     sources,
     fetchedAt: new Date().toISOString(),
   };
