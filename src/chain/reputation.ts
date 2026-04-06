@@ -364,3 +364,52 @@ export function buildReputationFeedbackEnvelope(params: {
     createdAt: new Date().toISOString(),
   };
 }
+
+// ──── Hackathon ReputationRegistry (Sepolia) ────
+
+const HACKATHON_REPUTATION_ABI = [
+  'function submitFeedback(uint256 agentId, uint8 score, bytes32 outcomeRef, string comment, uint8 feedbackType) external',
+  'function getAverageScore(uint256 agentId) external view returns (uint256)',
+];
+
+/**
+ * Submit feedback to the hackathon's ReputationRegistry.
+ * feedbackType: 0 = general, 1 = trade outcome, 2 = quality
+ */
+export async function submitHackathonFeedback(
+  agentId: number,
+  score: number,
+  outcomeRef: string,
+  comment: string,
+  feedbackType: number = 0,
+): Promise<string> {
+  if (!config.reputationRegistry) throw new Error('REPUTATION_REGISTRY not set');
+
+  const wallet = getWallet();
+  const registry = new ethers.Contract(config.reputationRegistry, HACKATHON_REPUTATION_ABI, wallet);
+
+  const clampedScore = Math.max(0, Math.min(100, Math.round(score)));
+  log.info('Submitting hackathon feedback', { agentId, score: clampedScore, feedbackType });
+
+  const tx = await registry.submitFeedback(
+    agentId,
+    clampedScore,
+    outcomeRef,
+    comment,
+    feedbackType,
+  );
+  const receipt = await waitForTx(tx);
+  log.info('Hackathon feedback submitted', { txHash: receipt.hash });
+  return receipt.hash;
+}
+
+/**
+ * Get average reputation score from hackathon registry.
+ */
+export async function getHackathonReputation(agentId: number): Promise<number> {
+  if (!config.reputationRegistry) return 0;
+  const wallet = getWallet();
+  const registry = new ethers.Contract(config.reputationRegistry, HACKATHON_REPUTATION_ABI, wallet);
+  const score = await registry.getAverageScore(agentId);
+  return Number(score);
+}

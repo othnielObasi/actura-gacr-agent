@@ -5,13 +5,18 @@ export const config = {
   privateKey: process.env.PRIVATE_KEY || '',
   
   // Network
-  rpcUrl: process.env.RPC_URL || 'https://sepolia.base.org',
-  chainId: parseInt(process.env.CHAIN_ID || '84532'),
+  rpcUrl: process.env.RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com',
+  chainId: parseInt(process.env.CHAIN_ID || '11155111'),
   
-  // ERC-8004 Contracts (Reference Implementation — live on Base Sepolia)
+  // Hackathon Shared Contracts (Sepolia)
+  agentRegistryAddress: process.env.AGENT_REGISTRY_ADDRESS || '0x97b07dDc405B0c28B17559aFFE63BdB3632d0ca3',
+  hackathonVaultAddress: process.env.HACKATHON_VAULT_ADDRESS || '0x0E7CD8ef9743FEcf94f9103033a044caBD45fC90',
+  riskRouterAddress: process.env.RISK_ROUTER_ADDRESS || '0xd6A6952545FF6E6E6681c2d15C59f9EB8F40FdBC',
+  reputationRegistry: process.env.REPUTATION_REGISTRY || '0x423a9904e39537a9997fbaF0f220d79D7d545763',
+  validationRegistry: process.env.VALIDATION_REGISTRY || '0x92bF63E5C7Ac6980f237a7164Ab413BE226187F1',
+
+  // Legacy ERC-8004 Contracts (Base Sepolia)
   identityRegistry: process.env.IDENTITY_REGISTRY || '0x7177a6867296406881E20d6647232314736Dd09A',
-  reputationRegistry: process.env.REPUTATION_REGISTRY || '0xB5048e3ef1DA4E04deB6f7d0423D06F63869e322',
-  validationRegistry: process.env.VALIDATION_REGISTRY || '0x662b40A526cb4017d947e71eAF6753BF3eeE66d8',
   
   // IPFS
   pinataJwt: process.env.PINATA_JWT || '',
@@ -30,8 +35,7 @@ export const config = {
   requireHumanApprovalAboveUsd: parseFloat(process.env.REQUIRE_HUMAN_APPROVAL_ABOVE_USD || '20000'),
 
   // Hackathon / ERC-8004 adapters
-  riskRouterAddress: process.env.RISK_ROUTER_ADDRESS || '',
-  capitalVaultAddress: process.env.CAPITAL_VAULT_ADDRESS || '',
+  capitalVaultAddress: process.env.CAPITAL_VAULT_ADDRESS || '',  // legacy
   dexRouterAddress: process.env.DEX_ROUTER_ADDRESS || '',
   validatorAddress: process.env.VALIDATOR_ADDRESS || '',
   preferredReviewerAddresses: (process.env.PREFERRED_REVIEWER_ADDRESSES || '').split(',').map(s => s.trim()).filter(Boolean),

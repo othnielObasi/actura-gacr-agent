@@ -143,7 +143,7 @@ const erc8004Resource: McpResource = {
     reputationRegistry: config.reputationRegistry,
     validationRegistry: config.validationRegistry,
     riskRouterAddress: config.riskRouterAddress,
-    capitalVaultAddress: config.capitalVaultAddress,
+    hackathonVaultAddress: config.hackathonVaultAddress,
     mcpEndpoint: config.mcpEndpoint,
     a2aEndpoint: config.a2aEndpoint,
     registrationUri: config.registrationUri,
@@ -152,7 +152,7 @@ const erc8004Resource: McpResource = {
       reputation: Boolean(config.reputationRegistry),
       validation: Boolean(config.validationRegistry),
       router: Boolean(config.riskRouterAddress),
-      vault: Boolean(config.capitalVaultAddress),
+      vault: Boolean(config.hackathonVaultAddress),
     },
   }),
 };

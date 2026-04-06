@@ -367,22 +367,25 @@ const executeTrade: McpTool = {
   inputSchema: {
     type: 'object',
     properties: {
-      asset_address: { type: 'string', description: 'ERC-20 or wrapped asset address' },
-      side: { type: 'string', enum: ['LONG', 'SHORT'] },
-      amount_wei: { type: 'string', description: 'Trade amount in wei as a string' },
+      pair: { type: 'string', description: 'Trading pair e.g. XBTUSD' },
+      action: { type: 'string', enum: ['BUY', 'SELL'] },
+      amount_usd: { type: 'number', description: 'Trade amount in USD' },
       slippage_bps: { type: 'number', description: 'Max slippage in basis points' },
       deadline_seconds: { type: 'number', description: 'Intent deadline in seconds from now' },
       sign_intent: { type: 'boolean', description: 'Whether to sign the intent if wallet is configured' },
     },
-    required: ['asset_address', 'side', 'amount_wei'],
+    required: ['pair', 'action', 'amount_usd'],
   },
   handler: async (args) => {
+    const agentId = config.agentId ?? 0;
     const intent = buildTradeIntent({
-      assetAddress: String(args.asset_address),
-      side: args.side === 'SHORT' ? 'SHORT' : 'LONG',
-      amountWei: BigInt(String(args.amount_wei)),
-      slippageBps: typeof args.slippage_bps === 'number' ? args.slippage_bps : 50,
+      agentId,
+      pair: String(args.pair || 'XBTUSD'),
+      action: args.action === 'SELL' ? 'SELL' : 'BUY',
+      amountUsd: typeof args.amount_usd === 'number' ? args.amount_usd : 100,
+      slippageBps: typeof args.slippage_bps === 'number' ? args.slippage_bps : 100,
       deadlineSeconds: typeof args.deadline_seconds === 'number' ? args.deadline_seconds : 300,
+      nonce: 0n,
     });
 
     const hash = hashTradeIntent(intent);

@@ -1255,7 +1255,7 @@ if (MODE === 'live') {
     }
 
     // Claim sandbox capital (idempotent — safe to call multiple times)
-    if (config.capitalVaultAddress) {
+    if (config.hackathonVaultAddress && config.agentId) {
       try {
         await claimSandboxCapital();
       } catch (e) {

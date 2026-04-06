@@ -197,3 +197,89 @@ export async function getAgentCount(): Promise<number> {
   const wallet = getWallet();
   return Number(await registry.balanceOf(wallet.address));
 }
+
+// ──── Hackathon AgentRegistry (Sepolia) ────
+
+const HACKATHON_REGISTRY_ABI = [
+  'function register(address agentWallet, string name, string description, string[] capabilities, string agentURI) external returns (uint256 agentId)',
+  'function isRegistered(uint256 agentId) external view returns (bool)',
+  'function getAgent(uint256 agentId) external view returns (tuple(address operatorWallet, address agentWallet, string name, string description, string[] capabilities, uint256 registeredAt, bool active))',
+  'function getSigningNonce(uint256 agentId) external view returns (uint256)',
+  'event AgentRegistered(uint256 indexed agentId, address indexed operatorWallet, address indexed agentWallet)',
+  'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
+];
+
+/**
+ * Register agent on the hackathon's shared AgentRegistry.
+ * Uses operatorWallet (PRIVATE_KEY) to call register, passing agentWallet address.
+ * We use the same wallet for both operator and agent signing.
+ */
+export async function registerOnHackathonRegistry(params: {
+  agentURI?: string;
+  name?: string;
+  description?: string;
+  capabilities?: string[];
+}): Promise<number> {
+  if (!config.agentRegistryAddress) throw new Error('AGENT_REGISTRY_ADDRESS not set');
+
+  const wallet = getWallet();
+  const registry = new ethers.Contract(config.agentRegistryAddress, HACKATHON_REGISTRY_ABI, wallet);
+
+  const name = params.name || config.agentName || 'Actura';
+  const description = params.description || config.agentDescription || 'Accountable autonomous trading agent';
+  const capabilities = params.capabilities || [
+    'trading',
+    'eip712-signing',
+    'risk-management',
+    'neuro-symbolic-reasoning',
+    'sentiment-analysis',
+    'self-adapting',
+  ];
+  const agentURI = params.agentURI || config.registrationUri || '';
+
+  console.log(`[IDENTITY] Registering on hackathon AgentRegistry...`);
+  console.log(`[IDENTITY] Name: ${name}`);
+  console.log(`[IDENTITY] Agent wallet: ${wallet.address}`);
+  console.log(`[IDENTITY] Capabilities: ${capabilities.join(', ')}`);
+
+  const tx = await registry.register(
+    wallet.address,    // agentWallet (same as operator for simplicity)
+    name,
+    description,
+    capabilities,
+    agentURI,
+  );
+  const receipt = await waitForTx(tx);
+
+  // Parse agentId from events
+  let agentId: number | null = null;
+  for (const eventLog of receipt.logs) {
+    try {
+      const parsed = registry.interface.parseLog({ topics: [...eventLog.topics], data: eventLog.data });
+      if (parsed?.name === 'AgentRegistered') {
+        agentId = Number(parsed.args.agentId);
+        break;
+      }
+      if (parsed?.name === 'Transfer' && parsed.args[0] === ethers.ZeroAddress) {
+        agentId = Number(parsed.args[2]); // tokenId from mint
+        break;
+      }
+    } catch { /* not our event */ }
+  }
+
+  if (agentId === null) throw new Error('Could not parse agentId from registration receipt');
+
+  console.log(`[IDENTITY] Registered! agentId = ${agentId}`);
+  console.log(`[IDENTITY] Tx: ${receipt.hash}`);
+  return agentId;
+}
+
+/**
+ * Check if an agentId is registered on the hackathon registry.
+ */
+export async function isRegisteredOnHackathon(agentId: number): Promise<boolean> {
+  if (!config.agentRegistryAddress) return false;
+  const wallet = getWallet();
+  const registry = new ethers.Contract(config.agentRegistryAddress, HACKATHON_REGISTRY_ABI, wallet);
+  return registry.isRegistered(agentId);
+}

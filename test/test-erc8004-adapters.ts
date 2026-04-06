@@ -17,9 +17,9 @@ export async function run() {
   assert.ok(createRegistrationDataUri(reg).startsWith('data:application/json;base64,'));
 
   resetNonce();
-  const intent = buildTradeIntent({ assetAddress: '0x4200000000000000000000000000000000000006', side: 'LONG', amountWei: 10n, slippageBps: 50, deadlineSeconds: 60 });
+  const intent = buildTradeIntent({ agentId: 7, pair: 'XBTUSD', action: 'BUY', amountUsd: 100, slippageBps: 100, deadlineSeconds: 60, nonce: 0n });
   assert.equal(typeof hashTradeIntent(intent), 'string');
-  assert.equal(intent.side, 0);
+  assert.equal(intent.action, 'BUY');
 
   const vr = buildValidationRequestPayload({ validatorAddress: '0x0000000000000000000000000000000000000001', agentId: 7, requestURI: 'ipfs://abc', input: { foo: 'bar' } });
   assert.equal(vr.agentId, 7);

@@ -1,24 +1,14 @@
 /**
- * Trade Executor — Hackathon Execution Flow
- * 
- * The hackathon provides:
- * - Capital Vault: funded sub-account (claim sandbox first)
- * - Risk Router: submit signed TradeIntents, it handles execution
- * - Validation Registry: post validation artifacts
- * - Reputation Registry: post performance feedback
- * 
- * Our execution flow:
+ * Trade Executor — Hackathon Shared Contract Flow (Sepolia)
+ *
+ * Full pipeline:
  * 1. Build TradeIntent from strategy output
- * 2. Sign with EIP-712
- * 3. Submit to Risk Router (it executes the swap)
- * 4. Upload validation artifact to IPFS
- * 5. Submit validation request + response on-chain
- * 6. Post reputation feedback
- * 
- * We do NOT:
- * - Interact with DEX directly (Risk Router does it)
- * - Manage tokens (Capital Vault does it)
- * - Enforce position limits on-chain (Risk Router does it)
+ * 2. Simulate via RiskRouter.simulateIntent() (dry-run)
+ * 3. Sign with EIP-712
+ * 4. Submit to RiskRouter.submitTradeIntent()
+ * 5. Upload validation artifact to IPFS
+ * 6. Post checkpoint to ValidationRegistry.postEIP712Attestation()
+ * 7. Post reputation feedback to ReputationRegistry.submitFeedback()
  */
 
 import { ethers } from 'ethers';
@@ -26,30 +16,26 @@ import { createLogger } from '../agent/logger.js';
 import { retry } from '../agent/retry.js';
 import { config } from '../agent/config.js';
 import { getWallet, getWalletAddress, getBalance, initChain } from './sdk.js';
-import { buildTradeIntent, signTradeIntent, TRADE_INTENT_TYPES, getTradeIntentDomain, type TradeIntentData } from './intent.js';
+import { buildTradeIntent, signTradeIntent, TRADE_INTENT_TYPES, getTradeIntentDomain, hashTradeIntent, type TradeIntentData } from './intent.js';
 import { verifyTypedDataSignature } from './eip1271.js';
-import { submitTradeIntent, getIntentStatus, claimSandbox } from './risk-router.js';
-import { validateTradeArtifact, computeRequestHash } from './validation.js';
-import { buildFeedbackJson, postTradeOutcomeFeedback } from './reputation.js';
+import { submitTradeIntent, simulateIntent, getIntentNonce } from './risk-router.js';
+import { postCheckpoint } from './validation.js';
+import { submitHackathonFeedback } from './reputation.js';
 import { simulateExecution } from './execution-simulator.js';
-import { uploadArtifact, uploadJson } from '../trust/ipfs.js';
+import { uploadArtifact } from '../trust/ipfs.js';
 import type { ValidationArtifact } from '../trust/artifact-emitter.js';
 import type { StrategyOutput } from '../strategy/momentum.js';
 import type { RiskDecision } from '../risk/engine.js';
 
 const log = createLogger('EXECUTOR');
 
-// Standard addresses on Base Sepolia — will be updated when hackathon publishes them
-const WETH_ADDRESS = process.env.WETH_ADDRESS || '0x4200000000000000000000000000000000000006';
-const USDC_ADDRESS = process.env.USDC_ADDRESS || '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
-
 export interface ExecutionResult {
   success: boolean;
-  intentId: string | null;
+  intentHash: string | null;
   intentTxHash: string | null;
-  intentStatus: string | null;
-  validationRequestHash: string | null;
-  validationTxHash: string | null;
+  approved: boolean | null;
+  rejectReason: string | null;
+  checkpointTxHash: string | null;
   reputationTxHash: string | null;
   artifactIpfsCid: string | null;
   artifactIpfsUri: string | null;
@@ -57,9 +43,11 @@ export interface ExecutionResult {
   executionTimeMs: number;
 }
 
+// Keep backward compat — old code references these fields
+export { ExecutionResult as ExecutionResultLegacy };
+
 /**
- * Full trade execution pipeline
- * Called when a trade is approved by the local risk engine
+ * Full trade execution pipeline via hackathon shared contracts.
  */
 export async function executeTrade(
   strategyOutput: StrategyOutput,
@@ -70,11 +58,11 @@ export async function executeTrade(
   const start = Date.now();
   const result: ExecutionResult = {
     success: false,
-    intentId: null,
+    intentHash: null,
     intentTxHash: null,
-    intentStatus: null,
-    validationRequestHash: null,
-    validationTxHash: null,
+    approved: null,
+    rejectReason: null,
+    checkpointTxHash: null,
     reputationTxHash: null,
     artifactIpfsCid: null,
     artifactIpfsUri: null,
@@ -83,40 +71,60 @@ export async function executeTrade(
   };
 
   try {
-    // ── Step 0: Pre-trade execution simulation ──
-    const simulation = simulateExecution({ strategyOutput, riskDecision });
-    if (!simulation.allowed) {
-      result.error = `Execution simulation blocked trade: ${simulation.reason}`;
+    // ── Step 0: Local pre-trade simulation ──
+    const localSim = simulateExecution({ strategyOutput, riskDecision });
+    if (!localSim.allowed) {
+      result.error = `Local simulation blocked: ${localSim.reason}`;
       result.executionTimeMs = Date.now() - start;
-      log.warn('Execution simulation blocked trade', simulation);
+      log.warn('Local simulation blocked trade', localSim);
       return result;
     }
 
-  // ── Step 1: Build TradeIntent ──
-    log.info('Building TradeIntent...');
+    // ── Step 1: Get on-chain nonce ──
+    const nonce = await retry(
+      () => getIntentNonce(agentId),
+      { maxRetries: 2, baseDelayMs: 1000, label: 'Get intent nonce' },
+    );
+    log.info('Got on-chain nonce', { nonce: nonce.toString() });
 
-    const assetAddress = config.tradingPair.startsWith('WETH') ? WETH_ADDRESS : USDC_ADDRESS;
-    const side = strategyOutput.signal.direction as 'LONG' | 'SHORT';
-
-    // Convert position size to wei (18 decimals for WETH)
-    const amountWei = ethers.parseEther(riskDecision.finalPositionSize.toFixed(18));
+    // ── Step 2: Build TradeIntent ──
+    const direction = strategyOutput.signal.direction as 'LONG' | 'SHORT';
+    const action = direction === 'LONG' ? 'BUY' : 'SELL';
+    // Position size in USD (capped at $500 per hackathon rules)
+    const positionUsd = Math.min(riskDecision.finalPositionSize * 100, 500);
 
     const intent = buildTradeIntent({
-      assetAddress,
-      side,
-      amountWei,
-      slippageBps: 50,         // 0.5% max slippage
-      deadlineSeconds: 300,     // 5 minute deadline
-      reasoning: (artifact as any).aiReasoning?.summary ?? '',
+      agentId,
+      pair: config.tradingPair === 'WETH/USDC' ? 'XBTUSD' : config.tradingPair,
+      action,
+      amountUsd: positionUsd,
+      slippageBps: 100,       // 1% max slippage
+      deadlineSeconds: 300,   // 5 min deadline
+      nonce,
     });
 
-    // ── Step 2: Sign with EIP-712 ──
+    // ── Step 3: Simulate on-chain (dry-run) ──
+    log.info('Simulating intent on RiskRouter...');
+    try {
+      const sim = await simulateIntent(intent);
+      if (!sim.valid) {
+        result.error = `RiskRouter simulation rejected: ${sim.reason}`;
+        result.rejectReason = sim.reason;
+        result.executionTimeMs = Date.now() - start;
+        log.warn('RiskRouter simulation rejected', { reason: sim.reason });
+        return result;
+      }
+      log.info('RiskRouter simulation passed');
+    } catch (err: any) {
+      // simulateIntent might revert on some contract versions — log but don't block
+      log.warn('simulateIntent reverted — proceeding to live submit', { error: err.message?.slice(0, 80) });
+    }
+
+    // ── Step 4: Sign with EIP-712 ──
     log.info('Signing TradeIntent (EIP-712)...');
     const { signature, domain } = await signTradeIntent(intent);
-    log.info('Intent signed', { nonce: intent.nonce.toString() });
 
-    // ── Step 2b: EIP-1271 signature verification ──
-    log.info('Verifying signature (EIP-1271 aware)...');
+    // ── Step 4b: Verify signature locally ──
     const wallet = getWallet();
     const verification = await verifyTypedDataSignature(
       wallet.address,
@@ -126,96 +134,78 @@ export async function executeTrade(
       signature,
     );
     if (!verification.valid) {
-      result.error = `EIP-1271 signature verification failed: ${verification.reason}`;
+      result.error = `Signature verification failed: ${verification.reason}`;
       result.executionTimeMs = Date.now() - start;
       log.error('Signature verification failed', verification);
       return result;
     }
-    log.info('Signature verified', { method: verification.method, signer: verification.signer });
 
-    // ── Step 3: Submit to Risk Router ──
-    log.info('Submitting to Risk Router...');
-    const { intentId, txHash } = await retry(
+    // ── Step 5: Submit to RiskRouter ──
+    log.info('Submitting to RiskRouter...');
+    const submission = await retry(
       () => submitTradeIntent(intent, signature),
-      { maxRetries: 2, baseDelayMs: 2000, label: 'Risk Router submit' }
+      { maxRetries: 2, baseDelayMs: 2000, label: 'RiskRouter submit' },
     );
 
-    result.intentId = intentId;
-    result.intentTxHash = txHash;
-    log.info('Intent submitted', { intentId, txHash });
+    result.intentHash = submission.intentHash;
+    result.intentTxHash = submission.txHash;
+    result.approved = submission.approved;
+    result.rejectReason = submission.rejectReason ?? null;
 
-    // ── Step 4: Check execution status ──
-    // Give the Risk Router a moment to process
-    await sleep(2000);
-
-    const status = await retry(
-      () => getIntentStatus(intentId),
-      { maxRetries: 3, baseDelayMs: 1000, label: 'Intent status check' }
-    );
-    result.intentStatus = status;
-
-    if (status === 'REJECTED' || status === 'EXPIRED') {
-      log.warn(`Intent ${status} by Risk Router`, { intentId });
-      result.error = `Risk Router ${status.toLowerCase()} the intent`;
+    if (!submission.approved) {
+      result.error = `Trade rejected: ${submission.rejectReason || 'unknown'}`;
       result.executionTimeMs = Date.now() - start;
       return result;
     }
 
-    log.info(`Intent status: ${status}`, { intentId });
+    log.info('Trade approved by RiskRouter!', { intentHash: submission.intentHash });
 
-    // ── Step 5: Upload validation artifact to IPFS ──
-    log.info('Uploading validation artifact to IPFS...');
-    const ipfsResult = await retry(
-      () => uploadArtifact(artifact),
-      { maxRetries: 2, baseDelayMs: 1000, label: 'IPFS artifact upload' }
-    );
-    result.artifactIpfsCid = ipfsResult.cid;
-    result.artifactIpfsUri = ipfsResult.uri;
-    log.info('Artifact uploaded', { cid: ipfsResult.cid });
-
-    // ── Step 6: Submit validation on-chain ──
-    log.info('Submitting validation on-chain...');
-    const validatorKey = process.env.VALIDATOR_PRIVATE_KEY;
-    if (validatorKey) {
-      const validation = await retry(
-        () => validateTradeArtifact(
-          agentId,
-          validatorKey,
-          ipfsResult.uri,
-          artifact as object,
-          riskDecision.checks,
-        ),
-        { maxRetries: 2, baseDelayMs: 2000, label: 'Validation submission' }
+    // ── Step 6: Upload artifact to IPFS ──
+    let ipfsCid = '';
+    let ipfsUri = '';
+    try {
+      const ipfsResult = await retry(
+        () => uploadArtifact(artifact),
+        { maxRetries: 2, baseDelayMs: 1000, label: 'IPFS upload' },
       );
-      result.validationRequestHash = validation.requestHash;
-      result.validationTxHash = validation.responseTx;
-      log.info('Validation submitted', {
-        requestHash: validation.requestHash,
-        score: validation.score,
-      });
-    } else {
-      log.warn('VALIDATOR_PRIVATE_KEY not set — skipping on-chain validation');
+      ipfsCid = ipfsResult.cid;
+      ipfsUri = ipfsResult.uri;
+      result.artifactIpfsCid = ipfsCid;
+      result.artifactIpfsUri = ipfsUri;
+      log.info('Artifact uploaded to IPFS', { cid: ipfsCid });
+    } catch (err: any) {
+      log.warn('IPFS upload failed — continuing without artifact', { error: err.message?.slice(0, 80) });
     }
 
-    // ── Step 7: Post reputation feedback ──
-    const reviewerKey = process.env.REVIEWER_PRIVATE_KEY || process.env.VALIDATOR_PRIVATE_KEY;
-    if (reviewerKey) {
-      // Estimate realized yield from signal confidence and position sizing
-      // When Risk Router returns fill prices, replace with actual PnL
-      const conf = strategyOutput.signal.confidence;
-      const dir = strategyOutput.signal.direction === 'LONG' ? 1 : -1;
-      const realizedYieldPct = dir * (conf - 0.5) * riskDecision.finalPositionSize * 0.01;
-      result.reputationTxHash = await retry(
-        () => postTradeOutcomeFeedback(reviewerKey, agentId, {
-          yieldPercent: realizedYieldPct,
-          period: 'day',
-          artifactUri: ipfsResult.uri,
-        }),
-        { maxRetries: 2, baseDelayMs: 1500, label: 'Reputation submission' }
+    // ── Step 7: Post checkpoint to ValidationRegistry ──
+    try {
+      const checkpointHash = hashTradeIntent(intent);
+      const score = Math.min(100, Math.round(strategyOutput.signal.confidence * 100));
+      const notes = `${action} ${intent.pair} $${positionUsd} | conf=${strategyOutput.signal.confidence.toFixed(2)}`;
+
+      result.checkpointTxHash = await retry(
+        () => postCheckpoint(agentId, checkpointHash, score, notes),
+        { maxRetries: 2, baseDelayMs: 1500, label: 'Checkpoint post' },
       );
-      log.info('Reputation feedback submitted', { txHash: result.reputationTxHash });
-    } else {
-      log.warn('REVIEWER_PRIVATE_KEY not set — skipping on-chain reputation feedback');
+      log.info('Checkpoint posted', { txHash: result.checkpointTxHash });
+    } catch (err: any) {
+      log.warn('Checkpoint post failed', { error: err.message?.slice(0, 80) });
+    }
+
+    // ── Step 8: Post reputation feedback ──
+    try {
+      const conf = strategyOutput.signal.confidence;
+      const feedbackScore = Math.min(100, Math.round(conf * 100));
+      const outcomeRef = ethers.keccak256(ethers.toUtf8Bytes(submission.intentHash));
+      const comment = `Trade ${action} ${intent.pair} | amount=$${positionUsd} | conf=${conf.toFixed(2)}`;
+
+      result.reputationTxHash = await retry(
+        () => submitHackathonFeedback(agentId, feedbackScore, outcomeRef, comment, 0),
+        { maxRetries: 2, baseDelayMs: 1500, label: 'Reputation feedback' },
+      );
+      log.info('Reputation feedback posted', { txHash: result.reputationTxHash });
+    } catch (err: any) {
+      log.warn('Reputation feedback failed', { error: err.message?.slice(0, 80) });
     }
 
     // ── Done ──
@@ -223,9 +213,9 @@ export async function executeTrade(
     result.executionTimeMs = Date.now() - start;
 
     log.info(`Trade executed successfully in ${result.executionTimeMs}ms`, {
-      intentId,
-      status,
-      artifactCid: ipfsResult.cid,
+      intentHash: submission.intentHash,
+      approved: true,
+      artifactCid: ipfsCid || 'none',
     });
 
     return result;
@@ -238,24 +228,77 @@ export async function executeTrade(
   }
 }
 
+// ──── Hackathon Vault ────
+
+const VAULT_ABI = [
+  'function claimAllocation(uint256 agentId) external',
+  'function getBalance(uint256 agentId) external view returns (uint256)',
+  'function hasClaimed(uint256 agentId) external view returns (bool)',
+  'function allocationPerTeam() external view returns (uint256)',
+];
+
 /**
- * Claim sandbox capital from the hackathon vault
- * Call once after registration
+ * Claim sandbox capital from the HackathonVault.
+ * Every team gets 0.05 ETH — one claim per agentId.
  */
 export async function claimSandboxCapital(): Promise<string> {
-  log.info('Claiming sandbox capital from vault...');
+  if (!config.hackathonVaultAddress) {
+    log.warn('HACKATHON_VAULT_ADDRESS not set — skipping claim');
+    return '';
+  }
+  if (!config.agentId) {
+    log.warn('AGENT_ID not set — cannot claim vault');
+    return '';
+  }
 
-  const txHash = await retry(
-    () => claimSandbox(),
-    { maxRetries: 3, baseDelayMs: 3000, label: 'Sandbox claim' }
+  const wallet = getWallet();
+  const vault = new ethers.Contract(config.hackathonVaultAddress, VAULT_ABI, wallet);
+
+  // Check if already claimed
+  try {
+    const claimed = await vault.hasClaimed(config.agentId);
+    if (claimed) {
+      log.info('Sandbox capital already claimed');
+      const balance = await vault.getBalance(config.agentId);
+      log.info('Vault balance', { eth: ethers.formatEther(balance) });
+      return 'already_claimed';
+    }
+  } catch { /* hasClaimed might not exist — proceed to claim */ }
+
+  log.info('Claiming sandbox capital...', { agentId: config.agentId });
+  const tx = await vault.claimAllocation(config.agentId);
+  const receipt = await retry(
+    async () => {
+      const r = await tx.wait();
+      if (!r) throw new Error('No receipt');
+      return r;
+    },
+    { maxRetries: 3, baseDelayMs: 3000, label: 'Vault claim wait' },
   );
 
-  log.info('Sandbox capital claimed!', { txHash });
-  return txHash;
+  log.info('Sandbox capital claimed!', { txHash: receipt.hash });
+  return receipt.hash;
 }
 
 /**
- * Pre-flight check — verify everything is ready for trading
+ * Check sandbox balance in the vault
+ */
+export async function getSandboxBalance(): Promise<string> {
+  if (!config.hackathonVaultAddress || !config.agentId) return '0';
+
+  try {
+    const wallet = getWallet();
+    const vault = new ethers.Contract(config.hackathonVaultAddress, VAULT_ABI, wallet);
+    const balance = await vault.getBalance(config.agentId);
+    return ethers.formatEther(balance);
+  } catch (error) {
+    log.error('Failed to check sandbox balance', { error: String(error) });
+    return '0';
+  }
+}
+
+/**
+ * Pre-flight check — verify everything is ready for trading.
  */
 export async function preflight(): Promise<{ ready: boolean; issues: string[] }> {
   const issues: string[] = [];
@@ -281,9 +324,15 @@ export async function preflight(): Promise<{ ready: boolean; issues: string[] }>
     issues.push('Cannot check balance — RPC connection failed');
   }
 
-  // Check Risk Router
+  // Check hackathon contracts
   if (!config.riskRouterAddress) {
-    issues.push('RISK_ROUTER_ADDRESS not set — wait for hackathon to publish');
+    issues.push('RISK_ROUTER_ADDRESS not set');
+  }
+  if (!config.agentId) {
+    issues.push('AGENT_ID not set — register on AgentRegistry first');
+  }
+  if (!config.hackathonVaultAddress) {
+    issues.push('HACKATHON_VAULT_ADDRESS not set');
   }
 
   // Check Validation Registry
@@ -299,39 +348,10 @@ export async function preflight(): Promise<{ ready: boolean; issues: string[] }>
   if (issues.length > 0) {
     issues.forEach(i => log.warn(`Preflight: ${i}`));
   } else {
-    log.info('Preflight passed — ready to trade');
+    log.info('Preflight passed — ready to trade on hackathon sandbox');
   }
 
   return { ready: issues.length === 0, issues };
-}
-
-/**
- * Capital Vault ABI — claim sandbox sub-account
- */
-const VAULT_ABI = [
-  'function claimSandbox(address agent) external',
-  'function getBalance(address agent) external view returns (uint256)',
-  'event SandboxClaimed(address indexed agent, uint256 amount)',
-];
-
-/**
- * Check sandbox balance in the vault
- */
-export async function getSandboxBalance(): Promise<string> {
-  if (!config.capitalVaultAddress) {
-    log.warn('CAPITAL_VAULT_ADDRESS not set');
-    return '0';
-  }
-
-  try {
-    const wallet = getWallet();
-    const vault = new ethers.Contract(config.capitalVaultAddress, VAULT_ABI, wallet);
-    const balance = await vault.getBalance(wallet.address);
-    return ethers.formatUnits(balance, 6);  // USDC has 6 decimals
-  } catch (error) {
-    log.error('Failed to check sandbox balance', { error: String(error) });
-    return '0';
-  }
 }
 
 function sleep(ms: number): Promise<void> {

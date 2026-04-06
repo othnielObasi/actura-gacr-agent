@@ -294,3 +294,55 @@ export async function getValidationSummary(
   const [count, averageResponse] = await registry.getSummary(agentId, validatorAddresses, tagBytes32);
   return { count: Number(count), averageResponse: Number(averageResponse) };
 }
+
+// ──── Hackathon ValidationRegistry (Sepolia) ────
+
+const HACKATHON_VALIDATION_ABI = [
+  'function postEIP712Attestation(uint256 agentId, bytes32 checkpointHash, uint8 score, string notes) external',
+  'function getAverageValidationScore(uint256 agentId) external view returns (uint256)',
+];
+
+let hackathonValidationContract: ethers.Contract | null = null;
+
+function getHackathonValidationContract(): ethers.Contract {
+  if (!hackathonValidationContract) {
+    if (!config.validationRegistry) throw new Error('VALIDATION_REGISTRY not set');
+    hackathonValidationContract = new ethers.Contract(
+      config.validationRegistry,
+      HACKATHON_VALIDATION_ABI,
+      getWallet(),
+    );
+  }
+  return hackathonValidationContract;
+}
+
+/**
+ * Post a checkpoint to the hackathon ValidationRegistry.
+ * Called after every trade decision for judging.
+ */
+export async function postCheckpoint(
+  agentId: number,
+  checkpointHash: string,
+  score: number,
+  notes: string,
+): Promise<string> {
+  const registry = getHackathonValidationContract();
+  const clampedScore = Math.max(0, Math.min(100, Math.round(score)));
+
+  log.info('Posting checkpoint', { agentId, score: clampedScore, notes: notes.slice(0, 60) });
+
+  const tx = await registry.postEIP712Attestation(agentId, checkpointHash, clampedScore, notes);
+  const receipt = await waitForTx(tx);
+
+  log.info('Checkpoint posted', { txHash: receipt.hash });
+  return receipt.hash;
+}
+
+/**
+ * Get average validation score for our agent.
+ */
+export async function getAverageValidationScore(agentId: number): Promise<number> {
+  const registry = getHackathonValidationContract();
+  const score = await registry.getAverageValidationScore(agentId);
+  return Number(score);
+}
