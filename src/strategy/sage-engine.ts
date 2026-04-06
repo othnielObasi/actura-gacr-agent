@@ -1,5 +1,5 @@
 /**
- * ACE — Agentic Context Engineering
+ * SAGE — Self-Adapting Generative Engine
  *
  * An adaptive learning layer for responsible, self-improving AI agents.
  * Sits between the agent planner and signal generation, observing trade
@@ -23,14 +23,14 @@ import { writeFileSync, readFileSync, existsSync, mkdirSync, appendFileSync } fr
 import { join } from 'path';
 import { createLogger } from '../agent/logger.js';
 
-const log = createLogger('ACE');
+const log = createLogger('SAGE');
 
 // ── Configuration ──
 
-const ACE_ENABLED = process.env.ACE_ENABLED !== 'false';
-const ACE_MIN_OUTCOMES = parseInt(process.env.ACE_MIN_OUTCOMES || '3');
-const ACE_MAX_RULES = parseInt(process.env.ACE_MAX_RULES || '20');
-const ACE_REFLECTION_COOLDOWN = parseInt(process.env.ACE_REFLECTION_COOLDOWN || '5');
+const SAGE_ENABLED = process.env.SAGE_ENABLED !== 'false';
+const SAGE_MIN_OUTCOMES = parseInt(process.env.SAGE_MIN_OUTCOMES || '3');
+const SAGE_MAX_RULES = parseInt(process.env.SAGE_MAX_RULES || '20');
+const SAGE_REFLECTION_COOLDOWN = parseInt(process.env.SAGE_REFLECTION_COOLDOWN || '5');
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent';
 
@@ -61,7 +61,7 @@ export interface ScorecardWeights {
 
 // ── Types ──
 
-export interface ACEOutcome {
+export interface SAGEOutcome {
   direction: 'LONG' | 'SHORT';
   entryPrice: number;
   exitPrice: number;
@@ -105,8 +105,8 @@ export interface WeightRecommendation {
   reasoning: string;
 }
 
-export interface ACEReflection {
-  type: 'ace_reflection';
+export interface SAGEReflection {
+  type: 'sage_reflection';
   timestamp: string;
   cycleNumber: number;
   tradesAnalyzed: number;
@@ -120,18 +120,18 @@ export interface ACEReflection {
 
 const STATE_DIR = join(process.cwd(), '.actura');
 const PLAYBOOK_FILE = join(STATE_DIR, 'playbook.jsonl');
-const WEIGHTS_FILE = join(STATE_DIR, 'ace-weights.json');
-const REFLECTIONS_FILE = join(STATE_DIR, 'ace-reflections.jsonl');
+const WEIGHTS_FILE = join(STATE_DIR, 'sage-weights.json');
+const REFLECTIONS_FILE = join(STATE_DIR, 'sage-reflections.jsonl');
 
 let currentWeights: ScorecardWeights = { ...getDefaultWeights() };
 let activeRules: PlaybookRule[] = [];
-let reflectionHistory: ACEReflection[] = [];
-let pendingOutcomes: ACEOutcome[] = [];
+let reflectionHistory: SAGEReflection[] = [];
+let pendingOutcomes: SAGEOutcome[] = [];
 let totalOutcomesRecorded = 0;
 let cyclesSinceReflection = 0;
 let lastContextPrefix = '';
 let preReflectionWinRate = 0;    // overfitting: track pre-reflection baseline
-let postReflectionOutcomes: ACEOutcome[] = []; // overfitting: monitor post-change perf
+let postReflectionOutcomes: SAGEOutcome[] = []; // overfitting: monitor post-change perf
 let previousWeights: ScorecardWeights | null = null; // overfitting: rollback snapshot
 
 function getDefaultWeights(): ScorecardWeights {
@@ -148,29 +148,29 @@ function getDefaultWeights(): ScorecardWeights {
 
 // ── Public API ──
 
-export function isACEEnabled(): boolean {
-  return ACE_ENABLED;
+export function isSAGEEnabled(): boolean {
+  return SAGE_ENABLED;
 }
 
-export function getACEWeights(): Readonly<ScorecardWeights> {
-  return ACE_ENABLED ? { ...currentWeights } : { ...getDefaultWeights() };
+export function getSAGEWeights(): Readonly<ScorecardWeights> {
+  return SAGE_ENABLED ? { ...currentWeights } : { ...getDefaultWeights() };
 }
 
 export function getActivePlaybookRules(): readonly PlaybookRule[] {
-  return ACE_ENABLED ? [...activeRules] : [];
+  return SAGE_ENABLED ? [...activeRules] : [];
 }
 
 export function getContextPrefix(): string {
-  return ACE_ENABLED ? lastContextPrefix : '';
+  return SAGE_ENABLED ? lastContextPrefix : '';
 }
 
-export function getACEStatus() {
+export function getSAGEStatus() {
   return {
-    enabled: ACE_ENABLED,
-    weights: getACEWeights(),
+    enabled: SAGE_ENABLED,
+    weights: getSAGEWeights(),
     weightCage: WEIGHT_CAGE,
     activeRules: activeRules.length,
-    maxRules: ACE_MAX_RULES,
+    maxRules: SAGE_MAX_RULES,
     pendingOutcomes: pendingOutcomes.length,
     totalOutcomes: totalOutcomesRecorded,
     reflectionCount: reflectionHistory.length,
@@ -181,11 +181,11 @@ export function getACEStatus() {
 }
 
 /**
- * Record a trade outcome with its feature vector for ACE analysis.
+ * Record a trade outcome with its feature vector for SAGE analysis.
  * Call this alongside recordTradeOutcome() in the agent loop.
  */
-export function recordACEOutcome(outcome: ACEOutcome): void {
-  if (!ACE_ENABLED) return;
+export function recordSAGEOutcome(outcome: SAGEOutcome): void {
+  if (!SAGE_ENABLED) return;
   pendingOutcomes.push(outcome);
   postReflectionOutcomes.push(outcome);
   totalOutcomesRecorded++;
@@ -196,30 +196,30 @@ export function recordACEOutcome(outcome: ACEOutcome): void {
 }
 
 /**
- * Run ACE reflection cycle. Call from the agent loop alongside runAdaptation().
+ * Run SAGE reflection cycle. Call from the agent loop alongside runAdaptation().
  * Returns reflection artifact if one was generated.
  */
-export async function runACEReflection(cycleNumber: number): Promise<ACEReflection | null> {
-  if (!ACE_ENABLED) return null;
+export async function runSAGEReflection(cycleNumber: number): Promise<SAGEReflection | null> {
+  if (!SAGE_ENABLED) return null;
 
   cyclesSinceReflection++;
 
-  if (cyclesSinceReflection < ACE_REFLECTION_COOLDOWN) return null;
-  if (pendingOutcomes.length < ACE_MIN_OUTCOMES) return null;
+  if (cyclesSinceReflection < SAGE_REFLECTION_COOLDOWN) return null;
+  if (pendingOutcomes.length < SAGE_MIN_OUTCOMES) return null;
 
   const geminiKey = process.env.GEMINI_API_KEY;
   if (!geminiKey) {
-    log.warn('No GEMINI_API_KEY — skipping ACE reflection');
+    log.warn('No GEMINI_API_KEY — skipping SAGE reflection');
     return null;
   }
 
-  log.info(`Starting ACE reflection (${pendingOutcomes.length} new outcomes, cycle ${cycleNumber})`);
+  log.info(`Starting SAGE reflection (${pendingOutcomes.length} new outcomes, cycle ${cycleNumber})`);
 
   try {
     // Overfitting guard 1: require minimum regime diversity (relaxed: allow single-regime after 5 trades)
     const regimes = new Set(pendingOutcomes.map(o => o.regime));
     if (regimes.size < 2 && pendingOutcomes.length < 3) {
-      log.info(`ACE skipping reflection: only ${regimes.size} regime(s) in ${pendingOutcomes.length} outcomes — need diversity or 3+ trades`);
+      log.info(`SAGE skipping reflection: only ${regimes.size} regime(s) in ${pendingOutcomes.length} outcomes — need diversity or 3+ trades`);
       return null;
     }
 
@@ -244,7 +244,7 @@ export async function runACEReflection(cycleNumber: number): Promise<ACEReflecti
     if (reflection.weightChanges.length > 0 && holdoutSet.length > 0) {
       const holdoutOk = validateAgainstHoldout(reflection.weightChanges, holdoutSet);
       if (!holdoutOk) {
-        log.warn('ACE holdout validation failed — discarding weight changes (keeping insights + rules)');
+        log.warn('SAGE holdout validation failed — discarding weight changes (keeping insights + rules)');
         reflection.weightChanges = [];
         reflection.insights.push('[OVERFITTING GUARD] Weight changes rejected by holdout validation');
       }
@@ -272,10 +272,10 @@ export async function runACEReflection(cycleNumber: number): Promise<ACEReflecti
     pendingOutcomes = [];
     cyclesSinceReflection = 0;
 
-    log.info(`ACE reflection complete: ${reflection.insights.length} insights, ${reflection.newRules.length} new rules, ${reflection.weightChanges.length} weight changes`);
+    log.info(`SAGE reflection complete: ${reflection.insights.length} insights, ${reflection.newRules.length} new rules, ${reflection.weightChanges.length} weight changes`);
     return reflection;
   } catch (error) {
-    log.error('ACE reflection failed — no changes applied', { error: String(error) });
+    log.error('SAGE reflection failed — no changes applied', { error: String(error) });
     return null;
   }
 }
@@ -294,7 +294,7 @@ export function applyPlaybookRules(context: {
   sentimentComposite?: number | null;
   confidence: number;
 }): { modifier: number; rulesApplied: string[] } {
-  if (!ACE_ENABLED || context.direction === 'NEUTRAL') {
+  if (!SAGE_ENABLED || context.direction === 'NEUTRAL') {
     return { modifier: 0, rulesApplied: [] };
   }
 
@@ -322,8 +322,8 @@ export function applyPlaybookRules(context: {
 
 // ── Persistence ──
 
-export function loadACEState(): void {
-  if (!ACE_ENABLED) return;
+export function loadSAGEState(): void {
+  if (!SAGE_ENABLED) return;
 
   try {
     if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
@@ -337,7 +337,7 @@ export function loadACEState(): void {
           currentWeights[key] = clamp(data[key], cage.min, cage.max);
         }
       }
-      log.info('Loaded ACE weights from disk', { weights: currentWeights });
+      log.info('Loaded SAGE weights from disk', { weights: currentWeights });
     }
 
     // Load playbook
@@ -370,7 +370,7 @@ export function loadACEState(): void {
       log.info(`Loaded ${reflectionHistory.length} reflection records`);
     }
   } catch (error) {
-    log.error('Failed to load ACE state — starting fresh', { error: String(error) });
+    log.error('Failed to load SAGE state — starting fresh', { error: String(error) });
   }
 }
 
@@ -378,9 +378,9 @@ export function loadACEState(): void {
 
 async function callReflectionLLM(
   apiKey: string,
-  outcomes: ACEOutcome[],
+  outcomes: SAGEOutcome[],
   cycleNumber: number,
-): Promise<ACEReflection> {
+): Promise<SAGEReflection> {
   const prompt = buildReflectionPrompt(outcomes);
 
   const url = `${GEMINI_API_URL}?key=${apiKey}`;
@@ -399,7 +399,7 @@ async function callReflectionLLM(
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    throw new Error(`Gemini ACE reflection returned ${response.status}: ${body.slice(0, 200)}`);
+    throw new Error(`Gemini SAGE reflection returned ${response.status}: ${body.slice(0, 200)}`);
   }
 
   const data = await response.json() as {
@@ -440,7 +440,7 @@ async function callReflectionLLM(
   const insights = Array.isArray(parsed.insights) ? parsed.insights.slice(0, 10) : [];
 
   // Process weight recommendations
-  const weightChanges: ACEReflection['weightChanges'] = [];
+  const weightChanges: SAGEReflection['weightChanges'] = [];
   if (Array.isArray(parsed.weightRecommendations)) {
     for (const rec of parsed.weightRecommendations) {
       const key = rec.parameter as WeightKey;
@@ -476,7 +476,7 @@ async function callReflectionLLM(
       if (!['BLOCK', 'REDUCE_CONFIDENCE', 'BOOST_CONFIDENCE'].includes(action)) continue;
 
       const rule: PlaybookRule = {
-        id: `ace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        id: `sage-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         rule: String(rawRule.rule).slice(0, 200),
         condition: rawRule.condition || {},
         action,
@@ -495,7 +495,7 @@ async function callReflectionLLM(
     : insights.slice(0, 3).join(' ');
 
   return {
-    type: 'ace_reflection',
+    type: 'sage_reflection',
     timestamp: now,
     cycleNumber,
     tradesAnalyzed: outcomes.length,
@@ -506,7 +506,7 @@ async function callReflectionLLM(
   };
 }
 
-function buildReflectionPrompt(outcomes: ACEOutcome[]): string {
+function buildReflectionPrompt(outcomes: SAGEOutcome[]): string {
   const wins = outcomes.filter(o => o.pnlPct > 0);
   const losses = outcomes.filter(o => o.pnlPct <= 0);
   const winRate = outcomes.length > 0 ? (wins.length / outcomes.length * 100).toFixed(0) : '0';
@@ -526,7 +526,7 @@ function buildReflectionPrompt(outcomes: ACEOutcome[]): string {
       return `  ${k}: ${v.toFixed(3)} (range: ${cage.min}–${cage.max})`;
     }).join('\n');
 
-  return `You are the ACE (Agentic Context Engineering) reflection engine for Actura, an autonomous crypto trading agent.
+  return `You are the SAGE (Self-Adapting Generative Engine) reflection engine for Actura, an autonomous crypto trading agent.
 
 Analyze these recent trade outcomes and provide structured learning.
 
@@ -620,7 +620,7 @@ function applyWeightChange(key: WeightKey, newValue: number): void {
   const cage = WEIGHT_CAGE[key];
   const prev = currentWeights[key];
   currentWeights[key] = clamp(newValue, cage.min, cage.max);
-  log.info(`ACE weight ${key}: ${prev.toFixed(3)} → ${currentWeights[key].toFixed(3)}`);
+  log.info(`SAGE weight ${key}: ${prev.toFixed(3)} → ${currentWeights[key].toFixed(3)}`);
 }
 
 // ── Internal: Playbook management ──
@@ -641,7 +641,7 @@ function addPlaybookRule(rule: PlaybookRule): void {
   activeRules.push(rule);
 
   // Enforce max rules (remove oldest first)
-  while (activeRules.length > ACE_MAX_RULES) {
+  while (activeRules.length > SAGE_MAX_RULES) {
     const removed = activeRules.shift();
     if (removed) log.info(`Evicted oldest playbook rule: ${removed.id}`);
   }
@@ -666,7 +666,7 @@ function persistWeights(): void {
     if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
     writeFileSync(WEIGHTS_FILE, JSON.stringify(currentWeights, null, 2), 'utf-8');
   } catch (error) {
-    log.error('Failed to persist ACE weights', { error: String(error) });
+    log.error('Failed to persist SAGE weights', { error: String(error) });
   }
 }
 
@@ -680,7 +680,7 @@ function persistPlaybook(): void {
   }
 }
 
-function appendReflection(reflection: ACEReflection): void {
+function appendReflection(reflection: SAGEReflection): void {
   try {
     if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
     appendFileSync(REFLECTIONS_FILE, JSON.stringify(reflection) + '\n', 'utf-8');
@@ -696,8 +696,8 @@ function appendReflection(reflection: ACEReflection): void {
  * signal quality on the holdout set (trades the LLM didn't see).
  */
 function validateAgainstHoldout(
-  weightChanges: ACEReflection['weightChanges'],
-  holdout: ACEOutcome[],
+  weightChanges: SAGEReflection['weightChanges'],
+  holdout: SAGEOutcome[],
 ): boolean {
   if (holdout.length === 0) return true;
 
@@ -753,14 +753,14 @@ function checkPerformanceDegradation(): void {
 
   // Only revert if win rate dropped by >15 percentage points
   if (preReflectionWinRate - postWinRate > 0.15) {
-    log.warn(`ACE OVERFITTING REVERT: post-reflection win rate ${(postWinRate * 100).toFixed(0)}% vs pre ${(preReflectionWinRate * 100).toFixed(0)}% — reverting weights`);
+    log.warn(`SAGE OVERFITTING REVERT: post-reflection win rate ${(postWinRate * 100).toFixed(0)}% vs pre ${(preReflectionWinRate * 100).toFixed(0)}% — reverting weights`);
     currentWeights = { ...previousWeights };
     persistWeights();
     previousWeights = null;
     postReflectionOutcomes = [];
   } else if (postReflectionOutcomes.length >= 10) {
     // After 10 trades, stop monitoring — weights are accepted
-    log.info(`ACE weights accepted: post-reflection win rate ${(postWinRate * 100).toFixed(0)}% (baseline ${(preReflectionWinRate * 100).toFixed(0)}%)`);
+    log.info(`SAGE weights accepted: post-reflection win rate ${(postWinRate * 100).toFixed(0)}% (baseline ${(preReflectionWinRate * 100).toFixed(0)}%)`);
     previousWeights = null;
     postReflectionOutcomes = [];
   }

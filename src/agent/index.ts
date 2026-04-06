@@ -31,7 +31,7 @@ import { generateReasoning } from '../strategy/ai-reasoning.js';
 import { applySymbolicReasoning, recordOutcome } from '../strategy/neuro-symbolic.js';
 import { runAdaptation, recordTradeOutcome, getAdaptiveParams, getAdaptationSummary, type AdaptationArtifact } from '../strategy/adaptive-learning.js';
 import { RegimeGovernanceController, mapVolToRegime } from '../strategy/regime-governance.js';
-import { loadACEState, recordACEOutcome, runACEReflection, getACEStatus, getActivePlaybookRules, isACEEnabled } from '../strategy/ace-engine.js';
+import { loadSAGEState, recordSAGEOutcome, runSAGEReflection, getSAGEStatus, getActivePlaybookRules, isSAGEEnabled } from '../strategy/sage-engine.js';
 import { uploadArtifact } from '../trust/ipfs.js';
 import { saveCheckpoint, getCheckpoints, getTradeCheckpoints } from '../trust/checkpoint.js';
 import { computeMarketState } from '../data/market-state.js';
@@ -58,7 +58,12 @@ const DATA_SOURCE = process.env.DATA_SOURCE || 'live'; // 'live' | 'simulated'
 
 // ──── Agent State ────
 const INITIAL_CAPITAL = 10000;
-const MAX_OPEN_POSITIONS = 4;
+const MAX_OPEN_POSITIONS = 2;
+
+// Minimum time (ms) between opening new positions to prevent rapid-fire stacking.
+// 5 minutes prevents the agent from piling into the same price level.
+const MIN_TRADE_INTERVAL_MS = 5 * 60 * 1000;
+let lastTradeOpenedAt = 0;
 
 let marketData: MarketData;
 let riskEngine: RiskEngine;
@@ -238,8 +243,8 @@ async function initAgent(): Promise<void> {
   resetStrategy();
   regimeGovernance.reset();
 
-  // Load ACE (Agentic Context Engineering) state — weights, playbook, reflections
-  loadACEState();
+  // Load SAGE (Self-Adapting Generative Engine) state — weights, playbook, reflections
+  loadSAGEState();
 
   log.info('Agent initialized', {
     capital: riskEngine.getCapital(),
@@ -623,7 +628,14 @@ async function runCycle(): Promise<void> {
     log.warn(`Position limit reached (${openCount}/${MAX_OPEN_POSITIONS}) — trade skipped`);
   }
 
-  let shouldExecute = riskDecision.approved && !positionLimitHit;
+  // Cooldown guard: prevent rapid-fire position stacking at the same price level
+  const timeSinceLastTrade = Date.now() - lastTradeOpenedAt;
+  const cooldownHit = timeSinceLastTrade < MIN_TRADE_INTERVAL_MS && openCount > 0;
+  if (riskDecision.approved && cooldownHit) {
+    log.warn(`Trade cooldown active (${Math.round(timeSinceLastTrade / 1000)}s < ${MIN_TRADE_INTERVAL_MS / 1000}s) — trade skipped`);
+  }
+
+  let shouldExecute = riskDecision.approved && !positionLimitHit && !cooldownHit;
 
   // Step 4a: DEX routing — governed best-execution venue selection
   const routingInput = {
@@ -899,6 +911,7 @@ async function runCycle(): Promise<void> {
       atr: atrValue,
       takeProfitPrice,
     });
+    lastTradeOpenedAt = Date.now();
 
     // Persist immediately after opening a position so it survives crashes
     persistState();
@@ -994,8 +1007,8 @@ async function runCycle(): Promise<void> {
         confidence: strategyOutput.signal.confidence,
         timestamp: new Date().toISOString(),
       });
-      // ACE: record enriched outcome with feature vector for LLM reflection
-      recordACEOutcome({
+      // SAGE: record enriched outcome with feature vector for LLM reflection
+      recordSAGEOutcome({
         direction: pos.side as 'LONG' | 'SHORT',
         entryPrice: pos.entryPrice,
         exitPrice: currentPrice,
@@ -1022,13 +1035,13 @@ async function runCycle(): Promise<void> {
       log.info(`Adaptation: ${adapt.parameter} ${adapt.previousValue} → ${adapt.newValue} (${adapt.trigger})`);
     }
 
-    // ACE reflection: LLM-powered learning from trade outcomes
-    if (isACEEnabled()) {
-      const aceReflection = await runACEReflection(cycleCount);
-      if (aceReflection) {
-        log.info(`ACE: ${aceReflection.insights.length} insights, ${aceReflection.newRules.length} rules, ${aceReflection.weightChanges.length} weight changes`);
-        for (const wc of aceReflection.weightChanges) {
-          log.info(`ACE weight: ${wc.parameter} ${wc.from} → ${wc.to} (${wc.reasoning.slice(0, 80)})`);
+    // SAGE reflection: LLM-powered learning from trade outcomes
+    if (isSAGEEnabled()) {
+      const sageReflection = await runSAGEReflection(cycleCount);
+      if (sageReflection) {
+        log.info(`SAGE: ${sageReflection.insights.length} insights, ${sageReflection.newRules.length} rules, ${sageReflection.weightChanges.length} weight changes`);
+        for (const wc of sageReflection.weightChanges) {
+          log.info(`SAGE weight: ${wc.parameter} ${wc.from} → ${wc.to} (${wc.reasoning.slice(0, 80)})`);
         }
       }
     }
@@ -1049,7 +1062,7 @@ async function runCycle(): Promise<void> {
     `Cap: $${capital.toFixed(0)} | ` +
     `Pos: ${currentPositions.length}/${MAX_OPEN_POSITIONS} | ` +
     `${cognitive.rulesFired > 0 ? `Rules: ${cognitive.rulesFired} | ` : ''}` +
-    `${sentiment?.sources.length ? `Sent: ${sentiment.composite.toFixed(2)} (${sentiment.sources.join(',')}) | ` : ''}` +
+    `${sentiment?.sources.length ? `Sent: ${sentiment.composite.toFixed(2)} [FG:${sentiment.fearGreed?.toFixed(2) ?? '-'} News:${sentiment.newsSentiment?.toFixed(2) ?? '-'} Fund:${sentiment.fundingRate?.toFixed(2) ?? '-'} Soc:${sentiment.socialSentiment?.toFixed(2) ?? '-'}] | ` : ''}` +
     `Oracle: ${oracleIntegrity.status} | DEX: ${dexRouting.selectedDex} | Sim: ${executionSimulation.reason} | ` +
     `${elapsed}ms`
   );

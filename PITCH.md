@@ -31,13 +31,15 @@ The agent doesn't just trade. It **earns the right to trade** through continuous
 ```
 Market Signal
   → Sentiment & PRISM Intelligence
-    → Neuro-Symbolic Safety Layer
-      → Mandate Enforcement
-        → Oracle Integrity Guard
-          → Execution Simulation
-            → Supervisory Approval
-              → Risk Engine (6 checks)
-                → On-Chain Execution + IPFS Artifact
+    → ACE Weight Optimization & Playbook Rules
+      → Neuro-Symbolic Safety Layer
+        → Mandate Enforcement
+          → Oracle Integrity Guard
+            → Execution Simulation
+              → Supervisory Approval
+                → Risk Engine (6 checks)
+                  → On-Chain Execution + IPFS Artifact
+                    → ACE Reflection (learns from outcome)
 ```
 
 **Only trades that pass ALL 8 stages execute.** Every rejected trade still produces an artifact explaining why.
@@ -119,6 +121,26 @@ Every decision produces an IPFS-pinned JSON artifact containing:
 
 **Anyone can verify any decision by fetching its IPFS CID.**
 
+### 7. ACE — Agentic Context Engineering (Self-Improving)
+
+Acura doesn't just trade — it **learns from every trade** using LLM-powered reflection.
+
+**How it works:**
+- After every batch of trades, Gemini 2.5 Pro analyzes outcomes: which signals worked, which failed, and why
+- The LLM recommends **signal weight adjustments** (7 weights, each bounded by immutable CAGE limits)
+- It builds a **playbook** of conditional rules: e.g., "reduce confidence for SHORT trades in LOW volatility regimes when RSI > 60"
+- Accumulated wisdom is **injected into every AI reasoning prompt**, making the agent progressively smarter
+
+**Safety guarantees:**
+- All weight changes bounded by immutable CAGE ranges (cannot exceed pre-set min/max)
+- Max 30% change per parameter per reflection cycle
+- Playbook rules can only modify confidence — they cannot bypass risk checks or governance
+- 3-layer overfitting protection: regime diversity gate, holdout validation, auto-revert on degradation
+- LLM failure = no change (deterministic fallback to last known good weights)
+- Kill switch: `ACE_ENABLED=false`
+
+**This is what separates Actura from static rule-based agents.** It improves continuously while maintaining every safety guarantee.
+
 ---
 
 ## Live System
@@ -154,6 +176,12 @@ Actura is **live on Base Sepolia** right now:
 │                    STRATEGY ENGINE                         │
 │  SMA Crossover · Momentum · Volatility-Adjusted Sizing    │
 │  Regime Governance · Adaptive Learning (bounded)          │
+└────────────────────────┬─────────────────────────────────┘
+                         ▼
+┌──────────────────────────────────────────────────────────┐
+│            ACE — Agentic Context Engineering               │
+│  LLM Reflection · Weight Optimization · Playbook Rules    │
+│  Overfitting Guards · Context Injection                   │
 └────────────────────────┬─────────────────────────────────┘
                          ▼
 ┌──────────────────────────────────────────────────────────┐
@@ -203,9 +231,9 @@ External agents can query Actura's governance state, propose trades through its 
 
 | Lane | Fit |
 |------|-----|
-| **Best Trustless Trading Agent** | Full ERC-8004 integration, live trading, governance pipeline |
+| **Best Trustless Trading Agent** | Full ERC-8004 integration, live trading, governance pipeline, ACE self-improving engine |
 | **Best Validation & Trust Model** | Four-dimensional trust scoring, capital ladder, IPFS artifacts, TEE attestation |
-| **Best Compliance & Risk Guardrails** | On-chain risk contract, 11 risk checks, circuit breaker, mandate enforcement |
+| **Best Compliance & Risk Guardrails** | On-chain risk contract, 11 risk checks, circuit breaker, mandate enforcement, ACE overfitting protections |
 
 ---
 
@@ -217,8 +245,8 @@ External agents can query Actura's governance state, propose trades through its 
 
 ## The Tagline
 
-> *"Not the smartest trader. The most accountable."*
+> *"Not the smartest trader. The most accountable — and getting smarter every cycle."*
 
-Actura proves that autonomous agents can be powerful AND governed. Every decision is transparent. Every trade is justified. Every artifact is permanent.
+Actura proves that autonomous agents can be powerful AND governed. Every decision is transparent. Every trade is justified. Every artifact is permanent. And every outcome makes the next decision better.
 
-**The future of autonomous finance isn't uncontrolled AI — it's governed AI that earns trust.**
+**The future of autonomous finance isn't uncontrolled AI — it's governed AI that earns trust and learns responsibly.**

@@ -33,6 +33,7 @@ Unlike conventional trading bots, Actura produces a **complete audit trail** for
 | **Full audit trail** | Every decision produces an IPFS-pinned JSON artifact with AI reasoning, market snapshots, confidence intervals, governance evidence, and TEE attestation. Artifacts are also saved locally to `./artifacts/` for re-pinning resilience |
 | **PRISM Intelligence** | Real-time technical signal integration via Strykr PRISM API — RSI, MACD, Bollinger Bands, directional bias. Confirmation-only confidence modifier (+0–15%) — boosts when PRISM agrees with the primary strategy, never penalizes |
 | **AI Reasoning (3-tier LLM)** | Every trade decision includes a natural-language AI explanation generated via Claude → Gemini → OpenAI failover chain. Summaries are embedded in IPFS artifacts |
+| **ACE — Agentic Context Engineering** | LLM-powered self-improving layer: Gemini 2.5 Pro reflects on trade outcomes, auto-tunes 7 signal weights within CAGE bounds, builds conditional playbook rules, and injects accumulated wisdom into AI reasoning. 3-layer overfitting protection: regime diversity gate, holdout validation, auto-revert |
 | **Sentiment-driven signals** | Multi-source sentiment scoring — Fear & Greed Index (40%), Alpha Vantage news (35%), Kraken funding rate proxy (25%) — adjusts confidence and position sizing |
 | **Kraken Challenge integration** | Full live/paper trading via Kraken CLI bridge — governed strategy → Kraken orders with stop-losses, TP targets, and ERC-8004 artifact preservation |
 | **Profit-locking trailing stops** | Tiered breakeven mechanism: >0.5% profit → 95% trail, >0.8% → 50% trail, >1.5% → 30% trail. Stops only ratchet tighter, never widen |
@@ -325,6 +326,7 @@ actura-gacr-agent/
 │   ├── social/
 │   │   └── share.ts                 # Social proof & sharing
 │   ├── strategy/
+│   │   ├── ace-engine.ts             # ACE: LLM-powered adaptive learning (reflection, playbook, weights)
 │   │   ├── adaptive-learning.ts      # Bounded self-improvement with Bayesian context bias
 │   │   ├── ai-reasoning.ts           # AI-powered trade explanations (Claude/Gemini/OpenAI)
 │   │   ├── edge-filter.ts            # Minimum edge threshold filter
@@ -381,6 +383,37 @@ Adjustable parameters (within cage):
 The adaptive learner also computes a **bounded Bayesian context confidence bias** per regime and direction. This uses a Beta(1,1) posterior mean over observed win rates to adjust confidence — capped at ± 12% — without ever altering stops, sizing, or risk thresholds.
 
 Every adaptation is recorded as an artifact with reasoning and before/after values.
+
+### 2c. ACE — Agentic Context Engineering
+
+ACE is an LLM-powered self-improving layer that sits above adaptive learning, using **Gemini 2.5 Pro** to reflect on trade outcomes and auto-tune the strategy.
+
+**What ACE produces:**
+- **Weight optimization** — Auto-tunes 7 scorecard signal weights within immutable CAGE bounds (max 30% change per cycle)
+- **Playbook rules** — Conditional filters (BLOCK / REDUCE / BOOST confidence) based on pattern analysis, with expiry after 30 trades
+- **Context injection** — Accumulated trading wisdom prefixed to every AI reasoning prompt
+- **Reflection artifacts** — Every reflection cycle is persisted as an auditable JSONL record
+
+**Signal weights managed by ACE:**
+
+| Weight | Default | CAGE Range |
+|---|---|---|
+| trend | 0.60 | 0.0 – 2.0 |
+| ret5 | 1.80 | 0.0 – 4.0 |
+| ret20 | 1.10 | 0.0 – 3.0 |
+| crossover | 0.15 | 0.0 – 0.5 |
+| rsi | 0.60 | 0.0 – 2.0 |
+| zscore | 0.50 | 0.0 – 2.0 |
+| sentiment | 0.12 | 0.0 – 0.5 |
+
+**Overfitting protections (3 layers):**
+1. **Regime diversity** — Requires outcomes from 2+ market regimes before allowing weight changes
+2. **Holdout validation** — 80/20 split; LLM only sees training set; changes rejected if they'd hurt holdout set
+3. **Auto-revert** — If win rate drops >15pp post-reflection, weights revert to pre-reflection snapshot
+
+**Kill switch:** `ACE_ENABLED=false` — agent continues with last known good weights, no LLM calls.
+
+**API endpoints:** `/api/ace/status`, `/api/ace/playbook`
 
 ### 2b. Regime Governance
 
@@ -486,6 +519,8 @@ Each operator action creates an auditable receipt with timestamp, reason, actor,
 | `/api/operator/emergency-stop` | POST | Emergency stop |
 | `/api/prism` | GET | PRISM signal & risk data (direction, RSI, MACD, Bollinger, volatility) |
 | `/api/performance` | GET | Risk-adjusted metrics (Sharpe, Sortino, max drawdown, Calmar, profit factor) |
+| `/api/ace/status` | GET | ACE engine status: weights, CAGE bounds, reflections, playbook rules |
+| `/api/ace/playbook` | GET | Active playbook rules, current weights, reflection count |
 | `/api/artifacts` | GET | Browse all decision artifacts with IPFS CIDs |
 | `/api/artifact/latest` | GET | Full JSON of the most recent decision artifact |
 

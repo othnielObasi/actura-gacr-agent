@@ -52,6 +52,73 @@ const MAX_OPEN_POSITIONS = 2;  // Revert from 4
 
 ---
 
+## ACE Implementation (April 2, 2026)
+
+### ACE — Agentic Context Engineering
+
+Deployed a self-improving adaptive learning layer that uses LLM reflection to auto-tune the trading strategy from observed outcomes.
+
+| Component | Details |
+|-----------|--------|
+| Engine | `src/strategy/ace-engine.ts` (750+ lines) |
+| LLM | Gemini 2.5 Pro for trade batch reflection |
+| Kill Switch | `ACE_ENABLED=false` env var |
+| Persistence | `.actura/ace-weights.json`, `.actura/playbook.jsonl`, `.actura/ace-reflections.jsonl` |
+
+#### What ACE Does
+
+1. **Records trade outcomes** — After every closed trade, captures the full feature vector (direction, PnL, regime, confidence, ret5, ret20, RSI, ADX, zscore, sentiment)
+2. **Runs reflection cycles** — Every ~20 min (10 agent cycles), sends the batch to Gemini 2.5 Pro for analysis
+3. **Tunes signal weights** — LLM recommends adjustments to the 7 scorecard weights within immutable CAGE bounds
+4. **Builds a playbook** — Creates conditional rules (BLOCK / REDUCE / BOOST confidence) based on pattern analysis
+5. **Injects context** — Accumulated trading wisdom is prefixed to every AI reasoning prompt
+
+#### Signal Weights (CAGE-Bounded)
+
+| Weight | Default | Range | Purpose |
+|--------|---------|-------|---------|
+| trend | 0.60 | 0.0–2.0 | SMA crossover trend strength |
+| ret5 | 1.80 | 0.0–4.0 | 5-bar momentum return |
+| ret20 | 1.10 | 0.0–3.0 | 20-bar momentum return |
+| crossover | 0.15 | 0.0–0.5 | Crossover event boost |
+| rsi | 0.60 | 0.0–2.0 | RSI mean-reversion penalty |
+| zscore | 0.50 | 0.0–2.0 | Z-score extreme penalty |
+| sentiment | 0.12 | 0.0–0.5 | Sentiment composite weight |
+
+Max change per reflection cycle: 30% of current value.
+
+#### Overfitting Protections (3 Layers)
+
+1. **Regime diversity gate** — Requires trades from 2+ market regimes (or 10+ total) before allowing weight changes. Prevents fitting to a single market condition.
+2. **Holdout validation** — 80/20 train/holdout split. LLM only sees 80% of outcomes. Weight changes are validated against the holdout set and rejected if they would degrade performance.
+3. **Auto-revert** — Monitors post-reflection performance. If win rate drops >15 percentage points after 5 trades, weights automatically revert to the pre-reflection snapshot. After 10 trades without degradation, the new weights are accepted.
+
+#### Integration Points
+
+| Where | What |
+|-------|------|
+| `src/strategy/signals.ts` | Weights from `getACEWeights()`, playbook rules from `applyPlaybookRules()` |
+| `src/agent/index.ts` | `initACE()` on startup, `recordACEOutcome()` on trade close, `runACEReflection()` every 10 cycles |
+| `src/strategy/ai-reasoning.ts` | `getACEContextPrefix()` injected into reasoning prompt |
+| `src/dashboard/server.ts` | `/api/ace/status` and `/api/ace/playbook` endpoints |
+| `judge.html` | Section 7: ACE dashboard with weights, reflections, rules |
+| `ActuraDashboard.final.jsx` | ACE panel with live status, weights diff, wisdom display |
+
+#### Rollback
+
+```bash
+# Disable ACE without code change:
+ACE_ENABLED=false pm2 restart actura-agent
+
+# Full code rollback to pre-ACE:
+git checkout 7fcaa55 -- src/strategy/signals.ts src/agent/index.ts src/strategy/ai-reasoning.ts src/dashboard/server.ts
+git checkout 7fcaa55 -- src/dashboard/public/judge.html src/dashboard/ActuraDashboard.final.jsx
+rm src/strategy/ace-engine.ts
+npm run build && pm2 restart actura-agent
+```
+
+---
+
 ## Post-Hackathon Implementation Plan
 
 ### Phase 1: Backtesting Engine (Week 1-2)

@@ -18,7 +18,7 @@ import { getReputationTimeline } from '../trust/trust-policy-scorecard.js';
 import { getOperatorControlState, getOperatorActionReceipts, pauseTrading, resumeTrading, emergencyStop } from '../agent/operator-control.js';
 import { buildRegistrationJson } from '../chain/identity.js';
 import { generateTradePost, generateDailySummaryPost, buildTwitterIntentUrl } from '../social/share.js';
-import { getACEStatus, getActivePlaybookRules } from '../strategy/ace-engine.js';
+import { getSAGEStatus, getActivePlaybookRules } from '../strategy/sage-engine.js';
 import { getKrakenFeedStatus, fetchKrakenTicker, fetchKrakenBalance, fetchKrakenOpenOrders, fetchKrakenTradeHistory } from '../data/kraken-feed.js';
 import { fetchPrismData } from '../data/prism-feed.js';
 import { getCliStatus, checkCliHealth } from '../data/kraken-cli.js';
@@ -477,20 +477,20 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
     }
   });
 
-  /** ACE (Agentic Context Engineering) status */
-  app.get('/api/ace/status', (_req, res) => {
+  /** SAGE (Self-Adapting Generative Engine) status */
+  app.get('/api/sage/status', (_req, res) => {
     try {
-      res.json(getACEStatus());
+      res.json(getSAGEStatus());
     } catch (e) {
-      res.status(500).json({ error: 'Failed to get ACE status' });
+      res.status(500).json({ error: 'Failed to get SAGE status' });
     }
   });
 
-  /** ACE playbook rules */
-  app.get('/api/ace/playbook', (_req, res) => {
+  /** SAGE playbook rules */
+  app.get('/api/sage/playbook', (_req, res) => {
     try {
       const rules = getActivePlaybookRules();
-      const status = getACEStatus();
+      const status = getSAGEStatus();
       res.json({
         rules,
         totalRules: rules.length,
@@ -500,7 +500,7 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
         weights: status.weights,
       });
     } catch (e) {
-      res.status(500).json({ error: 'Failed to get ACE playbook' });
+      res.status(500).json({ error: 'Failed to get SAGE playbook' });
     }
   });
 

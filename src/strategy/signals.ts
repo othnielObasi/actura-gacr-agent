@@ -13,7 +13,7 @@
 
 import { classifyStructureRegime, type StructureRegime } from './structure-regime.js';
 import { evaluateEdge } from './edge-filter.js';
-import { getACEWeights, applyPlaybookRules, isACEEnabled } from './ace-engine.js';
+import { getSAGEWeights, applyPlaybookRules, isSAGEEnabled } from './sage-engine.js';
 
 export type SignalDirection = 'LONG' | 'SHORT' | 'NEUTRAL';
 
@@ -152,8 +152,8 @@ export function generateSignal(input: SignalInput): TradingSignal {
   // - trend provides direction bias
   // - momentum supports direction
   // - penalties reduce chasing into extremes
-  // Weights sourced from ACE (learned) or defaults (hardcoded)
-  const w = getACEWeights();
+  // Weights sourced from SAGE (learned) or defaults (hardcoded)
+  const w = getSAGEWeights();
   const directionSign = isBullish ? 1 : -1;
 
   const trendScore = directionSign * (w.trend * trendStrength);
@@ -210,9 +210,9 @@ export function generateSignal(input: SignalInput): TradingSignal {
     confidence = clamp(confidence * 0.5, 0, 1); // halve confidence — momentum-only signal is weaker
   }
 
-  // ACE playbook rules: apply learned filters to adjust confidence
-  if (isACEEnabled() && direction !== 'NEUTRAL') {
-    const aceResult = applyPlaybookRules({
+  // SAGE playbook rules: apply learned filters to adjust confidence
+  if (isSAGEEnabled() && direction !== 'NEUTRAL') {
+    const sageResult = applyPlaybookRules({
       direction,
       regime: (volRatio ?? 1) < 0.5 ? 'low' : (volRatio ?? 1) > 1.5 ? 'high' : (volRatio ?? 1) > 2.0 ? 'extreme' : 'normal',
       rsi: r,
@@ -222,12 +222,12 @@ export function generateSignal(input: SignalInput): TradingSignal {
       sentimentComposite: sentimentComposite ?? null,
       confidence,
     });
-    if (aceResult.modifier === -1.0) {
+    if (sageResult.modifier === -1.0) {
       // BLOCK rule fired
       direction = 'NEUTRAL';
       confidence = 0;
     } else {
-      confidence = clamp(confidence + aceResult.modifier, 0, 1);
+      confidence = clamp(confidence + sageResult.modifier, 0, 1);
       if (confidence < 0.05) {
         direction = 'NEUTRAL';
         confidence = 0;

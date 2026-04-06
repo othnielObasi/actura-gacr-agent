@@ -149,7 +149,7 @@ function Actura() {
   const [security, setSecurity] = useState(null);
   const [latestAi, setLatestAi] = useState(null);
   const [feedsData, setFeedsData] = useState(null);
-  const [aceData, setAceData] = useState(null);
+  const [sageData, setSageData] = useState(null);
 
 
   /* ── Tier mapping from API tier names ── */
@@ -255,7 +255,7 @@ function Actura() {
   /* ── API fetching ── */
   const fetchData = useCallback(async () => {
     try {
-      const [statusRes, checkpointsRes, reputationRes, operatorRes, actionsRes, positionsRes, governanceRes, securityRes, artifactRes, feedsRes, aceRes] = await Promise.all([
+      const [statusRes, checkpointsRes, reputationRes, operatorRes, actionsRes, positionsRes, governanceRes, securityRes, artifactRes, feedsRes, sageRes] = await Promise.all([
         fetch("/api/status").then(r => r.json()).catch(() => null),
         fetch("/api/checkpoints?limit=10").then(r => r.json()).catch(() => null),
         fetch("/api/reputation/history?limit=30").then(r => r.json()).catch(() => null),
@@ -266,7 +266,7 @@ function Actura() {
         fetch("/api/security").then(r => r.json()).catch(() => null),
         fetch("/api/artifact/latest").then(r => r.json()).catch(() => null),
         fetch("/api/feeds/kraken").then(r => r.json()).catch(() => null),
-        fetch("/api/ace/status").then(r => r.json()).catch(() => null),
+        fetch("/api/sage/status").then(r => r.json()).catch(() => null),
       ]);
 
       if (statusRes) {
@@ -323,7 +323,7 @@ function Actura() {
       if (securityRes) setSecurity(securityRes);
       if (artifactRes?.aiReasoning) setLatestAi(artifactRes.aiReasoning);
       if (feedsRes) setFeedsData(feedsRes);
-      if (aceRes) setAceData(aceRes);
+      if (sageRes) setSageData(sageRes);
 
 
       setStage(s => (s + 1) % STAGES.length);
@@ -789,24 +789,24 @@ function Actura() {
                 ].map((m, i) => <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start" }}><span style={{ color: T.fg3, flexShrink: 0 }}>▸</span><span>{m}</span></div>)}
               </div>
             </P>
-            <P title="ACE — Self-Improving" tip="Agentic Context Engineering: LLM-powered reflection that auto-tunes signal weights and builds a trading playbook from outcomes." tag={aceData?.enabled ? "ACTIVE" : "OFF"}>
+            <P title="SAGE — Self-Improving" tip="Self-Adapting Generative Engine: LLM-powered reflection that auto-tunes signal weights and builds a trading playbook from outcomes." tag={sageData?.enabled ? "ACTIVE" : "OFF"}>
               {(() => {
                 const defaults = { trend: 0.6, ret5: 1.8, ret20: 1.1, crossover: 0.15, rsi: 0.6, zscore: 0.5, sentiment: 0.12 };
-                const w = aceData?.weights || defaults;
+                const w = sageData?.weights || defaults;
                 const anyChanged = Object.keys(defaults).some(k => Math.abs((w[k] || 0) - defaults[k]) > 0.001);
                 return React.createElement(React.Fragment, null,
                   React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.brd}` } },
                     React.createElement("div", null,
                       React.createElement("div", { style: { fontSize: 8, color: T.fg3 } }, "STATUS"),
-                      React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: aceData?.enabled ? T.up : T.fg3 } }, aceData?.enabled ? "ENABLED" : "OFF"),
+                      React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: sageData?.enabled ? T.up : T.fg3 } }, sageData?.enabled ? "ENABLED" : "OFF"),
                     ),
                     React.createElement("div", null,
                       React.createElement("div", { style: { fontSize: 8, color: T.fg3 } }, "REFLECTIONS"),
-                      React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: T.cyan } }, aceData?.reflectionCount || 0),
+                      React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: T.cyan } }, sageData?.reflectionCount || 0),
                     ),
                     React.createElement("div", null,
                       React.createElement("div", { style: { fontSize: 8, color: T.fg3 } }, "PLAYBOOK RULES"),
-                      React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: T.purple } }, aceData?.activeRules || 0),
+                      React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: T.purple } }, sageData?.activeRules || 0),
                     ),
                   ),
                   React.createElement("div", { style: { fontSize: 8.5, color: T.fg3, letterSpacing: 1, fontWeight: 600, marginBottom: 4 } }, "SIGNAL WEIGHTS"),
@@ -814,12 +814,12 @@ function Actura() {
                     const cur = (w[k] || 0);
                     const def = defaults[k];
                     const changed = Math.abs(cur - def) > 0.001;
-                    return React.createElement(KV, { key: k, k: k, v: `${cur.toFixed(2)}${changed ? " ← " + def.toFixed(2) : ""}`, c: changed ? T.warn : T.fg });
+                    return React.createElement(KV, { key: k, k: k, v: `${cur.toFixed(2)}${changed ? " \u2190 " + def.toFixed(2) : ""}`, c: changed ? T.warn : T.fg });
                   }),
-                  anyChanged && React.createElement("div", { style: { marginTop: 6, fontSize: 9, color: T.warn } }, "⚡ Weights tuned by ACE reflection"),
-                  aceData?.contextPrefix && React.createElement("div", { style: { marginTop: 8, paddingTop: 6, borderTop: `1px solid ${T.brd}` } },
-                    React.createElement("div", { style: { fontSize: 8.5, color: T.fg3, letterSpacing: 1, fontWeight: 600, marginBottom: 4 } }, "ACE WISDOM"),
-                    React.createElement("div", { style: { fontSize: 9.5, color: T.fg2, lineHeight: 1.6 } }, aceData.contextPrefix.substring(0, 300) + (aceData.contextPrefix.length > 300 ? "…" : "")),
+                  anyChanged && React.createElement("div", { style: { marginTop: 6, fontSize: 9, color: T.warn } }, "\u26A1 Weights tuned by SAGE reflection"),
+                  sageData?.contextPrefix && React.createElement("div", { style: { marginTop: 8, paddingTop: 6, borderTop: `1px solid ${T.brd}` } },
+                    React.createElement("div", { style: { fontSize: 8.5, color: T.fg3, letterSpacing: 1, fontWeight: 600, marginBottom: 4 } }, "SAGE WISDOM"),
+                    React.createElement("div", { style: { fontSize: 9.5, color: T.fg2, lineHeight: 1.6 } }, sageData.contextPrefix.substring(0, 300) + (sageData.contextPrefix.length > 300 ? "\u2026" : "")),
                   ),
                 );
               })()}

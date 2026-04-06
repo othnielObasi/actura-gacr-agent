@@ -42,6 +42,7 @@ This paper makes the following contributions:
 4. An **on-chain risk enforcement contract** (`ActuraRiskPolicy.sol`) that makes risk limits trustlessly verifiable.
 5. A **complete artifact system** producing IPFS-pinned decision records with TEE attestation.
 6. Full alignment with **ERC-8004** (Trustless Agent Standard) across Identity, Reputation, and Validation registries.
+7. **ACE (Agentic Context Engineering)** — an LLM-powered self-improving layer that uses structured reflection to optimize signal weights and build conditional playbook rules, with 3-layer overfitting protection.
 
 ---
 
@@ -89,6 +90,7 @@ The strategy engine generates trading signals using:
 - **Momentum Scoring** — Volatility-adjusted confidence based on crossover magnitude relative to ATR
 - **Position Sizing** — Dynamic sizing based on regime profile, trust tier capital multiplier, and volatility ratio
 - **ATR-Based Risk Levels** — Stop-loss and take-profit targets derived from Average True Range, adjusted by regime
+- **ACE-Tuned Signal Weights** — Seven scorecard weights (trend, ret5, ret20, crossover, rsi, zscore, sentiment) dynamically optimized by the ACE engine within immutable CAGE bounds
 
 ### 2.4 AI Reasoning
 
@@ -300,6 +302,74 @@ The system maintains a **Beta(1,1) posterior mean** over observed win rates per 
 
 This is not a black-box ML model — it is a transparent, interpretable Bayesian update with hard-coded bounds.
 
+### 7.3 ACE — Agentic Context Engineering
+
+Above the adaptive learning layer, Actura deploys **ACE (Agentic Context Engineering)** — an LLM-powered self-improving layer that uses structured reflection to progressively optimize the trading strategy.
+
+#### 7.3.1 Reflection Cycle
+
+After every batch of 5+ trade outcomes (minimum 10 agent cycles between reflections), ACE sends the trade history with full feature vectors to **Gemini 2.5 Pro** for analysis. The LLM receives:
+
+- Per-trade outcome data: direction, PnL, regime, confidence, stop-hit status
+- Feature vectors: ret5, ret20, RSI, ADX, z-score, sentiment composite
+- Current signal weights and their CAGE bounds
+- Active playbook rules
+
+The LLM returns structured JSON containing: insights (pattern analysis), weight recommendations, playbook rules, and a context summary.
+
+#### 7.3.2 Signal Weight Optimization
+
+ACE manages 7 scorecard weights that drive signal generation:
+
+| Weight | Default | CAGE Range | Purpose |
+|--------|---------|------------|---------|
+| trend | 0.60 | 0.0 – 2.0 | SMA crossover trend strength |
+| ret5 | 1.80 | 0.0 – 4.0 | 5-bar momentum return |
+| ret20 | 1.10 | 0.0 – 3.0 | 20-bar momentum return |
+| crossover | 0.15 | 0.0 – 0.5 | Crossover event boost |
+| rsi | 0.60 | 0.0 – 2.0 | RSI mean-reversion penalty |
+| zscore | 0.50 | 0.0 – 2.0 | Z-score extreme penalty |
+| sentiment | 0.12 | 0.0 – 0.5 | Sentiment composite weight |
+
+**Safety properties:**
+- All weight changes are bounded by immutable CAGE ranges
+- Maximum 30% change per parameter per reflection cycle
+- Weights are persisted to disk and survive restarts
+
+#### 7.3.3 Playbook Rules
+
+ACE builds a library of conditional rules based on observed patterns:
+
+- **BLOCK** — Force NEUTRAL for specific regime×direction×indicator combinations
+- **REDUCE_CONFIDENCE** — Lower confidence by a specified magnitude (0.05–0.50)
+- **BOOST_CONFIDENCE** — Raise confidence for favorable patterns
+
+Rules are condition-matched against regime, direction, and indicator thresholds. Each rule has an evidence citation, creation timestamp, and automatic expiry after 30 trades. Maximum 20 active rules.
+
+#### 7.3.4 Context Injection
+
+Accumulated trading wisdom from reflections is injected as a prefix into every AI reasoning prompt. This enables the agent's natural-language explanations to incorporate learned experience without retraining.
+
+#### 7.3.5 Overfitting Protections
+
+ACE implements three layers of overfitting defense:
+
+1. **Regime diversity gate** — Weight changes require outcomes from at least 2 distinct market regimes (or 10+ total trades). This prevents overfitting to a single market condition.
+
+2. **Holdout validation** — Outcomes are split 80/20 (train/holdout). The LLM only receives the training set. Proposed weight changes are validated against the holdout set: if the new weights would produce worse signal alignment on unseen data, the changes are rejected while insights and playbook rules are retained.
+
+3. **Auto-revert monitoring** — Post-reflection performance is tracked. If the win rate drops by more than 15 percentage points over the next 5 trades, weights automatically revert to the pre-reflection snapshot. After 10 trades without degradation, the new weights are accepted as permanent.
+
+#### 7.3.6 Failure Semantics
+
+If the LLM is unavailable, returns malformed output, or the API key is exhausted:
+- No changes are applied
+- The agent continues with its last known good weights
+- All existing playbook rules remain active
+- The cycle counter resets, and reflection is reattempted next cycle
+
+**Kill switch:** Setting `ACE_ENABLED=false` disables all ACE operations. The agent reverts to default weights and no playbook rules are applied.
+
 ---
 
 ## 8. Accountability Infrastructure
@@ -416,11 +486,12 @@ Any observer can verify Actura's behavior:
 
 | Phase | Timeline | Goal |
 |-------|----------|------|
-| 1. Backtesting Engine | Month 1 | Validate strategies against 2+ years of historical data |
-| 2. Signal Improvement | Month 2 | Move from 18% to 45%+ win rate via ML features and multi-timeframe analysis |
-| 3. Multi-Asset Portfolio | Month 3 | BTC, SOL, ARB pairs with correlation-aware sizing |
-| 4. Mainnet + Vault | Month 4 | Base mainnet, ERC-4626 vault for delegated capital, real DEX execution |
-| 5. Production Hardening | Month 5+ | Hardware TEE, institutional-grade monitoring, multi-region redundancy |
+| 1. ACE Maturation | Month 1 | Accumulate reflection data, validate ACE weight optimization across multiple market regimes |
+| 2. Backtesting Engine | Month 1–2 | Validate strategies against 2+ years of historical data |
+| 3. Signal Improvement | Month 2 | Move from current win rate to 45%+ via ML features and multi-timeframe analysis |
+| 4. Multi-Asset Portfolio | Month 3 | BTC, SOL, ARB pairs with correlation-aware sizing |
+| 5. Mainnet + Vault | Month 4 | Base mainnet, ERC-4626 vault for delegated capital, real DEX execution |
+| 6. Production Hardening | Month 5+ | Hardware TEE, institutional-grade monitoring, multi-region redundancy |
 
 ---
 
@@ -432,6 +503,7 @@ Actura demonstrates that autonomous trading agents can be simultaneously **capab
 - **Dynamic trust** — The agent earns capital rights through demonstrated behavior, not static configuration.
 - **Complete provenance** — Every decision produces a permanent, verifiable artifact.
 - **Trustless enforcement** — Risk limits are enforced at the smart-contract level, beyond the agent's control.
+- **Responsible self-improvement** — ACE auto-tunes strategy weights using LLM reflection, bounded by immutable CAGE limits and protected by 3-layer overfitting defense.
 - **Interoperability** — External agents and auditors can interact through MCP without bypassing governance.
 
 The system is live on Base Sepolia (Agent ID 338, 500+ cycles executed) and fully aligned with the ERC-8004 Trustless Agent standard.

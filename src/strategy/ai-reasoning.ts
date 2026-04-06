@@ -18,7 +18,7 @@ import { retry } from '../agent/retry.js';
 import type { StrategyOutput } from '../strategy/momentum.js';
 import type { RiskDecision } from '../risk/engine.js';
 import type { SentimentResult } from '../data/sentiment-feed.js';
-import { getContextPrefix, getACEWeights, isACEEnabled } from './ace-engine.js';
+import { getContextPrefix, getSAGEWeights, isSAGEEnabled } from './sage-engine.js';
 
 const log = createLogger('AI-REASON');
 
@@ -183,13 +183,13 @@ function buildReasoningPrompt(
 - Active sources: ${sentiment.sources.join(', ')}`;
   }
 
-  // Build ACE context block if available
-  let aceBlock = '';
-  if (isACEEnabled()) {
+  // Build SAGE context block if available
+  let sageBlock = '';
+  if (isSAGEEnabled()) {
     const prefix = getContextPrefix();
     if (prefix) {
-      const weights = getACEWeights();
-      aceBlock = `\n\nACE LEARNED CONTEXT (from prior trade reflections):\n${prefix}\nCurrent learned weights: trend=${weights.trend.toFixed(2)}, ret5=${weights.ret5.toFixed(2)}, ret20=${weights.ret20.toFixed(2)}, sentiment=${weights.sentiment.toFixed(2)}`;
+      const weights = getSAGEWeights();
+      sageBlock = `\n\nSAGE LEARNED CONTEXT (from prior trade reflections):\n${prefix}\nCurrent learned weights: trend=${weights.trend.toFixed(2)}, ret5=${weights.ret5.toFixed(2)}, ret20=${weights.ret20.toFixed(2)}, sentiment=${weights.sentiment.toFixed(2)}`;
     }
   }
 
@@ -201,7 +201,7 @@ MARKET SNAPSHOT:
 - SMA(20): ${strategy.indicators.smaFast?.toFixed(2) ?? 'N/A'}
 - SMA(50): ${strategy.indicators.smaSlow?.toFixed(2) ?? 'N/A'}
 - Volatility: ${strategy.indicators.volatility?.toFixed(4) ?? 'N/A'} (regime: ${risk.volatility.regime})
-- ATR: ${strategy.indicators.atr?.toFixed(2) ?? 'N/A'}${sentimentBlock}${aceBlock}
+- ATR: ${strategy.indicators.atr?.toFixed(2) ?? 'N/A'}${sentimentBlock}${sageBlock}
 
 SIGNAL:
 - Direction: ${strategy.signal.direction}

@@ -55,8 +55,9 @@ export interface Position {
   takeProfitPrice?: number | null; // Calculated TP target price
 }
 
-// Slippage model
-const SLIPPAGE_BPS = 10;  // 0.1% average slippage
+// Slippage model — lower for simulation (no real DEX) to avoid phantom friction
+const IS_SIM = (process.env.MODE || 'simulation') === 'simulation';
+const SLIPPAGE_BPS = IS_SIM ? 3 : 10;  // 0.03% sim / 0.1% live
 
 // Minimum profit threshold before trailing stops activate.
 // Covers estimated round-trip cost (entry slippage + exit slippage) so that
