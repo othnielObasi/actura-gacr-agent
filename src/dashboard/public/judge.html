@@ -182,18 +182,18 @@
         <div class="metric-sub" style="margin-top:8px" id="mcpEndpoint">—</div>
       </div>
 
-      <!-- 8. ACE — Adaptive Learning -->
-      <h2>7. ACE — Agentic Context Engineering</h2>
+      <!-- 7. SAGE — Self-Adapting Generative Engine -->
+      <h2>7. SAGE (Self-Adapting Generative Engine)</h2>
       <div class="card" style="margin-bottom:8px">
         <div class="card-title">Self-Improving Learning Engine</div>
         <div class="grid3" style="margin-bottom:10px">
-          <div><div style="font-size:8px;color:#7c8a9e;text-transform:uppercase;letter-spacing:1px">Status</div><div style="font-size:16px;font-weight:700" id="aceStatus">—</div></div>
-          <div><div style="font-size:8px;color:#7c8a9e;text-transform:uppercase;letter-spacing:1px">Reflections</div><div style="font-size:16px;font-weight:700;color:#22d3ee" id="aceReflections">0</div></div>
-          <div><div style="font-size:8px;color:#7c8a9e;text-transform:uppercase;letter-spacing:1px">Playbook Rules</div><div style="font-size:16px;font-weight:700;color:#a78bfa" id="aceRules">0</div></div>
+          <div><div style="font-size:8px;color:#7c8a9e;text-transform:uppercase;letter-spacing:1px">Status</div><div style="font-size:16px;font-weight:700" id="sageStatus">—</div></div>
+          <div><div style="font-size:8px;color:#7c8a9e;text-transform:uppercase;letter-spacing:1px">Reflections</div><div style="font-size:16px;font-weight:700;color:#22d3ee" id="sageReflections">0</div></div>
+          <div><div style="font-size:8px;color:#7c8a9e;text-transform:uppercase;letter-spacing:1px">Playbook Rules</div><div style="font-size:16px;font-weight:700;color:#a78bfa" id="sageRules">0</div></div>
         </div>
-        <div class="card-title" style="margin-top:8px">Signal Weights (ACE-Tuned vs Default)</div>
-        <div id="aceWeights"></div>
-        <div class="metric-sub" style="margin-top:8px">ACE uses Gemini 2.5 Pro to reflect on trade outcomes and auto-tune signal weights within CAGE bounds. Kill switch: ACE_ENABLED=false</div>
+        <div class="card-title" style="margin-top:8px">Signal Weights (SAGE-Tuned vs Default)</div>
+        <div id="sageWeights"></div>
+        <div class="metric-sub" style="margin-top:8px">SAGE (Self-Adapting Generative Engine) uses Gemini 2.5 Pro to reflect on trade outcomes and auto-tune signal weights within CAGE bounds. Kill switch: SAGE_ENABLED=false</div>
       </div>
 
       <!-- 9. Governance Pipeline -->
@@ -253,15 +253,15 @@
 
     async function load() {
       try {
-        const [status, checkpoints, reputation, tradeStats, artifacts, health, aceStatus, acePlaybook] = await Promise.all([
+        const [status, checkpoints, reputation, tradeStats, artifacts, health, sageStatus, sagePlaybook] = await Promise.all([
           fetch('/api/status').then(r=>r.json()).catch(()=>null),
           fetch('/api/checkpoints?limit=5').then(r=>r.json()).catch(()=>null),
           fetch('/api/reputation/history?limit=10').then(r=>r.json()).catch(()=>null),
           fetch('/api/performance').then(r=>r.json()).catch(()=>null),
           fetch('/api/artifacts?limit=10').then(r=>r.json()).catch(()=>null),
           fetch('/api/health').then(r=>r.json()).catch(()=>null),
-          fetch('/api/ace/status').then(r=>r.json()).catch(()=>null),
-          fetch('/api/ace/playbook').then(r=>r.json()).catch(()=>null),
+          fetch('/api/sage/status').then(r=>r.json()).catch(()=>null),
+          fetch('/api/sage/playbook').then(r=>r.json()).catch(()=>null),
         ]);
 
         document.getElementById('loading').style.display = 'none';
@@ -361,17 +361,17 @@
           tsEl.innerHTML = '<div style="color:#7c8a9e">No trades recorded yet</div>';
         }
 
-        // ACE
-        if (aceStatus) {
-          const el = document.getElementById('aceStatus');
-          el.textContent = aceStatus.enabled ? 'ENABLED' : 'DISABLED';
-          el.style.color = aceStatus.enabled ? '#34d399' : '#f87171';
-          document.getElementById('aceReflections').textContent = aceStatus.reflectionCount || 0;
-          document.getElementById('aceRules').textContent = aceStatus.activeRules || 0;
+        // SAGE
+        if (sageStatus) {
+          const el = document.getElementById('sageStatus');
+          el.textContent = sageStatus.enabled ? 'ENABLED' : 'DISABLED';
+          el.style.color = sageStatus.enabled ? '#34d399' : '#f87171';
+          document.getElementById('sageReflections').textContent = sageStatus.reflectionCount || 0;
+          document.getElementById('sageRules').textContent = sageStatus.activeRules || 0;
           const defaults = { trend: 0.6, ret5: 1.8, ret20: 1.1, crossover: 0.15, rsi: 0.6, zscore: 0.5, sentiment: 0.12 };
-          const w = aceStatus.weights || defaults;
-          const cage = aceStatus.cage || {};
-          const wEl = document.getElementById('aceWeights');
+          const w = sageStatus.weights || defaults;
+          const cage = sageStatus.cage || {};
+          const wEl = document.getElementById('sageWeights');
           wEl.innerHTML = Object.keys(defaults).map(k => {
             const cur = (w[k] || 0).toFixed(2);
             const def = defaults[k].toFixed(2);

@@ -1062,7 +1062,7 @@ async function runCycle(): Promise<void> {
     `Cap: $${capital.toFixed(0)} | ` +
     `Pos: ${currentPositions.length}/${MAX_OPEN_POSITIONS} | ` +
     `${cognitive.rulesFired > 0 ? `Rules: ${cognitive.rulesFired} | ` : ''}` +
-    `${sentiment?.sources.length ? `Sent: ${sentiment.composite.toFixed(2)} [FG:${sentiment.fearGreed?.toFixed(2) ?? '-'} News:${sentiment.newsSentiment?.toFixed(2) ?? '-'} Fund:${sentiment.fundingRate?.toFixed(2) ?? '-'} Soc:${sentiment.socialSentiment?.toFixed(2) ?? '-'}] | ` : ''}` +
+    `${sentiment?.sources.length ? `Sent: ${sentiment.composite.toFixed(2)} [FG:${sentiment.fearGreed?.toFixed(2) ?? '-'} News:${sentiment.newsSentiment?.toFixed(2) ?? '-'} Fund:${sentiment.fundingRate?.toFixed(2) ?? '-'} Soc:${sentiment.socialSentiment?.toFixed(2) ?? '-'} Flow:${sentiment.exchangeFlows?.toFixed(2) ?? '-'} OI:${sentiment.openInterest?.toFixed(2) ?? '-'} Whl:${sentiment.whaleActivity?.toFixed(2) ?? '-'}] | ` : ''}` +
     `Oracle: ${oracleIntegrity.status} | DEX: ${dexRouting.selectedDex} | Sim: ${executionSimulation.reason} | ` +
     `${elapsed}ms`
   );

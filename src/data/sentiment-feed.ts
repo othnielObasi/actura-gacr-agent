@@ -20,6 +20,9 @@ export interface SentimentResult {
   newsSentiment: number | null; // -1 to +1
   fundingRate: number | null; // -1 to +1
   socialSentiment: number | null; // -1 to +1 (PRISM social)
+  exchangeFlows: number | null;   // -1 to +1 (PRISM exchange flows)
+  openInterest: number | null;    // -1 to +1 (PRISM OI)
+  whaleActivity: number | null;   // -1 to +1 (PRISM whale movements)
   sources: string[];          // which sources contributed
   fetchedAt: string;
 }
@@ -36,6 +39,9 @@ const FEAR_GREED_TTL_MS = 5 * 60 * 1000;    // 5 min cache (updates hourly upstr
 const NEWS_TTL_MS = 60 * 60 * 1000;          // 60 min cache (Alpha Vantage free tier: 25 req/day)
 const FUNDING_TTL_MS = 5 * 60 * 1000;        // 5 min cache
 const SOCIAL_TTL_MS = 5 * 60 * 1000;         // 5 min cache
+const EXCHANGE_FLOW_TTL_MS = 5 * 60 * 1000;  // 5 min cache
+const OI_TTL_MS = 5 * 60 * 1000;             // 5 min cache
+const WHALE_TTL_MS = 5 * 60 * 1000;          // 5 min cache
 
 const FEAR_GREED_URL = 'https://api.alternative.me/fng/?limit=1';
 const ALPHAVANTAGE_API_KEY = process.env.ALPHAVANTAGE_API_KEY || '';
@@ -45,11 +51,17 @@ const KRAKEN_TICKER_URL = 'https://api.kraken.com/0/public/Ticker?pair=ETHUSD';
 const PRISM_BASE_URL = 'https://api.prismapi.ai';
 const PRISM_API_KEY = process.env.PRISM_API_KEY || '';
 
-// Weights for composite (sum to 1.0) — balanced across 4 independent sources
-const WEIGHT_FEAR_GREED = 0.25;
-const WEIGHT_NEWS = 0.25;
-const WEIGHT_FUNDING = 0.25;
-const WEIGHT_SOCIAL = 0.25;
+// Weights for composite (sum to 1.0) — 7 independent sources
+// Core sentiment (60%): fear/greed + news + social
+// On-chain intelligence (25%): exchange flows + whale movements
+// Market structure (15%): funding + open interest
+const WEIGHT_FEAR_GREED = 0.20;
+const WEIGHT_NEWS = 0.15;
+const WEIGHT_FUNDING = 0.10;
+const WEIGHT_SOCIAL = 0.15;
+const WEIGHT_EXCHANGE_FLOWS = 0.15;
+const WEIGHT_OI = 0.10;
+const WEIGHT_WHALES = 0.15;
 
 // ──── Cache ────
 
@@ -57,6 +69,9 @@ let fearGreedCache: CachedValue<number> | null = null;
 let newsCache: CachedValue<number> | null = null;
 let fundingCache: CachedValue<number> | null = null;
 let socialCache: CachedValue<number> | null = null;
+let exchangeFlowCache: CachedValue<number> | null = null;
+let oiCache: CachedValue<number> | null = null;
+let whaleCache: CachedValue<number> | null = null;
 
 // ──── Fear & Greed Index ────
 
@@ -300,8 +315,10 @@ async function fetchFundingProxy(): Promise<number | null> {
 
     // Blend: contrarian VWAP deviation + momentum intraday
     // The contrarian signal is stronger near extremes
-    const contrarian = -Math.tanh(deviation * 40);   // ±2.5% → ±1.0 (inverted)
-    const momentum = Math.tanh(intradayMove * 30);    // ±3.3% → ±1.0
+    // Use linear scaling for better sensitivity to small changes
+    // ±1% deviation → ±0.4, ±3% → ±1.0 (clamped)
+    const contrarian = -Math.max(-1, Math.min(1, deviation * 33));
+    const momentum = Math.max(-1, Math.min(1, intradayMove * 25));
 
     const normalized = 0.6 * contrarian + 0.4 * momentum;
 
@@ -434,7 +451,10 @@ async function fetchPrismFunding(): Promise<number | null> {
       }
     }
 
-    if (count === 0) return null;
+    if (count === 0) {
+      log.warn('PRISM funding: no valid rates in response', { dataKeys: Object.keys(data || {}).join(',') });
+      return null;
+    }
 
     const avgRate = totalRate / count;
     // Funding rates are typically tiny (0.0001 = 0.01%)
@@ -442,8 +462,232 @@ async function fetchPrismFunding(): Promise<number | null> {
     const normalized = Math.max(-1, Math.min(1, -Math.tanh(avgRate * 2000)));
     log.info('PRISM funding fetched', { avgRate: (avgRate * 100).toFixed(4) + '%', normalized: normalized.toFixed(2), exchanges: count });
     return normalized;
-  } catch {
+  } catch (err: any) {
+    log.warn('PRISM funding fetch failed', { error: err.message?.slice(0, 80) });
     return null;
+  }
+}
+
+// ──── PRISM Exchange Flows ────
+
+/**
+ * Fetch exchange flow data from PRISM.
+ * Net inflows to exchanges = selling pressure = bearish.
+ * Net outflows from exchanges = accumulation = bullish.
+ */
+async function fetchExchangeFlows(): Promise<number | null> {
+  if (exchangeFlowCache && Date.now() - exchangeFlowCache.fetchedAt < EXCHANGE_FLOW_TTL_MS) {
+    return exchangeFlowCache.value;
+  }
+
+  if (!PRISM_API_KEY) return null;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    const res = await fetch(`${PRISM_BASE_URL}/onchain/exchange-flows/ETH`, {
+      signal: controller.signal,
+      headers: { 'Accept': 'application/json', 'X-API-Key': PRISM_API_KEY },
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      log.warn('PRISM exchange flows API error', { status: res.status });
+      return exchangeFlowCache?.value ?? null;
+    }
+
+    const data = await res.json() as any;
+    const flows = data?.data ?? data;
+
+    // Look for net_flow, inflow, outflow fields
+    let netFlow: number | null = null;
+
+    if (typeof flows?.net_flow === 'number') {
+      netFlow = flows.net_flow;
+    } else if (typeof flows?.netflow === 'number') {
+      netFlow = flows.netflow;
+    } else if (typeof flows?.inflow === 'number' && typeof flows?.outflow === 'number') {
+      netFlow = flows.inflow - flows.outflow;
+    } else if (Array.isArray(flows) && flows.length > 0) {
+      // Take most recent data point
+      const latest = flows[flows.length - 1];
+      if (typeof latest?.net_flow === 'number') netFlow = latest.net_flow;
+      else if (typeof latest?.netflow === 'number') netFlow = latest.netflow;
+      else if (typeof latest?.inflow === 'number' && typeof latest?.outflow === 'number') {
+        netFlow = latest.inflow - latest.outflow;
+      }
+    }
+
+    if (netFlow === null || !Number.isFinite(netFlow)) {
+      log.warn('PRISM exchange flows: could not extract net flow', { dataKeys: Object.keys(flows || {}).join(',') });
+      return exchangeFlowCache?.value ?? null;
+    }
+
+    // Positive netFlow = inflows > outflows = selling pressure = bearish
+    // Scale: ±5000 ETH flow → ±1.0 (inverted: inflows are bearish)
+    const normalized = Math.max(-1, Math.min(1, -netFlow / 5000));
+
+    exchangeFlowCache = { value: normalized, fetchedAt: Date.now() };
+    log.info('PRISM exchange flows fetched', { netFlow: netFlow.toFixed(1), normalized: normalized.toFixed(2) });
+    return normalized;
+  } catch (err: any) {
+    log.warn('PRISM exchange flows failed', { error: err.message?.slice(0, 80) });
+    return exchangeFlowCache?.value ?? null;
+  }
+}
+
+// ──── PRISM Open Interest ────
+
+/**
+ * Fetch aggregated open interest from PRISM.
+ * Rising OI = new money entering = trend strengthening.
+ * Falling OI = positions closing = trend weakening.
+ * We measure OI change rate as a sentiment signal.
+ */
+let prevOiValue: number | null = null;
+
+async function fetchOpenInterest(): Promise<number | null> {
+  if (oiCache && Date.now() - oiCache.fetchedAt < OI_TTL_MS) {
+    return oiCache.value;
+  }
+
+  if (!PRISM_API_KEY) return null;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    const res = await fetch(`${PRISM_BASE_URL}/dex/ETH/oi/all`, {
+      signal: controller.signal,
+      headers: { 'Accept': 'application/json', 'X-API-Key': PRISM_API_KEY },
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      log.warn('PRISM OI API error', { status: res.status });
+      return oiCache?.value ?? null;
+    }
+
+    const data = await res.json() as any;
+    const oiData = data?.data ?? data;
+
+    // Extract total OI value
+    let totalOI: number | null = null;
+
+    if (typeof oiData?.total_oi === 'number') {
+      totalOI = oiData.total_oi;
+    } else if (typeof oiData?.open_interest === 'number') {
+      totalOI = oiData.open_interest;
+    } else if (typeof oiData?.oi === 'number') {
+      totalOI = oiData.oi;
+    } else if (Array.isArray(oiData) && oiData.length > 0) {
+      // Sum across exchanges
+      totalOI = 0;
+      for (const item of oiData) {
+        const val = item?.oi ?? item?.open_interest ?? item?.total_oi;
+        if (typeof val === 'number') totalOI += val;
+      }
+    } else if (typeof oiData === 'object' && oiData !== null) {
+      // Object keyed by exchange
+      totalOI = 0;
+      for (const val of Object.values(oiData)) {
+        const v = typeof val === 'number' ? val : (val as any)?.oi ?? (val as any)?.open_interest;
+        if (typeof v === 'number') totalOI += v;
+      }
+    }
+
+    if (totalOI === null || !Number.isFinite(totalOI) || totalOI <= 0) {
+      log.warn('PRISM OI: could not extract open interest', { dataKeys: Object.keys(oiData || {}).join(',') });
+      return oiCache?.value ?? null;
+    }
+
+    // Compare with previous reading to get change rate
+    let normalized = 0;
+    if (prevOiValue !== null && prevOiValue > 0) {
+      const changePct = (totalOI - prevOiValue) / prevOiValue;
+      // Rising OI is directionally neutral but confirms trends
+      // ±5% change → ±1.0
+      // Positive = OI rising = trend conviction = mild bullish bias (trending markets tend bullish)
+      normalized = Math.max(-1, Math.min(1, changePct * 20));
+    }
+    prevOiValue = totalOI;
+
+    oiCache = { value: normalized, fetchedAt: Date.now() };
+    log.info('PRISM OI fetched', { totalOI: totalOI.toFixed(0), changePct: prevOiValue ? ((totalOI / prevOiValue - 1) * 100).toFixed(2) + '%' : 'first', normalized: normalized.toFixed(2) });
+    return normalized;
+  } catch (err: any) {
+    log.warn('PRISM OI failed', { error: err.message?.slice(0, 80) });
+    return oiCache?.value ?? null;
+  }
+}
+
+// ──── PRISM Whale Movements ────
+
+/**
+ * Fetch whale movement data from PRISM.
+ * Large transfers TO exchanges = selling intent = bearish.
+ * Large transfers FROM exchanges = accumulation = bullish.
+ */
+async function fetchWhaleMovements(): Promise<number | null> {
+  if (whaleCache && Date.now() - whaleCache.fetchedAt < WHALE_TTL_MS) {
+    return whaleCache.value;
+  }
+
+  if (!PRISM_API_KEY) return null;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    const res = await fetch(`${PRISM_BASE_URL}/onchain/whale-movements/ETH`, {
+      signal: controller.signal,
+      headers: { 'Accept': 'application/json', 'X-API-Key': PRISM_API_KEY },
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      log.warn('PRISM whale movements API error', { status: res.status });
+      return whaleCache?.value ?? null;
+    }
+
+    const data = await res.json() as any;
+    const whales = data?.data ?? data;
+
+    let toExchange = 0;
+    let fromExchange = 0;
+
+    if (Array.isArray(whales)) {
+      for (const tx of whales) {
+        const amount = tx?.amount ?? tx?.value ?? 0;
+        if (typeof amount !== 'number') continue;
+        const dest = (tx?.to_type ?? tx?.destination_type ?? tx?.type ?? '').toLowerCase();
+        const src = (tx?.from_type ?? tx?.source_type ?? '').toLowerCase();
+        if (dest.includes('exchange')) toExchange += amount;
+        if (src.includes('exchange')) fromExchange += amount;
+      }
+    } else if (typeof whales === 'object' && whales !== null) {
+      toExchange = whales.to_exchange ?? whales.inflow ?? 0;
+      fromExchange = whales.from_exchange ?? whales.outflow ?? 0;
+    }
+
+    const total = toExchange + fromExchange;
+    if (total <= 0) {
+      log.warn('PRISM whales: no movement data', { dataKeys: Object.keys(whales || {}).join(',') });
+      return whaleCache?.value ?? null;
+    }
+
+    // Net whale flow: positive = more going TO exchanges (bearish)
+    // Normalize: if 60% goes to exchange vs 40% from → -0.2 (mild bearish)
+    const netRatio = (fromExchange - toExchange) / total; // positive = bullish (withdrawals)
+    const normalized = Math.max(-1, Math.min(1, netRatio * 2));
+
+    whaleCache = { value: normalized, fetchedAt: Date.now() };
+    log.info('PRISM whale movements fetched', { toExchange: toExchange.toFixed(1), fromExchange: fromExchange.toFixed(1), normalized: normalized.toFixed(2) });
+    return normalized;
+  } catch (err: any) {
+    log.warn('PRISM whale movements failed', { error: err.message?.slice(0, 80) });
+    return whaleCache?.value ?? null;
   }
 }
 
@@ -452,11 +696,14 @@ async function fetchPrismFunding(): Promise<number | null> {
  * Gracefully degrades: if a source fails, remaining sources are re-weighted.
  */
 export async function fetchSentiment(): Promise<SentimentResult> {
-  const [fg, news, funding, social] = await Promise.all([
+  const [fg, news, funding, social, flows, oi, whales] = await Promise.all([
     fetchFearGreed(),
     fetchNewsSentiment(),
     fetchFundingProxy(),
     fetchSocialSentiment(),
+    fetchExchangeFlows(),
+    fetchOpenInterest(),
+    fetchWhaleMovements(),
   ]);
 
   // Try PRISM real funding as upgrade over Kraken VWAP proxy
@@ -494,6 +741,21 @@ export async function fetchSentiment(): Promise<SentimentResult> {
     totalWeight += WEIGHT_SOCIAL;
     sources.push('prism_social');
   }
+  if (flows !== null) {
+    weightedSum += flows * WEIGHT_EXCHANGE_FLOWS;
+    totalWeight += WEIGHT_EXCHANGE_FLOWS;
+    sources.push('exchange_flows');
+  }
+  if (oi !== null) {
+    weightedSum += oi * WEIGHT_OI;
+    totalWeight += WEIGHT_OI;
+    sources.push('open_interest');
+  }
+  if (whales !== null) {
+    weightedSum += whales * WEIGHT_WHALES;
+    totalWeight += WEIGHT_WHALES;
+    sources.push('whale_movements');
+  }
 
   const composite = totalWeight > 0 ? weightedSum / totalWeight : 0;
 
@@ -507,6 +769,9 @@ export async function fetchSentiment(): Promise<SentimentResult> {
     newsSentiment: news,
     fundingRate: effectiveFunding,
     socialSentiment: social,
+    exchangeFlows: flows,
+    openInterest: oi,
+    whaleActivity: whales,
     sources,
     fetchedAt: new Date().toISOString(),
   };
