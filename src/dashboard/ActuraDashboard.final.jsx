@@ -789,7 +789,7 @@ function Actura() {
                 ].map((m, i) => <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start" }}><span style={{ color: T.fg3, flexShrink: 0 }}>▸</span><span>{m}</span></div>)}
               </div>
             </P>
-            <P title="SAGE — Self-Improving" tip="Self-Adapting Generative Engine: LLM-powered reflection that auto-tunes signal weights and builds a trading playbook from outcomes." tag={sageData?.enabled ? "ACTIVE" : "OFF"}>
+            <P title="SAGE (Self-Adapting Generative Engine)" tip="LLM-powered reflection that auto-tunes signal weights and builds a trading playbook from outcomes." tag={sageData?.enabled ? "ACTIVE" : "OFF"}>
               {(() => {
                 const defaults = { trend: 0.6, ret5: 1.8, ret20: 1.1, crossover: 0.15, rsi: 0.6, zscore: 0.5, sentiment: 0.12 };
                 const w = sageData?.weights || defaults;
