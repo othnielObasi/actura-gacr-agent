@@ -167,30 +167,89 @@ function getNewsFromDiskOrMemory(): number | null {
 }
 
 /**
- * Fetch news sentiment from Alpha Vantage.
+ * Fetch news/market sentiment — PRISM primary, Alpha Vantage fallback.
  * Disk-persisted cache ensures values survive PM2 restarts.
- * 60-min TTL keeps us well under 25 req/day free tier limit.
  */
 async function fetchNewsSentiment(): Promise<number | null> {
   // Check memory + disk cache first
   const cached = getNewsFromDiskOrMemory();
   if (cached !== null) return cached;
 
-  if (!ALPHAVANTAGE_API_KEY) return null;
+  // Try PRISM sentiment first (no daily limit)
+  let result = await fetchPrismSentiment();
+  let source = 'prism_sentiment';
 
-  const result = await fetchAlphaVantageNews();
+  // Fallback to Alpha Vantage
+  if (result === null && ALPHAVANTAGE_API_KEY) {
+    result = await fetchAlphaVantageNews();
+    source = 'alpha_vantage';
+  }
 
   if (result !== null) {
     newsCache = { value: result, fetchedAt: Date.now() };
     saveDiskCache(NEWS_CACHE_FILE, newsCache);
-    log.info('News sentiment cached to disk', { normalized: result.toFixed(2) });
+    log.info('News sentiment cached to disk', { source, normalized: result.toFixed(2) });
   }
 
   return result;
 }
 
 /**
- * Alpha Vantage news (25 req/day free tier — TTL keeps us under limit).
+ * PRISM composite sentiment — combines price momentum, social engagement,
+ * and developer activity into a 0-100 score.
+ * Normalized to [-1, +1]: 0→-1, 50→0, 100→+1
+ */
+async function fetchPrismSentiment(): Promise<number | null> {
+  if (!PRISM_API_KEY) return null;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    const res = await fetch(`${PRISM_BASE_URL}/social/ETH/sentiment`, {
+      signal: controller.signal,
+      headers: { 'X-API-Key': PRISM_API_KEY, 'Accept': 'application/json' },
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      log.warn('PRISM sentiment returned non-OK', { status: res.status });
+      return null;
+    }
+
+    const data = await res.json() as {
+      sentiment_score?: number;
+      sentiment_label?: string;
+      components?: {
+        price_momentum?: number;
+        social_engagement?: number;
+        developer_activity?: number;
+      };
+    };
+
+    const score = data?.sentiment_score;
+    if (typeof score !== 'number' || !Number.isFinite(score)) return null;
+
+    // 0-100 → [-1, +1]: 50 is neutral
+    const normalized = Math.max(-1, Math.min(1, (score - 50) / 50));
+
+    log.info('PRISM sentiment fetched', {
+      score,
+      label: data.sentiment_label,
+      momentum: data.components?.price_momentum,
+      social: data.components?.social_engagement,
+      devActivity: data.components?.developer_activity,
+      normalized: normalized.toFixed(2),
+    });
+    return normalized;
+  } catch (err: any) {
+    log.warn('PRISM sentiment fetch failed', { error: err.message?.slice(0, 80) });
+    return null;
+  }
+}
+
+/**
+ * Alpha Vantage news — fallback source (25 req/day free tier).
  */
 async function fetchAlphaVantageNews(): Promise<number | null> {
 
