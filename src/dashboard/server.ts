@@ -25,6 +25,10 @@ import { getCliStatus, checkCliHealth } from '../data/kraken-cli.js';
 import { getKrakenAccountSnapshot, krakenPreflight } from '../data/kraken-bridge.js';
 import { getIndexedEvents, getIndexerStatus } from '../chain/event-indexer.js';
 import { generateAttestationSummary } from '../security/tee-attestation.js';
+import { getAverageValidationScore } from '../chain/validation.js';
+import { getHackathonReputation } from '../chain/reputation.js';
+import { ethers } from 'ethers';
+import { getWallet } from '../chain/sdk.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_PORT = parseInt(process.env.PORT || '3000', 10);
@@ -158,6 +162,62 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
       },
       sentiment: state.sentiment ?? null,
     });
+  });
+
+  /** Hackathon sandbox status */
+  app.get('/api/sandbox', async (_req, res) => {
+    try {
+      const aId = config.agentId;
+      const chain = config.chainId || 11155111;
+      const riskRouter = config.riskRouterAddress || '';
+      const vaultAddr = config.hackathonVaultAddress || '';
+      const registryAddr = config.agentRegistryAddress || '';
+      const reputationAddr = config.reputationRegistry || '';
+      const validationAddr = config.validationRegistry || '';
+
+      let vaultBalance: string | null = null;
+      let walletBalance: string | null = null;
+      let validationScore: number | null = null;
+      let reputationScore: number | null = null;
+
+      try {
+        const wallet = getWallet();
+        walletBalance = ethers.formatEther(await wallet.provider!.getBalance(wallet.address));
+      } catch { /* chain not init */ }
+
+      if (aId && vaultAddr) {
+        try {
+          const wallet = getWallet();
+          const vault = new ethers.Contract(vaultAddr, ['function getBalance(uint256 agentId) external view returns (uint256)'], wallet);
+          vaultBalance = ethers.formatEther(await vault.getBalance(aId));
+        } catch { /* vault read failed */ }
+      }
+
+      if (aId) {
+        try { validationScore = await getAverageValidationScore(aId); } catch { /* no score yet */ }
+        try { reputationScore = await getHackathonReputation(aId); } catch { /* no score yet */ }
+      }
+
+      res.json({
+        connected: !!riskRouter,
+        chainId: chain,
+        network: chain === 11155111 ? 'Sepolia' : chain === 84532 ? 'Base Sepolia' : `Chain ${chain}`,
+        agentId: aId || null,
+        walletBalance,
+        vaultBalance,
+        validationScore,
+        reputationScore,
+        contracts: {
+          agentRegistry: registryAddr || null,
+          hackathonVault: vaultAddr || null,
+          riskRouter: riskRouter || null,
+          reputationRegistry: reputationAddr || null,
+          validationRegistry: validationAddr || null,
+        },
+      });
+    } catch (e) {
+      res.json({ connected: false, error: String(e) });
+    }
   });
 
   /** Recent checkpoints */

@@ -150,6 +150,7 @@ function Actura() {
   const [latestAi, setLatestAi] = useState(null);
   const [feedsData, setFeedsData] = useState(null);
   const [sageData, setSageData] = useState(null);
+  const [sandboxData, setSandboxData] = useState(null);
 
 
   /* ── Tier mapping from API tier names ── */
@@ -236,7 +237,7 @@ function Actura() {
     };
   }, [governance, capital]);
 
-  const erc = { agentId: 22, agentRegistry: "eip155:84532:0x7177...Dd09A", ownerWallet: "0xE868...DdCD7", agentWallet: "0xe0B2...11CD", tradeIntentHash: trades[0]?.tx !== "—" ? trades[0].tx : "pending…", validationRequestHash: "pending…", lastFeedbackTag: "tradingYield:day", registrationStatus: agentRunning ? "READY" : "OFFLINE" };
+  const erc = { agentId: sandboxData?.agentId || "—", agentRegistry: sandboxData?.contracts?.agentRegistry ? `eip155:${sandboxData.chainId}:${sandboxData.contracts.agentRegistry.slice(0, 8)}...${sandboxData.contracts.agentRegistry.slice(-4)}` : "—", ownerWallet: "0xE868...DdCD7", agentWallet: "0xE868...DdCD7", tradeIntentHash: trades[0]?.tx !== "—" ? trades[0].tx : "pending…", validationRequestHash: "pending…", lastFeedbackTag: "tradingYield:day", registrationStatus: agentRunning ? "READY" : "OFFLINE" };
   const mcp = { status: "ACTIVE", endpoint: "/mcp", mode: "governed", visibility: "public + restricted + operator", tools: { public: 7, restricted: 2, operator: 3, total: 12 }, resources: 8, prompts: 4, publicTools: ["get_market_state", "explain_trade", "get_trust_state", "get_capital_rights"], restrictedTools: ["propose_trade", "execute_trade"], operatorTools: ["pause_agent", "resume_agent", "emergency_stop"] };
 
   const checks = useMemo(() => [
@@ -255,7 +256,7 @@ function Actura() {
   /* ── API fetching ── */
   const fetchData = useCallback(async () => {
     try {
-      const [statusRes, checkpointsRes, reputationRes, operatorRes, actionsRes, positionsRes, governanceRes, securityRes, artifactRes, feedsRes, sageRes] = await Promise.all([
+      const [statusRes, checkpointsRes, reputationRes, operatorRes, actionsRes, positionsRes, governanceRes, securityRes, artifactRes, feedsRes, sageRes, sandboxRes] = await Promise.all([
         fetch("/api/status").then(r => r.json()).catch(() => null),
         fetch("/api/checkpoints?limit=10").then(r => r.json()).catch(() => null),
         fetch("/api/reputation/history?limit=30").then(r => r.json()).catch(() => null),
@@ -267,6 +268,7 @@ function Actura() {
         fetch("/api/artifact/latest").then(r => r.json()).catch(() => null),
         fetch("/api/feeds/kraken").then(r => r.json()).catch(() => null),
         fetch("/api/sage/status").then(r => r.json()).catch(() => null),
+        fetch("/api/sandbox").then(r => r.json()).catch(() => null),
       ]);
 
       if (statusRes) {
@@ -324,6 +326,7 @@ function Actura() {
       if (artifactRes?.aiReasoning) setLatestAi(artifactRes.aiReasoning);
       if (feedsRes) setFeedsData(feedsRes);
       if (sageRes) setSageData(sageRes);
+      if (sandboxRes) setSandboxData(sandboxRes);
 
 
       setStage(s => (s + 1) % STAGES.length);
@@ -374,7 +377,7 @@ function Actura() {
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ width: 22, height: 22, borderRadius: 4, background: `linear-gradient(135deg, ${T.up}, ${T.cyan})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: T.bg }}>A</div>
           <span style={{ fontSize: 13, fontWeight: 800, color: T.w, letterSpacing: 1 }}>ACTURA</span>
-          <span style={{ fontSize: 8, color: T.fg3, letterSpacing: 1.5 }}>ERC-8004 · GACR · Base Sepolia</span>
+          <span style={{ fontSize: 8, color: T.fg3, letterSpacing: 1.5 }}>ERC-8004 · GACR · {sandboxData?.network || "Sepolia"}</span>
         </div>
         <div style={{ display: "flex", gap: 10, marginLeft: 16 }}>
           <a href="/" style={{ color: T.cyan, fontSize: 10, fontWeight: 600, textDecoration: "none", padding: "4px 10px", borderRadius: 4, background: `${T.cyan}10` }}>Dashboard</a>
@@ -707,8 +710,54 @@ function Actura() {
           </P>
           </div>
 
-          {/* ERC-8004 + MCP */}
+          {/* ERC-8004 + MCP + Sandbox */}
           <div style={{ display: "grid", gap: 10 }}>
+            <P title="Hackathon Sandbox" tip="Live connection to the shared hackathon contracts on Sepolia. Shows agent registration, vault balance, and on-chain scores from judges." tag={sandboxData?.connected ? "CONNECTED" : "OFFLINE"}>
+              {(() => {
+                const sb = sandboxData || {};
+                const connected = sb.connected;
+                const shortAddr = (a) => a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "—";
+                const etherscanBase = sb.chainId === 11155111 ? "https://sepolia.etherscan.io" : "https://sepolia.basescan.org";
+                return React.createElement(React.Fragment, null,
+                  React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 0, marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.brd}` } },
+                    React.createElement(Metric, { label: "Agent ID", value: sb.agentId != null ? `#${sb.agentId}` : "—", color: sb.agentId ? T.cyan : T.fg3 }),
+                    React.createElement(Metric, { label: "Network", value: sb.network || "—", sub: sb.chainId ? `Chain ${sb.chainId}` : "", color: connected ? T.up : T.fg3 }),
+                    React.createElement(Metric, { label: "Vault Balance", value: sb.vaultBalance ? `${Number(sb.vaultBalance).toFixed(4)} ETH` : "—", color: sb.vaultBalance && Number(sb.vaultBalance) > 0 ? T.up : T.fg3 }),
+                    React.createElement(Metric, { label: "Wallet", value: sb.walletBalance ? `${Number(sb.walletBalance).toFixed(3)} ETH` : "—", sub: "gas balance", color: sb.walletBalance && Number(sb.walletBalance) > 1 ? T.up : T.warn }),
+                  ),
+                  React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8, paddingBottom: 8, borderBottom: `1px solid ${T.brd}` } },
+                    React.createElement("div", { style: { background: T.bg, borderRadius: 4, padding: "8px 10px", textAlign: "center" } },
+                      React.createElement("div", { style: { fontSize: 8, color: T.fg3, letterSpacing: 1, marginBottom: 4 } }, "VALIDATION SCORE"),
+                      React.createElement("div", { style: { fontSize: 20, fontWeight: 700, color: sb.validationScore != null && sb.validationScore > 0 ? T.cyan : T.fg3 } }, sb.validationScore != null && sb.validationScore > 0 ? `${sb.validationScore}/100` : "—"),
+                      React.createElement("div", { style: { fontSize: 8, color: T.fg3, marginTop: 2 } }, "ValidationRegistry"),
+                    ),
+                    React.createElement("div", { style: { background: T.bg, borderRadius: 4, padding: "8px 10px", textAlign: "center" } },
+                      React.createElement("div", { style: { fontSize: 8, color: T.fg3, letterSpacing: 1, marginBottom: 4 } }, "REPUTATION SCORE"),
+                      React.createElement("div", { style: { fontSize: 20, fontWeight: 700, color: sb.reputationScore != null && sb.reputationScore > 0 ? T.purple : T.fg3 } }, sb.reputationScore != null && sb.reputationScore > 0 ? `${sb.reputationScore}/100` : "—"),
+                      React.createElement("div", { style: { fontSize: 8, color: T.fg3, marginTop: 2 } }, "ReputationRegistry"),
+                    ),
+                  ),
+                  React.createElement("div", { style: { fontSize: 8.5, color: T.fg3, letterSpacing: 1, fontWeight: 600, marginBottom: 4 } }, "SHARED CONTRACTS"),
+                  [
+                    ["AgentRegistry", sb.contracts?.agentRegistry],
+                    ["HackathonVault", sb.contracts?.hackathonVault],
+                    ["RiskRouter", sb.contracts?.riskRouter],
+                    ["ValidationRegistry", sb.contracts?.validationRegistry],
+                    ["ReputationRegistry", sb.contracts?.reputationRegistry],
+                  ].map(([name, addr]) => React.createElement("div", { key: name, style: { display: "flex", justifyContent: "space-between", padding: "2px 0", fontSize: 10 } },
+                    React.createElement("span", { style: { color: T.fg2 } }, name),
+                    addr ? React.createElement("a", { href: `${etherscanBase}/address/${addr}`, target: "_blank", rel: "noopener", style: { color: T.info, textDecoration: "none", fontWeight: 500, fontSize: 9.5 } }, shortAddr(addr)) : React.createElement("span", { style: { color: T.fg3 } }, "—"),
+                  )),
+                  React.createElement("div", { style: { display: "flex", gap: 4, flexWrap: "wrap", marginTop: 8 } },
+                    React.createElement(Badge, { color: connected ? T.up : T.dn }, connected ? "sandbox connected" : "disconnected"),
+                    sb.agentId && React.createElement(Badge, { color: T.cyan }, "registered"),
+                    sb.vaultBalance && Number(sb.vaultBalance) > 0 && React.createElement(Badge, { color: T.up }, "capital claimed"),
+                    React.createElement(Badge, { color: T.info }, "EIP-712 signing"),
+                    React.createElement(Badge, { color: T.purple }, "risk-routed"),
+                  ),
+                );
+              })()}
+            </P>
             <P title="ERC-8004 Protocol" tip="On-chain registration status, agent identity, contract address, and EIP-1271 / TEE security verification." tag={erc.registrationStatus}>
               <KV k="agentId" v={String(erc.agentId)} />
               <KV k="agentRegistry" v={erc.agentRegistry} c={T.info} />
