@@ -91,10 +91,16 @@
       </div>
       <div class="card" style="margin-top:8px">
         <div class="card-title">On-Chain Registries</div>
-        <div class="kv"><span class="kv-key">Identity Registry</span><span class="kv-val cyan" id="identityReg">—</span></div>
+        <div class="kv"><span class="kv-key">Agent Registry</span><span class="kv-val cyan" id="agentRegistryAddr">—</span></div>
+        <div class="kv"><span class="kv-key">Risk Router</span><span class="kv-val cyan" id="riskRouterAddr">—</span></div>
+        <div class="kv"><span class="kv-key">Hackathon Vault</span><span class="kv-val cyan" id="vaultAddr">—</span></div>
         <div class="kv"><span class="kv-key">Reputation Registry</span><span class="kv-val cyan" id="reputationReg">—</span></div>
         <div class="kv"><span class="kv-key">Validation Registry</span><span class="kv-val cyan" id="validationReg">—</span></div>
-        <div class="kv"><span class="kv-key">Network</span><span class="kv-val">Base Sepolia (84532)</span></div>
+        <div class="kv"><span class="kv-key">Network</span><span class="kv-val" id="networkName">Sepolia (11155111)</span></div>
+        <div class="kv"><span class="kv-key">Vault Balance</span><span class="kv-val green" id="vaultBalance">—</span></div>
+        <div class="kv"><span class="kv-key">Wallet Balance</span><span class="kv-val" id="walletBalance">—</span></div>
+        <div class="kv"><span class="kv-key">Validation Score</span><span class="kv-val cyan" id="validationScore">—</span></div>
+        <div class="kv"><span class="kv-key">Reputation Score</span><span class="kv-val" id="reputationScore" style="color:#a78bfa">—</span></div>
         <div class="kv"><span class="kv-key">Owner Wallet</span><span class="kv-val" id="ownerWallet">—</span></div>
       </div>
 
@@ -253,7 +259,7 @@
 
     async function load() {
       try {
-        const [status, checkpoints, reputation, tradeStats, artifacts, health, sageStatus, sagePlaybook] = await Promise.all([
+        const [status, checkpoints, reputation, tradeStats, artifacts, health, sageStatus, sagePlaybook, sandbox] = await Promise.all([
           fetch('/api/status').then(r=>r.json()).catch(()=>null),
           fetch('/api/checkpoints?limit=5').then(r=>r.json()).catch(()=>null),
           fetch('/api/reputation/history?limit=10').then(r=>r.json()).catch(()=>null),
@@ -262,13 +268,14 @@
           fetch('/api/health').then(r=>r.json()).catch(()=>null),
           fetch('/api/sage/status').then(r=>r.json()).catch(()=>null),
           fetch('/api/sage/playbook').then(r=>r.json()).catch(()=>null),
+          fetch('/api/sandbox').then(r=>r.json()).catch(()=>null),
         ]);
 
         document.getElementById('loading').style.display = 'none';
         document.getElementById('content').style.display = 'block';
 
-        // Identity
-        const agentId = health?.agentId || status?.agent?.agentId || '338';
+        // Identity — use sandbox data (hackathon shared contracts)
+        const agentId = sandbox?.agentId || health?.agentId || status?.agent?.agentId || '—';
         document.getElementById('agentId').textContent = agentId;
 
         // Trust
@@ -286,13 +293,26 @@
         el.className = 'metric ' + (running ? 'green' : 'red');
         document.getElementById('cycleCount').textContent = `Cycle ${status?.agent?.cycleCount || 0}`;
 
-        // Registries
-        if (health) {
-          document.getElementById('identityReg').textContent = health.identityRegistry || '—';
+        // Registries — prioritize sandbox (hackathon shared contracts)
+        const shortAddr = (a) => a ? a.slice(0, 6) + '…' + a.slice(-4) : '—';
+        const etherscanBase = (sandbox?.chainId === 11155111) ? 'https://sepolia.etherscan.io' : 'https://sepolia.basescan.org';
+        const linkAddr = (a) => a ? `<a href="${etherscanBase}/address/${a}" target="_blank" style="color:#22d3ee">${shortAddr(a)}</a>` : '—';
+        if (sandbox?.contracts) {
+          document.getElementById('agentRegistryAddr').innerHTML = linkAddr(sandbox.contracts.agentRegistry);
+          document.getElementById('riskRouterAddr').innerHTML = linkAddr(sandbox.contracts.riskRouter);
+          document.getElementById('vaultAddr').innerHTML = linkAddr(sandbox.contracts.hackathonVault);
+          document.getElementById('reputationReg').innerHTML = linkAddr(sandbox.contracts.reputationRegistry);
+          document.getElementById('validationReg').innerHTML = linkAddr(sandbox.contracts.validationRegistry);
+        } else if (health) {
           document.getElementById('reputationReg').textContent = health.reputationRegistry || '—';
           document.getElementById('validationReg').textContent = health.validationRegistry || '—';
-          document.getElementById('ownerWallet').textContent = health.ownerAddress || '—';
         }
+        document.getElementById('networkName').textContent = sandbox ? `${sandbox.network} (${sandbox.chainId})` : 'Sepolia (11155111)';
+        document.getElementById('vaultBalance').textContent = sandbox?.vaultBalance ? sandbox.vaultBalance + ' ETH' : '—';
+        document.getElementById('walletBalance').textContent = sandbox?.walletBalance ? Number(sandbox.walletBalance).toFixed(3) + ' ETH' : '—';
+        document.getElementById('validationScore').textContent = sandbox?.validationScore > 0 ? sandbox.validationScore + '/100' : '—';
+        document.getElementById('reputationScore').textContent = sandbox?.reputationScore > 0 ? sandbox.reputationScore + '/100' : '—';
+        document.getElementById('ownerWallet').textContent = health?.ownerAddress || '0xE868...DdCD7';
 
         // Tech checks
         const techEl = document.getElementById('techChecks');
