@@ -1,16 +1,39 @@
 /**
- * Sentiment Feed — Fear & Greed + CryptoPanic News + Kraken Funding Rate
+ * Sentiment Feed — 6-source composite: Fear & Greed, Alpha Vantage News,
+ * PRISM Funding/Social/OI, Price Momentum.
  *
- * Three independent sentiment sources, each normalized to [-1, +1]:
+ * Each source normalized to [-1, +1]:
  *   -1 = extreme bearish/fear    0 = neutral    +1 = extreme bullish/greed
  *
  * The composite score is a weighted average of available sources.
- * All sources are free-tier and rate-limit-safe (cached with TTL).
+ * News values are disk-cached to survive PM2 restarts.
  */
 
 import { createLogger } from '../agent/logger.js';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
 
 const log = createLogger('SENTIMENT');
+
+// ──── Disk cache for rate-limited sources ────
+const CACHE_DIR = join(process.cwd(), '.actura');
+const NEWS_CACHE_FILE = join(CACHE_DIR, 'news-cache.json');
+
+function loadDiskCache(file: string): CachedValue<number> | null {
+  try {
+    if (!existsSync(file)) return null;
+    const data = JSON.parse(readFileSync(file, 'utf-8'));
+    if (typeof data?.value === 'number' && typeof data?.fetchedAt === 'number') return data;
+  } catch { /* ignore */ }
+  return null;
+}
+
+function saveDiskCache(file: string, val: CachedValue<number>): void {
+  try {
+    if (!existsSync(CACHE_DIR)) mkdirSync(CACHE_DIR, { recursive: true });
+    writeFileSync(file, JSON.stringify(val), 'utf-8');
+  } catch { /* ignore */ }
+}
 
 // ──── Types ────
 
@@ -124,25 +147,52 @@ async function fetchFearGreed(): Promise<number | null> {
   }
 }
 
-// ──── Alpha Vantage News Sentiment ────
+// ──── News Sentiment (CryptoPanic primary + Alpha Vantage fallback) ────
 
 /**
- * Fetch pre-scored news sentiment from Alpha Vantage.
- * Returns articles with per-ticker sentiment scores already computed.
- * We average the ticker_sentiment_score for CRYPTO:ETH and CRYPTO:BTC across articles.
- *
- * Alpha Vantage scores: -1 (Bearish) to +1 (Bullish), already normalized.
- * Free tier: 25 requests/day → 60-min cache keeps us under limit.
+ * Disk-persisted news cache survives PM2 restarts.
+ * On startup, loads last known value from disk so we never show '-'.
  */
-async function fetchNewsSentiment(): Promise<number | null> {
+function getNewsFromDiskOrMemory(): number | null {
   if (newsCache && Date.now() - newsCache.fetchedAt < NEWS_TTL_MS) {
     return newsCache.value;
   }
-
-  if (!ALPHAVANTAGE_API_KEY) {
-    log.warn('No ALPHAVANTAGE_API_KEY — skipping news sentiment');
-    return newsCache?.value ?? null;
+  // Try disk cache (survives restarts, valid for 2 hours)
+  const disk = loadDiskCache(NEWS_CACHE_FILE);
+  if (disk && Date.now() - disk.fetchedAt < 2 * 60 * 60 * 1000) {
+    newsCache = disk;
+    return disk.value;
   }
+  return null;
+}
+
+/**
+ * Fetch news sentiment from Alpha Vantage.
+ * Disk-persisted cache ensures values survive PM2 restarts.
+ * 60-min TTL keeps us well under 25 req/day free tier limit.
+ */
+async function fetchNewsSentiment(): Promise<number | null> {
+  // Check memory + disk cache first
+  const cached = getNewsFromDiskOrMemory();
+  if (cached !== null) return cached;
+
+  if (!ALPHAVANTAGE_API_KEY) return null;
+
+  const result = await fetchAlphaVantageNews();
+
+  if (result !== null) {
+    newsCache = { value: result, fetchedAt: Date.now() };
+    saveDiskCache(NEWS_CACHE_FILE, newsCache);
+    log.info('News sentiment cached to disk', { normalized: result.toFixed(2) });
+  }
+
+  return result;
+}
+
+/**
+ * Alpha Vantage news (25 req/day free tier — TTL keeps us under limit).
+ */
+async function fetchAlphaVantageNews(): Promise<number | null> {
 
   try {
     const controller = new AbortController();
@@ -156,7 +206,7 @@ async function fetchNewsSentiment(): Promise<number | null> {
 
     if (!res.ok) {
       log.warn('Alpha Vantage returned non-OK', { status: res.status });
-      return newsCache?.value ?? null;
+      return null;
     }
 
     const data = await res.json() as {
@@ -178,13 +228,13 @@ async function fetchNewsSentiment(): Promise<number | null> {
     // Check for rate limit or error messages
     if (data.Information || data.Note) {
       log.warn('Alpha Vantage API message', { msg: (data.Information || data.Note || '').slice(0, 100) });
-      return newsCache?.value ?? null;
+      return null;
     }
 
     const articles = data?.feed;
     if (!articles || articles.length === 0) {
       log.warn('Alpha Vantage returned no articles');
-      return newsCache?.value ?? null;
+      return null;
     }
 
     // Extract crypto-specific sentiment: average ticker scores for ETH and BTC
@@ -220,7 +270,7 @@ async function fetchNewsSentiment(): Promise<number | null> {
 
     if (scoreCount === 0) {
       log.warn('Alpha Vantage: no sentiment scores found');
-      return newsCache?.value ?? null;
+      return null;
     }
 
     // Alpha Vantage scores are already in [-1, +1] range
@@ -232,8 +282,7 @@ async function fetchNewsSentiment(): Promise<number | null> {
     const bearish = articles.filter(a => (a.overall_sentiment_score ?? 0) < -0.1).length;
 
     newsCache = { value: normalized, fetchedAt: Date.now() };
-    log.info('News sentiment fetched', {
-      source: 'alpha_vantage',
+    log.info('Alpha Vantage news fetched', {
       articles: articles.length,
       cryptoScores: Math.round(scoreCount),
       bullish,
@@ -243,8 +292,8 @@ async function fetchNewsSentiment(): Promise<number | null> {
     });
     return normalized;
   } catch (err: any) {
-    log.warn('News sentiment fetch failed', { error: err.message?.slice(0, 80) });
-    return newsCache?.value ?? null;
+    log.warn('Alpha Vantage fetch failed', { error: err.message?.slice(0, 80) });
+    return null;
   }
 }
 
