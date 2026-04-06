@@ -281,6 +281,32 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
     res.json({ trades: getRecentTrades(limit) });
   });
 
+  /** Trade history as CSV download */
+  app.get('/api/trades/csv', (_req, res) => {
+    const trades = loadClosedTrades();
+    const header = 'ID,Asset,Side,Size,Entry Price,Exit Price,PnL ($),PnL (%),Reason,Opened At,Closed At,Duration (min),IPFS CID,Tx Hash';
+    const rows = trades.map(t => [
+      t.id,
+      t.asset,
+      t.side,
+      t.size.toFixed(6),
+      t.entryPrice.toFixed(2),
+      t.exitPrice.toFixed(2),
+      t.pnl.toFixed(2),
+      t.pnlPct.toFixed(2),
+      t.reason,
+      t.openedAt,
+      t.closedAt,
+      Math.round(t.durationMs / 60000),
+      t.ipfsCid || '',
+      t.txHash || '',
+    ].join(','));
+    const csv = [header, ...rows].join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="actura-trades.csv"');
+    res.send(csv);
+  });
+
   /** Trade statistics */
   app.get('/api/trades/stats', (_req, res) => {
     res.json(getTradeStats());
