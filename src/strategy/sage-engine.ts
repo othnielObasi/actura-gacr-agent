@@ -122,6 +122,7 @@ const STATE_DIR = join(process.cwd(), '.actura');
 const PLAYBOOK_FILE = join(STATE_DIR, 'playbook.jsonl');
 const WEIGHTS_FILE = join(STATE_DIR, 'sage-weights.json');
 const REFLECTIONS_FILE = join(STATE_DIR, 'sage-reflections.jsonl');
+const SEED_WEIGHTS_FILE = join(process.cwd(), 'data', 'sage-weights-seed.json');
 
 let currentWeights: ScorecardWeights = { ...getDefaultWeights() };
 let activeRules: PlaybookRule[] = [];
@@ -328,16 +329,28 @@ export function loadSAGEState(): void {
   try {
     if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
 
-    // Load weights
-    if (existsSync(WEIGHTS_FILE)) {
-      const data = JSON.parse(readFileSync(WEIGHTS_FILE, 'utf-8'));
+    // Load weights — try learned state first, fall back to repo seed file
+    let weightsLoaded = false;
+    const weightsSource = existsSync(WEIGHTS_FILE) ? WEIGHTS_FILE
+      : existsSync(SEED_WEIGHTS_FILE) ? SEED_WEIGHTS_FILE
+      : null;
+
+    if (weightsSource) {
+      const data = JSON.parse(readFileSync(weightsSource, 'utf-8'));
       for (const key of Object.keys(currentWeights) as WeightKey[]) {
         if (typeof data[key] === 'number') {
           const cage = WEIGHT_CAGE[key];
           currentWeights[key] = clamp(data[key], cage.min, cage.max);
         }
       }
-      log.info('Loaded SAGE weights from disk', { weights: currentWeights });
+      weightsLoaded = true;
+      const fromSeed = weightsSource === SEED_WEIGHTS_FILE;
+      log.info(`Loaded SAGE weights from ${fromSeed ? 'seed file' : 'disk'}`, { weights: currentWeights });
+      // If loaded from seed, persist to .actura/ so future loads use the runtime file
+      if (fromSeed) {
+        persistWeights();
+        log.info('Persisted seed weights to runtime state directory');
+      }
     }
 
     // Load playbook
@@ -665,6 +678,21 @@ function persistWeights(): void {
   try {
     if (!existsSync(STATE_DIR)) mkdirSync(STATE_DIR, { recursive: true });
     writeFileSync(WEIGHTS_FILE, JSON.stringify(currentWeights, null, 2), 'utf-8');
+    // Also update repo seed file as backup (survives rsync --delete)
+    try {
+      const seedDir = join(process.cwd(), 'data');
+      if (existsSync(seedDir)) {
+        const seed = {
+          ...currentWeights,
+          _meta: {
+            learnedAt: new Date().toISOString(),
+            totalOutcomes: totalOutcomesRecorded,
+            note: 'Auto-updated by SAGE after reflection. Copy to .actura/sage-weights.json on fresh deploys.',
+          },
+        };
+        writeFileSync(SEED_WEIGHTS_FILE, JSON.stringify(seed, null, 2) + '\n', 'utf-8');
+      }
+    } catch { /* seed backup is best-effort */ }
   } catch (error) {
     log.error('Failed to persist SAGE weights', { error: String(error) });
   }

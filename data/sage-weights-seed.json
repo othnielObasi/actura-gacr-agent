@@ -1,0 +1,14 @@
+{
+  "trend": 0.6,
+  "ret5": 0.706,
+  "ret20": 0.77,
+  "crossover": 0.15,
+  "rsi": 0.82,
+  "zscore": 1.14,
+  "sentiment": 0.084,
+  "_meta": {
+    "learnedAt": "2026-03-21T09:58:31Z",
+    "cyclesObserved": 714,
+    "note": "Seed weights from SAGE learning over 714 live cycles. Copy to .actura/sage-weights.json on fresh deploys."
+  }
+}
