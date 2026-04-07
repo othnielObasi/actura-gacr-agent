@@ -7,8 +7,10 @@
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { config } from '../agent/config.js';
+import { createLogger } from '../agent/logger.js';
 import type { ValidationArtifact } from './artifact-emitter.js';
 
+const log = createLogger('IPFS');
 const ARTIFACT_DIR = join(process.cwd(), 'artifacts');
 
 /** Resolve the IPFS gateway base URL (no trailing slash). */
@@ -48,6 +50,7 @@ function saveLocalBackup(artifact: ValidationArtifact, cid: string): void {
  */
 export async function uploadArtifact(artifact: ValidationArtifact): Promise<IpfsUploadResult> {
   if (!config.pinataJwt) {
+    log.warn('PINATA_JWT not set — using mock CID (artifact will NOT be on IPFS)');
     const result = mockUpload(artifact);
     saveLocalBackup(artifact, result.cid);
     return result;
@@ -69,34 +72,56 @@ export async function uploadArtifact(artifact: ValidationArtifact): Promise<Ipfs
   });
   formData.append('pinataMetadata', metadata);
 
-  try {
-    const response = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.pinataJwt}`,
-      },
-      body: formData,
-    });
+  // Retry up to 2 times for transient failures (network blips, 5xx, timeouts)
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
 
-    if (!response.ok) {
-      throw new Error(`Pinata upload failed: ${response.status} ${response.statusText}`);
+      const response = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.pinataJwt}`,
+        },
+        body: formData,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => '');
+        throw new Error(`Pinata ${response.status} ${response.statusText}: ${errBody.slice(0, 200)}`);
+      }
+
+      const data = await response.json() as { IpfsHash: string; PinSize: number };
+      const result: IpfsUploadResult = {
+        cid: data.IpfsHash,
+        uri: `ipfs://${data.IpfsHash}`,
+        gatewayUrl: `${gatewayBase()}/${data.IpfsHash}`,
+        size: data.PinSize,
+      };
+      saveLocalBackup(artifact, result.cid);
+      if (attempt > 1) log.info(`Pinata upload succeeded on attempt ${attempt}`);
+      return result;
+    } catch (error) {
+      lastError = error;
+      const msg = error instanceof Error ? error.message : String(error);
+      log.warn(`Pinata upload attempt ${attempt}/3 failed: ${msg.slice(0, 200)}`);
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, attempt * 2000)); // 2s, 4s backoff
+      }
     }
-
-    const data = await response.json() as { IpfsHash: string; PinSize: number };
-    const result: IpfsUploadResult = {
-      cid: data.IpfsHash,
-      uri: `ipfs://${data.IpfsHash}`,
-      gatewayUrl: `${gatewayBase()}/${data.IpfsHash}`,
-      size: data.PinSize,
-    };
-    saveLocalBackup(artifact, result.cid);
-    return result;
-  } catch (error) {
-    console.error('[IPFS] Upload failed, using mock:', error);
-    const fallback = mockUpload(artifact);
-    saveLocalBackup(artifact, fallback.cid);
-    return fallback;
   }
+
+  log.error('Pinata upload failed after 3 attempts — using mock CID', {
+    error: lastError instanceof Error ? lastError.message.slice(0, 200) : String(lastError),
+    jwtPresent: !!config.pinataJwt,
+    jwtLength: config.pinataJwt.length,
+  });
+  const fallback = mockUpload(artifact);
+  saveLocalBackup(artifact, fallback.cid);
+  return fallback;
 }
 
 /**
@@ -127,6 +152,7 @@ function mockUpload(artifact: ValidationArtifact): IpfsUploadResult {
  */
 export async function uploadJson(data: object, name: string): Promise<IpfsUploadResult> {
   if (!config.pinataJwt) {
+    log.warn('PINATA_JWT not set — using mock CID for JSON upload');
     return mockUpload(data as ValidationArtifact);
   }
 
@@ -138,23 +164,35 @@ export async function uploadJson(data: object, name: string): Promise<IpfsUpload
   const metadata = JSON.stringify({ name });
   formData.append('pinataMetadata', metadata);
 
-  const response = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${config.pinataJwt}`,
-    },
-    body: formData,
-  });
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
-  if (!response.ok) {
-    throw new Error(`Pinata upload failed: ${response.status}`);
+    const response = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.pinataJwt}`,
+      },
+      body: formData,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => '');
+      throw new Error(`Pinata upload failed: ${response.status}: ${errBody.slice(0, 200)}`);
+    }
+
+    const result = await response.json() as { IpfsHash: string; PinSize: number };
+    return {
+      cid: result.IpfsHash,
+      uri: `ipfs://${result.IpfsHash}`,
+      gatewayUrl: `${gatewayBase()}/${result.IpfsHash}`,
+      size: result.PinSize,
+    };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    log.error(`JSON upload to Pinata failed: ${msg.slice(0, 200)} — using mock CID`);
+    return mockUpload(data as ValidationArtifact);
   }
-
-  const result = await response.json() as { IpfsHash: string; PinSize: number };
-  return {
-    cid: result.IpfsHash,
-    uri: `ipfs://${result.IpfsHash}`,
-    gatewayUrl: `${gatewayBase()}/${result.IpfsHash}`,
-    size: result.PinSize,
-  };
 }

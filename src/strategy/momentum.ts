@@ -113,12 +113,17 @@ export function runStrategy(data: MarketData, capitalUsd: number, sentimentCompo
   const positionSize = signal.direction === 'NEUTRAL' ? 0 : adjustedSize / currentPrice;
 
   // Calculate stop-loss
+  // Enforce a minimum stop distance of 0.5% of price to avoid
+  // micro-stops in ultra-low-volatility (flat/ranging) markets.
   let stopLossPrice: number | null = null;
   if (atrValue !== null && signal.direction !== 'NEUTRAL') {
+    const atrStop = stopLossAtrMultiple * atrValue;
+    const minStop = currentPrice * 0.005; // 0.5% floor
+    const stopDistance = Math.max(atrStop, minStop);
     if (signal.direction === 'LONG') {
-      stopLossPrice = currentPrice - (stopLossAtrMultiple * atrValue);
+      stopLossPrice = currentPrice - stopDistance;
     } else {
-      stopLossPrice = currentPrice + (stopLossAtrMultiple * atrValue);
+      stopLossPrice = currentPrice + stopDistance;
     }
   }
 

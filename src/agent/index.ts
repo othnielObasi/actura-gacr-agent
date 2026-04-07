@@ -45,6 +45,8 @@ import { fetchSentiment, type SentimentResult } from '../data/sentiment-feed.js'
 import { fetchPrismData, fetchPrismResolve, prismConfidenceModifier, type PrismData } from '../data/prism-feed.js';
 import { getKrakenFeedStatus } from '../data/kraken-feed.js';
 import { checkTradeOnChain, recordTradeOnChain, recordCloseOnChain, getOnChainRiskState } from '../chain/risk-policy-client.js';
+import { postCheckpoint } from '../chain/validation.js';
+import { submitHackathonFeedbackAsReviewer } from '../chain/reputation.js';
 import { executeKrakenTrade, closeKrakenPosition, getKrakenAccountSnapshot, krakenPreflight } from '../data/kraken-bridge.js';
 import { getCliStatus } from '../data/kraken-cli.js';
 import { startIndexer, getIndexerStatus, getIndexedEvents } from '../chain/event-indexer.js';
@@ -61,9 +63,13 @@ const INITIAL_CAPITAL = 10000;
 const MAX_OPEN_POSITIONS = 2;
 
 // Minimum time (ms) between opening new positions to prevent rapid-fire stacking.
-// 5 minutes prevents the agent from piling into the same price level.
-const MIN_TRADE_INTERVAL_MS = 5 * 60 * 1000;
+// 15 minutes prevents the agent from churning in choppy conditions.
+const MIN_TRADE_INTERVAL_MS = 15 * 60 * 1000;
 let lastTradeOpenedAt = 0;
+// Minimum time (ms) after ANY position close before re-entering.
+// Prevents immediate re-entry after a stop-loss hit in the same price zone.
+const POST_CLOSE_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
+let lastTradeClosedAt = 0;
 
 let marketData: MarketData;
 let riskEngine: RiskEngine;
@@ -638,7 +644,25 @@ async function runCycle(): Promise<void> {
     log.warn(`Trade cooldown active (${Math.round(timeSinceLastTrade / 1000)}s < ${MIN_TRADE_INTERVAL_MS / 1000}s) — trade skipped`);
   }
 
-  let shouldExecute = riskDecision.approved && !positionLimitHit && !cooldownHit;
+  // Post-close cooldown: after any position closes (stop-loss, max-hold, etc.),
+  // wait before re-entering to avoid whipsaw re-entries in the same price zone.
+  const timeSinceLastClose = Date.now() - lastTradeClosedAt;
+  const postCloseCooldownHit = lastTradeClosedAt > 0 && timeSinceLastClose < POST_CLOSE_COOLDOWN_MS;
+  if (riskDecision.approved && postCloseCooldownHit) {
+    log.warn(`Post-close cooldown active (${Math.round(timeSinceLastClose / 1000)}s < ${POST_CLOSE_COOLDOWN_MS / 1000}s) — trade skipped`);
+  }
+
+  // Minimum ATR gate: skip trading when ATR is too low (market is dead/ranging).
+  // In such conditions, stops are micro and every trade becomes a coin flip.
+  const atrPct = strategyOutput.indicators.atr !== null && strategyOutput.currentPrice > 0
+    ? strategyOutput.indicators.atr / strategyOutput.currentPrice
+    : null;
+  const atrTooLow = atrPct !== null && atrPct < 0.003; // ATR < 0.3% of price
+  if (riskDecision.approved && atrTooLow) {
+    log.warn(`ATR too low (${(atrPct! * 100).toFixed(3)}% < 0.3%) — market too flat, trade skipped`);
+  }
+
+  let shouldExecute = riskDecision.approved && !positionLimitHit && !cooldownHit && !postCloseCooldownHit && !atrTooLow;
 
   // Step 4a: DEX routing — governed best-execution venue selection
   const routingInput = {
@@ -861,6 +885,48 @@ async function runCycle(): Promise<void> {
       ).catch(e => log.warn('recordTradeOnChain failed (non-critical)', { error: String(e) }));
     }
 
+    // Step 8d: Post validation checkpoint & reputation feedback (decoupled from RiskRouter)
+    // These run for every executed trade regardless of RiskRouter approval/failure
+    if (shouldExecute && agentId && config.validationRegistry) {
+      try {
+        const { computeRequestHash: hashCheckpoint } = await import('../chain/validation.js');
+        const cpHash = hashCheckpoint({
+          cycle: cycleCount,
+          action: strategyOutput.signal.direction,
+          pair: config.tradingPair,
+          price: strategyOutput.currentPrice,
+          confidence: strategyOutput.signal.confidence,
+          timestamp: new Date().toISOString(),
+        });
+        const cpScore = Math.min(100, Math.round(strategyOutput.signal.confidence * 100));
+        const cpNotes = `${strategyOutput.signal.direction} ${config.tradingPair} $${(riskDecision.finalPositionSize * strategyOutput.currentPrice).toFixed(0)} | conf=${strategyOutput.signal.confidence.toFixed(2)}`;
+        const cpTx = await retry(
+          () => postCheckpoint(agentId!, cpHash, cpScore, cpNotes),
+          { maxRetries: 2, baseDelayMs: 1500, label: 'Validation checkpoint' },
+        );
+        log.info('Validation checkpoint posted', { txHash: cpTx });
+      } catch (e: any) {
+        log.warn('Validation checkpoint failed (non-critical)', { error: e.message?.slice(0, 80) });
+      }
+    }
+
+    if (shouldExecute && agentId && config.reputationRegistry) {
+      try {
+        const { ethers: eth } = await import('ethers');
+        const conf = strategyOutput.signal.confidence;
+        const feedbackScore = Math.min(100, Math.round(conf * 100));
+        const outcomeRef = eth.keccak256(eth.toUtf8Bytes(`trade-${cycleCount}-${Date.now()}`));
+        const comment = `Trade ${strategyOutput.signal.direction} ${config.tradingPair} | amount=$${(riskDecision.finalPositionSize * strategyOutput.currentPrice).toFixed(0)} | conf=${conf.toFixed(2)}`;
+        const repTx = await retry(
+          () => submitHackathonFeedbackAsReviewer(agentId!, feedbackScore, outcomeRef, comment, 1),
+          { maxRetries: 2, baseDelayMs: 1500, label: 'Reputation feedback' },
+        );
+        log.info('Reputation feedback posted', { txHash: repTx });
+      } catch (e: any) {
+        log.warn('Reputation feedback failed (non-critical)', { error: e.message?.slice(0, 80) });
+      }
+    }
+
     // Always record position locally (for our risk engine tracking)
     // First, close any opposing positions (deferred from risk evaluation).
     // This is done here — AFTER all gates pass — so we don't lose positions
@@ -872,6 +938,7 @@ async function runCycle(): Promise<void> {
       );
       // Record each flip on-chain so openPositionCount stays in sync
       for (const f of flipped) {
+        lastTradeClosedAt = Date.now(); // trigger post-close cooldown for flips too
         recordCloseOnChain(f.pnl, f.size * f.entry)
           .catch(e => log.warn('recordCloseOnChain (flip) failed', { error: String(e) }));
         const now = new Date().toISOString();
@@ -964,6 +1031,7 @@ async function runCycle(): Promise<void> {
   // 10 cycles later) replays the close on restart with a potentially
   // different price.
   if (closedPositions.length > 0) {
+    lastTradeClosedAt = Date.now(); // trigger post-close cooldown
     persistState();
 
     // Record closes on-chain in ActuraRiskPolicy
