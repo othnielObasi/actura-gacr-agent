@@ -72,7 +72,14 @@ export async function executeTrade(
 
   try {
     // ── Step 0: Local pre-trade simulation ──
-    const localSim = simulateExecution({ strategyOutput, riskDecision });
+    // On testnet, gas is free — don't let fictional gas costs block profitable trades.
+    const isTestnet = config.chainId === 11155111 || config.chainId === 84532;
+    const localSim = simulateExecution({
+      strategyOutput,
+      riskDecision,
+      gasUsd: isTestnet ? 0 : 0.35,
+      dexFeeBps: isTestnet ? 5 : undefined,
+    });
     if (!localSim.allowed) {
       result.error = `Local simulation blocked: ${localSim.reason}`;
       result.executionTimeMs = Date.now() - start;
