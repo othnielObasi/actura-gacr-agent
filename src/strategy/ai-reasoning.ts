@@ -174,12 +174,14 @@ function buildReasoningPrompt(
   if (sentiment && sentiment.sources.length > 0) {
     const fgRaw = sentiment.fearGreed !== null ? Math.round((sentiment.fearGreed + 1) * 50) : null;
     const fgLabel = fgRaw !== null ? (fgRaw <= 20 ? 'Extreme Fear' : fgRaw <= 40 ? 'Fear' : fgRaw <= 60 ? 'Neutral' : fgRaw <= 80 ? 'Greed' : 'Extreme Greed') : 'N/A';
-    sentimentBlock = `\n\nSENTIMENT (25% weight in signal scorecard):
-- Composite: ${sentiment.composite.toFixed(2)} (${sentiment.composite > 0.15 ? 'BULLISH' : sentiment.composite < -0.15 ? 'BEARISH' : 'NEUTRAL'})
+    sentimentBlock = `\n\nSENTIMENT (6 sources, weighted composite):
+- Composite: ${sentiment.composite.toFixed(2)} (${sentiment.composite > 0.08 ? 'BULLISH' : sentiment.composite < -0.08 ? 'BEARISH' : 'NEUTRAL'})
 - Fear & Greed Index: ${fgRaw ?? 'N/A'}/100 (${fgLabel})${fgRaw !== null && (fgRaw <= 20 || fgRaw >= 80) ? ' [CONTRARIAN ADJUSTED]' : ''}
-- News sentiment: ${sentiment.newsSentiment?.toFixed(2) ?? 'N/A'} (Alpha Vantage crypto news)
+- News sentiment: ${sentiment.newsSentiment?.toFixed(2) ?? 'N/A'} (PRISM sentiment API)
 - Social sentiment: ${(sentiment as any).socialSentiment?.toFixed(2) ?? 'N/A'} (PRISM crowd data)
 - Funding rate: ${sentiment.fundingRate?.toFixed(2) ?? 'N/A'} (PRISM aggregated / Kraken fallback)
+- Open Interest: ${(sentiment as any).openInterest?.toFixed(2) ?? 'N/A'} (PRISM derivatives)
+- Price Momentum: ${(sentiment as any).priceMomentum?.toFixed(2) ?? 'N/A'} (PRISM 24h change)
 - Active sources: ${sentiment.sources.join(', ')}`;
   }
 

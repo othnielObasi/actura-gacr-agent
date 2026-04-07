@@ -643,7 +643,7 @@ async function runCycle(): Promise<void> {
     side: strategyOutput.signal.direction as 'LONG' | 'SHORT',
     notionalUsd: riskDecision.finalPositionSize * strategyOutput.currentPrice,
     volatility: strategyOutput.indicators.volatility ?? 0.02,
-    isTestnet: config.chainId === 84532,
+    isTestnet: config.chainId === 11155111 || config.chainId === 84532,
     enabledDexes: config.allowedProtocols.filter(
       (p): p is DexId => p === 'aerodrome' || p === 'uniswap'
     ),

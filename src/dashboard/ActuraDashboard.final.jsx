@@ -417,14 +417,14 @@ function Actura() {
           </P>
 
           {/* Sentiment Intelligence */}
-          <P title="Market Sentiment" tip="Composite sentiment from Fear & Greed index, Alpha Vantage news, and Kraken funding proxy. Drives trade bias." tag={sentiment ? `${sentiment.sources?.length || 0} sources` : "loading"}>
+          <P title="Market Sentiment" tip="Composite sentiment from 6 sources: Fear & Greed, PRISM news/social/funding/OI/momentum. Drives trade bias." tag={sentiment ? `${sentiment.sources?.length || 0} sources` : "loading"}>
             {sentiment ? (() => {
               const comp = sentiment.composite || 0;
               const fg = sentiment.fearGreed;
               const news = sentiment.newsSentiment;
               const fund = sentiment.fundingRate;
-              const sentColor = comp > 0.15 ? T.up : comp < -0.15 ? T.dn : T.warn;
-              const sentLabel = comp > 0.3 ? "BULLISH" : comp > 0.15 ? "LEAN BULL" : comp < -0.3 ? "BEARISH" : comp < -0.15 ? "LEAN BEAR" : "NEUTRAL";
+              const sentColor = comp > 0.08 ? T.up : comp < -0.08 ? T.dn : T.warn;
+              const sentLabel = comp > 0.3 ? "BULLISH" : comp > 0.15 ? "LEAN BULL" : comp > 0.08 ? "MILD BULL" : comp < -0.3 ? "BEARISH" : comp < -0.15 ? "LEAN BEAR" : comp < -0.08 ? "MILD BEAR" : "NEUTRAL";
               const fgRaw = fg !== null ? Math.round((fg + 1) * 50) : null;
               const fgLabel = fgRaw !== null ? (fgRaw <= 20 ? "Extreme Fear" : fgRaw <= 40 ? "Fear" : fgRaw <= 60 ? "Neutral" : fgRaw <= 80 ? "Greed" : "Extreme Greed") : "—";
               const barWidth = Math.abs(comp) * 100;
@@ -433,8 +433,13 @@ function Actura() {
                 React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 0, marginBottom: 8, borderBottom: `1px solid ${T.brd}`, paddingBottom: 6 } },
                   React.createElement(Metric, { label: "Composite", value: comp.toFixed(2), sub: sentLabel, color: sentColor }),
                   React.createElement(Metric, { label: "Fear & Greed", value: fgRaw !== null ? String(fgRaw) : "—", sub: fgLabel, color: fg !== null ? (fg > 0.15 ? T.up : fg < -0.15 ? T.dn : T.warn) : T.fg3 }),
-                  React.createElement(Metric, { label: "News", value: news !== null ? news.toFixed(2) : "—", sub: news !== null ? (news > 0.1 ? "Bullish" : news < -0.1 ? "Bearish" : "Neutral") : "N/A", color: news !== null ? (news > 0.1 ? T.up : news < -0.1 ? T.dn : T.warn) : T.fg3 }),
-                  React.createElement(Metric, { label: "Funding", value: fund !== null ? fund.toFixed(2) : "—", sub: fund !== null ? (fund > 0.1 ? "Longs crowd" : fund < -0.1 ? "Shorts crowd" : "Balanced") : "N/A", color: fund !== null ? (fund > 0.1 ? T.up : fund < -0.1 ? T.dn : T.warn) : T.fg3 }),
+                  React.createElement(Metric, { label: "News (PRISM)", value: news !== null ? news.toFixed(2) : "—", sub: news !== null ? (news > 0.1 ? "Bullish" : news < -0.1 ? "Bearish" : "Neutral") : "N/A", color: news !== null ? (news > 0.1 ? T.up : news < -0.1 ? T.dn : T.warn) : T.fg3 }),
+                  React.createElement(Metric, { label: "Funding (PRISM)", value: fund !== null ? fund.toFixed(2) : "—", sub: fund !== null ? (fund > 0.1 ? "Longs crowd" : fund < -0.1 ? "Shorts crowd" : "Balanced") : "N/A", color: fund !== null ? (fund > 0.1 ? T.up : fund < -0.1 ? T.dn : T.warn) : T.fg3 }),
+                ),
+                React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, marginBottom: 8, borderBottom: `1px solid ${T.brd}`, paddingBottom: 6 } },
+                  React.createElement(Metric, { label: "Social (PRISM)", value: sentiment.socialSentiment != null ? sentiment.socialSentiment.toFixed(2) : "—", sub: sentiment.socialSentiment != null ? (sentiment.socialSentiment > 0.1 ? "Bullish" : sentiment.socialSentiment < -0.1 ? "Bearish" : "Neutral") : "N/A", color: sentiment.socialSentiment != null ? (sentiment.socialSentiment > 0.1 ? T.up : sentiment.socialSentiment < -0.1 ? T.dn : T.warn) : T.fg3 }),
+                  React.createElement(Metric, { label: "OI (PRISM)", value: sentiment.openInterest != null ? sentiment.openInterest.toFixed(2) : "—", sub: sentiment.openInterest != null ? (sentiment.openInterest > 0.1 ? "Rising" : sentiment.openInterest < -0.1 ? "Falling" : "Flat") : "N/A", color: sentiment.openInterest != null ? (sentiment.openInterest > 0.1 ? T.up : sentiment.openInterest < -0.1 ? T.dn : T.warn) : T.fg3 }),
+                  React.createElement(Metric, { label: "Momentum (PRISM)", value: sentiment.priceMomentum != null ? sentiment.priceMomentum.toFixed(2) : "—", sub: sentiment.priceMomentum != null ? (sentiment.priceMomentum > 0.1 ? "Uptrend" : sentiment.priceMomentum < -0.1 ? "Downtrend" : "Flat") : "N/A", color: sentiment.priceMomentum != null ? (sentiment.priceMomentum > 0.1 ? T.up : sentiment.priceMomentum < -0.1 ? T.dn : T.warn) : T.fg3 }),
                 ),
                 React.createElement("div", { style: { position: "relative", height: 12, background: T.s1, borderRadius: 6, overflow: "hidden", border: `1px solid ${T.brd}` } },
                   React.createElement("div", { style: { position: "absolute", left: "50%", top: 0, bottom: 0, width: 1, background: T.fg3, zIndex: 2 } }),
@@ -460,9 +465,11 @@ function Actura() {
                 { name: "Kraken", ok: krakenOk, detail: tk ? `$${Number(tk.price).toFixed(2)} · spread $${Number(tk.spread).toFixed(2)}` : "no data", sub: tk ? `vol ${Number(tk.volume24h).toFixed(0)} · vwap $${Number(tk.vwap24h).toFixed(0)}` : "" },
                 { name: "CoinGecko", ok: cPrice > 0, detail: cPrice > 0 ? `$${fn(cPrice, 2)}` : "no data", sub: prices.length > 0 ? `${prices.length} data points` : "" },
                 { name: "Fear & Greed", ok: sentiment?.fearGreed != null, detail: sentiment?.fearGreed != null ? `${Math.round((sentiment.fearGreed + 1) * 50)}/100` : "—", sub: sentiment?.fearGreed != null ? (sentiment.fearGreed < -0.4 ? "Extreme Fear" : sentiment.fearGreed < 0 ? "Fear" : "Greed") : "" },
-                { name: "Alpha Vantage", ok: sentiment?.newsSentiment != null, detail: sentiment?.newsSentiment != null ? `${sentiment.newsSentiment.toFixed(3)}` : "—", sub: sentOk ? `${sentiment.sources.length} sources` : "" },
-                { name: "Funding Proxy", ok: sentiment?.fundingRate != null, detail: sentiment?.fundingRate != null ? `${sentiment.fundingRate.toFixed(3)}` : "—", sub: sentiment?.fundingRate != null ? (sentiment.fundingRate > 0.1 ? "Longs crowd" : sentiment.fundingRate < -0.1 ? "Shorts crowd" : "Balanced") : "" },
-
+                { name: "PRISM News", ok: sentiment?.newsSentiment != null, detail: sentiment?.newsSentiment != null ? `${sentiment.newsSentiment.toFixed(3)}` : "—", sub: "PRISM sentiment API" },
+                { name: "PRISM Social", ok: sentiment?.socialSentiment != null, detail: sentiment?.socialSentiment != null ? `${sentiment.socialSentiment.toFixed(3)}` : "—", sub: "crowd sentiment" },
+                { name: "PRISM Funding", ok: sentiment?.fundingRate != null, detail: sentiment?.fundingRate != null ? `${sentiment.fundingRate.toFixed(3)}` : "—", sub: sentiment?.fundingRate != null ? (sentiment.fundingRate > 0.1 ? "Longs crowd" : sentiment.fundingRate < -0.1 ? "Shorts crowd" : "Balanced") : "" },
+                { name: "PRISM OI", ok: sentiment?.openInterest != null, detail: sentiment?.openInterest != null ? `${sentiment.openInterest.toFixed(3)}` : "—", sub: "open interest delta" },
+                { name: "PRISM Momentum", ok: sentiment?.priceMomentum != null, detail: sentiment?.priceMomentum != null ? `${sentiment.priceMomentum.toFixed(3)}` : "—", sub: "24h price change" },
               ];
               return React.createElement(React.Fragment, null,
                 priceAge !== null && React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.brd}` } },
