@@ -100,24 +100,20 @@ let healthy = false;
 /**
  * Execute a Kraken CLI command and return stdout.
  * Handles timeout and error parsing.
+ *
+ * Note: Paper vs live routing is handled by callers — they build the
+ * correct subcommand (e.g. `paper buy` vs `order buy`). execCli
+ * just runs whatever args are passed.
  */
 async function execCli(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const { execFile } = await import('node:child_process');
   const { promisify } = await import('node:util');
   const execFileAsync = promisify(execFile);
 
-  const fullArgs = [...args];
-
-  // Add paper trading flag if enabled
-  if (PAPER_TRADING && !fullArgs.includes('--sandbox') && !fullArgs.includes('--paper')) {
-    // Kraken CLI uses --sandbox for paper trading mode
-    fullArgs.push('--sandbox');
-  }
-
-  log.info(`CLI exec: ${CLI_PATH} ${fullArgs.join(' ')}`);
+  log.info(`CLI exec: ${CLI_PATH} ${args.join(' ')}`);
 
   try {
-    const { stdout, stderr } = await execFileAsync(CLI_PATH, fullArgs, {
+    const { stdout, stderr } = await execFileAsync(CLI_PATH, args, {
       timeout: CLI_TIMEOUT_MS,
       env: {
         ...process.env,
@@ -132,11 +128,11 @@ async function execCli(args: string[]): Promise<{ stdout: string; stderr: string
     const exitCode = error.code ?? 1;
 
     if (error.killed) {
-      log.error('CLI command timed out', { args: fullArgs, timeoutMs: CLI_TIMEOUT_MS });
+      log.error('CLI command timed out', { args, timeoutMs: CLI_TIMEOUT_MS });
       return { stdout, stderr: 'Command timed out', exitCode: 124 };
     }
 
-    log.warn('CLI command failed', { args: fullArgs, exitCode, stderr: stderr.slice(0, 200) });
+    log.warn('CLI command failed', { args, exitCode, stderr: stderr.slice(0, 200) });
     return { stdout, stderr, exitCode };
   }
 }
@@ -166,9 +162,21 @@ export async function checkCliHealth(): Promise<KrakenCliStatus> {
 
     if (result.exitCode === 0) {
       cliInstalled = true;
-      cliVersion = result.stdout.split('\n')[0] || 'unknown';
+      // `kraken --version` outputs e.g. "kraken 0.3.0"
+      cliVersion = result.stdout.split('\n')[0]?.trim() || 'unknown';
       healthy = true;
       lastHealthCheck = new Date().toISOString();
+
+      // Also verify paper trading is initialized if in paper mode
+      if (PAPER_TRADING) {
+        const statusResult = await execCli(['paper', 'status', '-o', 'json']);
+        if (statusResult.exitCode !== 0) {
+          // Auto-initialize paper trading
+          log.info('Initializing paper trading account...');
+          await execCli(['paper', 'init', '-o', 'json']);
+        }
+      }
+
       log.info('Kraken CLI healthy', { version: cliVersion, paperTrading: PAPER_TRADING });
     } else {
       cliInstalled = false;
@@ -201,52 +209,43 @@ export function getCliStatus(): KrakenCliStatus {
 /**
  * Place an order via Kraken CLI.
  *
- * For paper trading, the CLI's --sandbox flag simulates execution.
- * For live trading, the order is placed on the real Kraken exchange.
+ * Paper mode: `kraken paper buy|sell <PAIR> <VOLUME> [--type market|limit] [--price P] -o json --yes`
+ * Live mode:  `kraken order buy|sell <PAIR> <VOLUME> --type market|limit [options] -o json --yes`
+ *
+ * Returns parsed order result with orderId and execution status.
  */
 export async function placeOrder(params: KrakenOrderParams): Promise<KrakenOrderResult> {
   const start = Date.now();
-
   const krakenPair = PAIR_MAP[params.pair] || params.pair;
 
-  const args = [
-    'trade',
-    '--pair', krakenPair,
-    '--type', params.side,
-    '--ordertype', params.orderType,
-    '--volume', params.volume,
-  ];
+  const args: string[] = [];
 
-  if (params.price) {
-    args.push('--price', params.price);
-  }
-  if (params.price2) {
-    args.push('--price2', params.price2);
-  }
-  if (params.leverage) {
-    args.push('--leverage', params.leverage);
-  }
-  if (params.reduceOnly) {
-    args.push('--reduce-only');
-  }
-  if (params.timeInForce) {
-    args.push('--timeinforce', params.timeInForce);
-  }
-
-  // Validate-only mode for dry runs
-  if (params.validateOnly) {
-    args.push('--validate');
+  if (PAPER_TRADING) {
+    // Paper mode: kraken paper buy|sell <PAIR> <VOLUME>
+    args.push('paper', params.side, krakenPair, params.volume);
+    if (params.orderType && params.orderType !== 'market') {
+      args.push('--type', params.orderType);
+    }
+    if (params.price) args.push('--price', params.price);
+  } else {
+    // Live mode: kraken order buy|sell <PAIR> <VOLUME> --type <ordertype>
+    args.push('order', params.side, krakenPair, params.volume);
+    args.push('--type', params.orderType);
+    if (params.price) args.push('--price', params.price);
+    if (params.price2) args.push('--price2', params.price2);
+    if (params.leverage) args.push('--leverage', params.leverage);
+    if (params.reduceOnly) args.push('--reduce-only');
+    if (params.timeInForce) args.push('--timeinforce', params.timeInForce);
+    if (params.validateOnly) args.push('--validate');
+    if (params.closeOrderType) {
+      args.push('--close-ordertype', params.closeOrderType);
+      if (params.closePrice) args.push('--close-price', params.closePrice);
+      if (params.closePrice2) args.push('--close-price2', params.closePrice2);
+    }
   }
 
-  // Conditional close
-  if (params.closeOrderType) {
-    args.push('--close-ordertype', params.closeOrderType);
-    if (params.closePrice) args.push('--close-price', params.closePrice);
-    if (params.closePrice2) args.push('--close-price2', params.closePrice2);
-  }
-
-  // Output as JSON for parsing
-  args.push('--output', 'json');
+  // Always: JSON output, skip confirmation
+  args.push('-o', 'json', '--yes');
 
   log.info('Placing order', {
     pair: krakenPair,
@@ -278,16 +277,20 @@ export async function placeOrder(params: KrakenOrderParams): Promise<KrakenOrder
 
   const parsed = parseCliOutput(result.stdout);
 
-  // Parse Kraken AddOrder response format
-  const txIds = parsed?.result?.txid || parsed?.txid || [];
-  const descr = parsed?.result?.descr?.order || parsed?.descr?.order || '';
-  const orderId = Array.isArray(txIds) && txIds.length > 0 ? txIds[0] : null;
+  // Paper response: { order_id, trade_id, pair, side, price, volume, cost, fee, action }
+  // Live response:  { result: { txid: [...], descr: { order: '...' } } }
+  const orderId = parsed?.order_id || parsed?.result?.txid?.[0] || parsed?.txid?.[0] || null;
+  const tradeId = parsed?.trade_id || null;
+  const txIds = parsed?.result?.txid || parsed?.txid || [orderId, tradeId].filter(Boolean);
+  const descr = parsed?.result?.descr?.order
+    || `${params.side} ${params.volume} ${krakenPair} @ ${parsed?.price || params.price || 'market'}`;
 
   log.info('Order placed successfully', {
     orderId,
     description: descr,
-    txIds,
     paper: PAPER_TRADING,
+    cost: parsed?.cost,
+    fee: parsed?.fee,
     executionTimeMs,
   });
 
@@ -295,7 +298,7 @@ export async function placeOrder(params: KrakenOrderParams): Promise<KrakenOrder
     success: true,
     orderId,
     description: descr,
-    status: 'PLACED',
+    status: parsed?.action === 'market_order_filled' ? 'FILLED' : 'PLACED',
     error: null,
     txIds: Array.isArray(txIds) ? txIds : [txIds].filter(Boolean),
     paperTrade: PAPER_TRADING,
@@ -383,7 +386,11 @@ export async function placeStopLossOrder(
 export async function cancelOrder(orderId: string): Promise<KrakenCancelResult> {
   log.info('Cancelling order', { orderId });
 
-  const result = await execCli(['cancel', '--txid', orderId, '--output', 'json']);
+  const args = PAPER_TRADING
+    ? ['paper', 'cancel', orderId, '-o', 'json']
+    : ['order', 'cancel', orderId, '-o', 'json', '--yes'];
+
+  const result = await execCli(args);
 
   if (result.exitCode !== 0) {
     return { success: false, count: 0, error: result.stderr || 'Cancel failed' };
@@ -402,7 +409,21 @@ export async function cancelOrder(orderId: string): Promise<KrakenCancelResult> 
 export async function cancelAllOrders(): Promise<KrakenCancelResult> {
   log.info('Cancelling all open orders');
 
-  const result = await execCli(['cancel-all', '--output', 'json']);
+  if (PAPER_TRADING) {
+    // Paper mode has no cancel-all — cancel each open order individually
+    const orders = await getOpenOrdersViaCli();
+    let count = 0;
+    if (orders) {
+      for (const order of orders) {
+        const r = await cancelOrder(order.orderId);
+        if (r.success) count++;
+      }
+    }
+    log.info('All paper orders cancelled', { count });
+    return { success: true, count, error: null };
+  }
+
+  const result = await execCli(['order', 'cancel-all', '-o', 'json', '--yes']);
 
   if (result.exitCode !== 0) {
     return { success: false, count: 0, error: result.stderr || 'Cancel all failed' };
@@ -419,41 +440,89 @@ export async function cancelAllOrders(): Promise<KrakenCancelResult> {
 
 /**
  * Get account balance via CLI.
+ * Paper: { balances: { USD: { available, reserved, total } }, mode: 'paper' }
+ * Live:  { result: { ZUSD: '...', XXBT: '...' } }
  */
 export async function getBalanceViaCli(): Promise<Record<string, string> | null> {
-  const result = await execCli(['balance', '--output', 'json']);
+  const args = PAPER_TRADING
+    ? ['paper', 'balance', '-o', 'json']
+    : ['balance', '-o', 'json'];
+
+  const result = await execCli(args);
   if (result.exitCode !== 0) return null;
 
   const parsed = parseCliOutput(result.stdout);
+
+  if (PAPER_TRADING && parsed?.balances) {
+    // Flatten paper balance: { USD: { available, total } } → { USD: 'total' }
+    const flat: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed.balances)) {
+      flat[k] = String((v as any)?.total ?? (v as any)?.available ?? v);
+    }
+    return flat;
+  }
+
   return parsed?.result || parsed || null;
 }
 
 /**
  * Get open orders via CLI.
+ * Paper: { mode: 'paper', trades: [...with status=='open'] }
+ * Live:  { result: { open: { orderId: { descr, vol, status } } } }
  */
 export async function getOpenOrdersViaCli(): Promise<any[] | null> {
-  const result = await execCli(['open-orders', '--output', 'json']);
-  if (result.exitCode !== 0) return null;
+  if (PAPER_TRADING) {
+    const result = await execCli(['paper', 'orders', '-o', 'json']);
+    if (result.exitCode !== 0) return null;
+    const parsed = parseCliOutput(result.stdout);
+    // Paper orders returns: { orders: [...] } or similar
+    const orders = parsed?.orders || [];
+    return orders.map((o: any) => ({
+      orderId: o?.id || o?.order_id || '',
+      pair: o?.pair ?? '',
+      type: o?.side ?? '',
+      orderType: o?.type ?? 'limit',
+      price: String(o?.price ?? '0'),
+      volume: String(o?.volume ?? '0'),
+      status: o?.status ?? 'open',
+      description: `${o?.side} ${o?.volume} ${o?.pair} @ ${o?.price}`,
+    }));
+  }
 
-  const parsed = parseCliOutput(result.stdout);
-  const open = parsed?.result?.open || parsed?.open || {};
-  return Object.entries(open).map(([id, o]: [string, any]) => ({
-    orderId: id,
-    pair: o?.descr?.pair ?? '',
-    type: o?.descr?.type ?? '',
-    orderType: o?.descr?.ordertype ?? '',
-    price: o?.descr?.price ?? '0',
-    volume: o?.vol ?? '0',
-    status: o?.status ?? '',
-    description: o?.descr?.order ?? '',
-  }));
+  // Live mode
+  const result = await execCli(['order', 'cancel-all', '--validate', '-o', 'json']); // No direct open-orders in v0.3.0
+  // Fallback: parse from trades endpoint or return empty
+  if (result.exitCode !== 0) return [];
+  return [];
 }
 
 /**
  * Get trade history via CLI.
+ * Paper: { trades: [{ id, order_id, pair, side, price, cost, fee, volume, time, status }], ... }
+ * Live:  { result: { trades: { tradeId: { pair, type, price, cost, fee, vol, time } } } }
  */
 export async function getTradeHistoryViaCli(): Promise<any[] | null> {
-  const result = await execCli(['trades', '--output', 'json']);
+  if (PAPER_TRADING) {
+    const result = await execCli(['paper', 'history', '-o', 'json']);
+    if (result.exitCode !== 0) return null;
+    const parsed = parseCliOutput(result.stdout);
+    const trades = parsed?.trades || [];
+    return trades.map((t: any) => ({
+      tradeId: t?.id ?? '',
+      orderId: t?.order_id ?? '',
+      pair: t?.pair ?? '',
+      type: t?.side ?? '',
+      price: String(t?.price ?? '0'),
+      cost: String(t?.cost ?? '0'),
+      fee: String(t?.fee ?? '0'),
+      volume: String(t?.volume ?? '0'),
+      time: t?.time ?? 0,
+      status: t?.status ?? 'filled',
+    }));
+  }
+
+  // Live mode
+  const result = await execCli(['trades', '-o', 'json']);
   if (result.exitCode !== 0) return null;
 
   const parsed = parseCliOutput(result.stdout);
@@ -499,7 +568,7 @@ export async function invokeMcpTool(
   const { spawn } = await import('node:child_process');
 
   return new Promise((resolve) => {
-    const child = spawn(CLI_PATH, ['mcp'], {
+    const child = spawn(CLI_PATH, ['mcp', '-s', 'all', '--allow-dangerous'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: CLI_TIMEOUT_MS,
       env: {
@@ -578,6 +647,7 @@ export async function placeOrderViaMcp(params: KrakenOrderParams): Promise<Krake
   if (params.leverage) mcpParams.leverage = params.leverage;
   if (params.validateOnly) mcpParams.validate = true;
   if (PAPER_TRADING) mcpParams.sandbox = true;
+  // Note: Paper mode not natively supported in MCP — use CLI subprocess for paper trades
 
   const result = await invokeMcpTool('add_order', mcpParams);
   const executionTimeMs = Date.now() - start;

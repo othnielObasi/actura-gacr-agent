@@ -54,13 +54,22 @@ export interface AgentRegistrationFile {
 function getContract(): ethers.Contract {
   if (!contract) {
     if (!config.identityRegistry) throw new Error('IDENTITY_REGISTRY address not set');
-    contract = new ethers.Contract(config.identityRegistry, IDENTITY_ABI, getWallet());
+    // Identity registry may be on a different chain (Base Sepolia) than the main agent (Sepolia).
+    // Use a dedicated provider if chain differs.
+    if (config.identityRegistryChainId !== config.chainId && config.identityRegistryRpcUrl) {
+      const idProvider = new ethers.JsonRpcProvider(config.identityRegistryRpcUrl);
+      const idWallet = new ethers.Wallet(config.privateKey, idProvider);
+      contract = new ethers.Contract(config.identityRegistry, IDENTITY_ABI, idWallet);
+    } else {
+      contract = new ethers.Contract(config.identityRegistry, IDENTITY_ABI, getWallet());
+    }
   }
   return contract;
 }
 
 export function makeAgentRegistryString(): string {
-  return `eip155:${config.chainId}:${config.identityRegistry}`;
+  // Use the identity registry's actual chain ID, not the agent's main chain
+  return `eip155:${config.identityRegistryChainId}:${config.identityRegistry}`;
 }
 
 export function buildAgentServices(): AgentServiceEndpoint[] {
@@ -168,7 +177,7 @@ export async function setVerifiedAgentWallet(agentId: number, newWalletPrivateKe
   const domain = {
     name: 'ERC8004IdentityRegistry',
     version: '1',
-    chainId: config.chainId,
+    chainId: config.identityRegistryChainId,
     verifyingContract: config.identityRegistry,
   };
   const types = {

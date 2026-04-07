@@ -15,8 +15,12 @@ export const config = {
   reputationRegistry: process.env.REPUTATION_REGISTRY || '0x423a9904e39537a9997fbaF0f220d79D7d545763',
   validationRegistry: process.env.VALIDATION_REGISTRY || '0x92bF63E5C7Ac6980f237a7164Ab413BE226187F1',
 
-  // Legacy ERC-8004 Contracts (Base Sepolia)
+  // ERC-8004 Identity Registry (Base Sepolia — cross-chain reference)
+  // Deployed on Base Sepolia (84532) per ERC-8004 reference implementation.
+  // Hackathon shared contracts (AgentRegistry, RiskRouter, etc.) are on Sepolia.
   identityRegistry: process.env.IDENTITY_REGISTRY || '0x7177a6867296406881E20d6647232314736Dd09A',
+  identityRegistryChainId: parseInt(process.env.IDENTITY_REGISTRY_CHAIN_ID || '84532'),
+  identityRegistryRpcUrl: process.env.IDENTITY_REGISTRY_RPC_URL || 'https://sepolia.base.org',
   
   // IPFS
   pinataJwt: process.env.PINATA_JWT || '',

@@ -42,7 +42,7 @@ import { routeTrade, getDexFeeBps, type RoutingDecision, type DexId } from '../c
 import { generateSimulatedData, appendCandle } from '../data/price-feed.js';
 import { fetchLivePrice, fetchOHLCHistory, buildLiveCandle, getLiveFeedStatus } from '../data/live-price-feed.js';
 import { fetchSentiment, type SentimentResult } from '../data/sentiment-feed.js';
-import { fetchPrismData, prismConfidenceModifier, type PrismData } from '../data/prism-feed.js';
+import { fetchPrismData, fetchPrismResolve, prismConfidenceModifier, type PrismData } from '../data/prism-feed.js';
 import { getKrakenFeedStatus } from '../data/kraken-feed.js';
 import { checkTradeOnChain, recordTradeOnChain, recordCloseOnChain, getOnChainRiskState } from '../chain/risk-policy-client.js';
 import { executeKrakenTrade, closeKrakenPosition, getKrakenAccountSnapshot, krakenPreflight } from '../data/kraken-bridge.js';
@@ -439,6 +439,9 @@ async function runCycle(): Promise<void> {
     sentiment = sentimentResult;
     if (sentiment) lastSentiment = sentiment;
     prism = prismResult;
+
+    // Resolve asset metadata via PRISM /resolve/{asset} (non-blocking, cached 30min)
+    fetchPrismResolve('ETH').catch(() => { /* non-critical */ });
   } catch (err: any) {
     log.warn('Data feed fetch failed', { error: err.message?.slice(0, 80) });
   }
@@ -820,8 +823,11 @@ async function runCycle(): Promise<void> {
     }
 
     // Step 8b: Kraken CLI execution (combined track — runs alongside ERC-8004)
-    const krakenEnabled = !!(process.env.KRAKEN_API_KEY && process.env.KRAKEN_API_SECRET);
-    if (krakenEnabled && (MODE === 'live' || MODE === 'kraken' || process.env.KRAKEN_PAPER_TRADING === 'true')) {
+    // Paper trading doesn't need API keys — just the CLI binary with local simulation
+    const krakenPaperEnabled = process.env.KRAKEN_PAPER_TRADING !== 'false';
+    const krakenLiveEnabled = !!(process.env.KRAKEN_API_KEY && process.env.KRAKEN_API_SECRET);
+    const krakenEnabled = krakenLiveEnabled || krakenPaperEnabled;
+    if (krakenEnabled && (MODE === 'live' || MODE === 'kraken' || krakenPaperEnabled)) {
       const krakenResult = await executeKrakenTrade(
         strategyOutput, riskDecision, artifact, agentId,
         { skipOnChainValidation: mainExecutorRanValidation },
@@ -940,12 +946,18 @@ async function runCycle(): Promise<void> {
   }
 
   // Step 9: Update trailing stops and check stop-losses
-  // Skip stop-loss checks when price is noise-injected from a feed failure
+  // Skip price-based stop-loss/TP checks when price is noise-injected from a feed failure
   // — synthetic noise should never trigger real position closures.
+  // BUT always run max-hold duration checks regardless of price availability,
+  // so positions never get stuck forever when the price feed is down.
   const currentPrice = strategyOutput.currentPrice;
-  const closedPositions = livePriceAvailable
-    ? riskEngine.updateStops(currentPrice)
-    : [];
+  let closedPositions: ReturnType<typeof riskEngine.updateStops>;
+  if (livePriceAvailable) {
+    closedPositions = riskEngine.updateStops(currentPrice);
+  } else {
+    // Price feed down — only check max-hold expiry (uses last known price)
+    closedPositions = riskEngine.updateStops(currentPrice, { maxHoldOnly: true });
+  }
 
   // Persist immediately after stop-loss closes so state survives crashes.
   // Without this, a crash between stop-close and the next persist (up to
@@ -961,8 +973,8 @@ async function runCycle(): Promise<void> {
     }
 
     // Close corresponding Kraken positions when stop-losses fire
-    const krakenEnabled = !!(process.env.KRAKEN_API_KEY && process.env.KRAKEN_API_SECRET);
-    if (krakenEnabled && (MODE === 'live' || MODE === 'kraken' || process.env.KRAKEN_PAPER_TRADING === 'true')) {
+    const krakenCloseEnabled = !!(process.env.KRAKEN_API_KEY && process.env.KRAKEN_API_SECRET) || process.env.KRAKEN_PAPER_TRADING !== 'false';
+    if (krakenCloseEnabled && (MODE === 'live' || MODE === 'kraken' || process.env.KRAKEN_PAPER_TRADING !== 'false')) {
       for (const closed of closedPositions) {
         const pos = positions.find(p => p.id === closed.id);
         if (pos) {

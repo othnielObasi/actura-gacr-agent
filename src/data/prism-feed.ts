@@ -243,3 +243,65 @@ export function prismConfidenceModifier(
   if (agrees) return 0.15 * strengthMultiplier;
   return 0;
 }
+
+// ──── Asset Resolution ────
+
+export interface PrismResolveResult {
+  symbol: string;
+  name: string | null;
+  chain: string | null;
+  contractAddress: string | null;
+  priceUsd: number | null;
+  resolved: boolean;
+  timestamp: string;
+}
+
+let resolveCache: CachedValue<PrismResolveResult> | null = null;
+const RESOLVE_TTL_MS = 30 * 60 * 1000; // 30 min cache (rarely changes)
+
+/**
+ * Resolve an asset symbol via PRISM /resolve/{asset}.
+ * Returns metadata about the asset: chain, contract, price, etc.
+ */
+export async function fetchPrismResolve(symbol: string = 'ETH'): Promise<PrismResolveResult | null> {
+  const now = Date.now();
+  if (resolveCache && (now - resolveCache.fetchedAt) < RESOLVE_TTL_MS) {
+    return resolveCache.value;
+  }
+
+  try {
+    const res = await fetchWithTimeout(`${PRISM_BASE_URL}/resolve/${symbol}`, FETCH_TIMEOUT_MS);
+    if (!res.ok) {
+      log.warn('PRISM resolve API error', { status: res.status, symbol });
+      return resolveCache?.value ?? null;
+    }
+
+    const data = await res.json() as any;
+
+    const result: PrismResolveResult = {
+      symbol: data?.symbol || symbol,
+      name: data?.name || data?.asset_name || null,
+      chain: data?.chain || data?.network || null,
+      contractAddress: data?.contract_address || data?.address || null,
+      priceUsd: data?.price_usd ?? data?.price ?? null,
+      resolved: true,
+      timestamp: data?.timestamp ?? new Date().toISOString(),
+    };
+
+    resolveCache = { value: result, fetchedAt: now };
+    log.info('PRISM asset resolved', {
+      symbol: result.symbol,
+      name: result.name,
+      chain: result.chain,
+      price: result.priceUsd,
+    });
+    return result;
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      log.warn('PRISM resolve timeout', { symbol });
+    } else {
+      log.warn('PRISM resolve fetch failed', { symbol, error: err.message?.slice(0, 80) });
+    }
+    return resolveCache?.value ?? null;
+  }
+}

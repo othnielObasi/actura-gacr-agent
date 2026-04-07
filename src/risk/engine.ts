@@ -415,15 +415,21 @@ export class RiskEngine {
   }
 
   /**
-   * Update trailing stops and check all stop-losses / take-profits
-   * Returns array of closed position IDs with reason
+   * Update trailing stops and check all stop-losses / take-profits.
+   * When opts.maxHoldOnly is true, only check max-hold duration expiry
+   * (used when live price is unavailable to avoid false stop triggers).
+   * Returns array of closed position IDs with reason.
    */
-  updateStops(currentPrice: number): Array<{ id: number; pnl: number; reason: 'stop_loss' | 'take_profit' | 'max_hold'; size: number; entryPrice: number }> {
+  updateStops(currentPrice: number, opts?: { maxHoldOnly?: boolean }): Array<{ id: number; pnl: number; reason: 'stop_loss' | 'take_profit' | 'max_hold'; size: number; entryPrice: number }> {
     const closed: Array<{ id: number; pnl: number; reason: 'stop_loss' | 'take_profit' | 'max_hold'; size: number; entryPrice: number }> = [];
+    const maxHoldOnly = opts?.maxHoldOnly ?? false;
 
     // Iterate in reverse so splicing doesn't skip elements
     for (let i = this.openPositions.length - 1; i >= 0; i--) {
       const pos = this.openPositions[i];
+
+      // Skip trailing stop and price-based checks when only checking max hold
+      if (!maxHoldOnly) {
 
       // Update trailing stop with profit-locking tiers.
       // As unrealized profit grows, the trailing distance tightens so that
@@ -522,6 +528,8 @@ export class RiskEngine {
           continue;
         }
       }
+
+      } // end if (!maxHoldOnly) — price-based checks
 
       // Check max hold duration — close stale positions to free capital.
       // Use stop-loss price as floor to avoid unbounded losses from time-based exits.
