@@ -151,6 +151,7 @@ function Actura() {
   const [feedsData, setFeedsData] = useState(null);
   const [sageData, setSageData] = useState(null);
   const [sandboxData, setSandboxData] = useState(null);
+  const [dexRouting, setDexRouting] = useState(null);
 
 
   /* ── Tier mapping from API tier names ── */
@@ -226,13 +227,13 @@ function Actura() {
 
   const mandate = useMemo(() => {
     const rl = governance?.riskLimits;
-    if (!rl) return { capital: `$${fn(capital, 0)}`, maxTrade: "10%", maxDailyLoss: "2%", allowedAssets: ["WETH/USDC"], protocols: ["Uniswap"], approvalThreshold: "$20,000" };
+    if (!rl) return { capital: `$${fn(capital, 0)}`, maxTrade: "10%", maxDailyLoss: "2%", allowedAssets: ["WETH/USDC"], protocols: ["Uniswap", "Aerodrome (mainnet)"], approvalThreshold: "$20,000" };
     return {
       capital: `$${fn(capital, 0)}`,
       maxTrade: `${((rl.maxPositionPct || 0.1) * 100).toFixed(0)}%`,
       maxDailyLoss: `${((rl.maxDailyLossPct || 0.02) * 100).toFixed(0)}%`,
       allowedAssets: ["WETH/USDC", "ETH", "USDC"],
-      protocols: ["Uniswap"],
+      protocols: ["Uniswap", "Aerodrome (mainnet)"],
       approvalThreshold: "$20,000",
     };
   }, [governance, capital]);
@@ -324,6 +325,7 @@ function Actura() {
       if (governanceRes) setGovernance(governanceRes);
       if (securityRes) setSecurity(securityRes);
       if (artifactRes?.aiReasoning) setLatestAi(artifactRes.aiReasoning);
+      if (artifactRes?.dexRouting) setDexRouting(artifactRes.dexRouting);
       if (feedsRes) setFeedsData(feedsRes);
       if (sageRes) setSageData(sageRes);
       if (sandboxRes) setSandboxData(sandboxRes);
@@ -834,6 +836,32 @@ function Actura() {
               <div style={{ marginTop: 4, paddingTop: 4, borderTop: `1px solid ${T.brd}` }}>
                 <KV k="Supervisory decision" v={sup.act} c={sup.ok ? T.up : T.dn} />
               </div>
+            </P>
+            <P title="DEX Routing" tip="Best-execution routing across DEX protocols. Aerodrome (Base mainnet) and Uniswap V3 (Sepolia testnet). Agent picks the lowest-cost route per trade." tag={dexRouting?.selectedDex ? dexRouting.selectedDex.toUpperCase() : "UNISWAP"}>
+              {(() => {
+                const dexes = [
+                  { name: "Uniswap V3", network: "Sepolia (testnet)", available: true, fee: "30 bps", gas: "free", icon: "●" },
+                  { name: "Aerodrome", network: "Base (mainnet)", available: false, fee: "30 bps", gas: "~$0.15", icon: "○" },
+                ];
+                const selected = dexRouting?.selectedDex || "uniswap";
+                const savings = dexRouting?.savingsBps || 0;
+                const rationale = dexRouting?.rationale?.join(" · ") || "—";
+                return React.createElement(React.Fragment, null,
+                  dexes.map((d) => React.createElement("div", { key: d.name, style: { display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: `1px solid ${T.brd}30` } },
+                    React.createElement("span", { style: { fontSize: 12, color: d.available ? T.up : T.fg3 } }, d.icon),
+                    React.createElement("div", { style: { flex: 1 } },
+                      React.createElement("div", { style: { fontSize: 10, fontWeight: 600, color: d.available ? T.fg : T.fg3 } }, d.name, " ", React.createElement("span", { style: { fontSize: 8.5, fontWeight: 400, color: T.fg3 } }, d.network)),
+                      React.createElement("div", { style: { fontSize: 8.5, color: T.fg3 } }, `Fee: ${d.fee} · Gas: ${d.gas}`),
+                    ),
+                    React.createElement(Badge, { color: d.available ? T.up : T.warn }, d.available ? "ACTIVE" : "MAINNET-READY"),
+                  )),
+                  React.createElement("div", { style: { marginTop: 6, paddingTop: 6, borderTop: `1px solid ${T.brd}` } },
+                    React.createElement(KV, { k: "Selected", v: selected.charAt(0).toUpperCase() + selected.slice(1), c: T.up }),
+                    savings > 0 && React.createElement(KV, { k: "Savings", v: `${savings} bps`, c: T.up }),
+                    React.createElement(KV, { k: "Rationale", v: rationale }),
+                  ),
+                );
+              })()}
             </P>
             <P title="Watch Items" tip="Live monitoring alerts: price levels, regime shifts, and risk conditions the agent is actively tracking." tag="live">
               <div style={{ fontSize: 9.5, color: T.warn, lineHeight: 1.65 }}>
