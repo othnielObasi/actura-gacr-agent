@@ -1,10 +1,10 @@
 /**
- * Live Price Feed — CoinGecko + Fallback
+ * Live Price Feed — Kraken primary + CoinGecko/DeFiLlama fallback
  *
- * Fetches real WETH/USDC prices from CoinGecko's free API.
- * Falls back to DeFiLlama if CoinGecko rate-limits.
- * Falls back to simulation ONLY if both APIs fail.
+ * Fetches real WETH/USDC prices from Kraken's REST API (primary).
+ * Falls back to CoinGecko, then DeFiLlama if Kraken is down.
  *
+ * Kraken: direct exchange data with bid/ask, spread, volume — no key needed.
  * CoinGecko free tier: ~30 calls/min (no key needed).
  * DeFiLlama: unlimited, no key needed.
  */
@@ -34,11 +34,25 @@ const MAX_CONSECUTIVE_FAILURES = 5;
 
 /**
  * Fetch the current live ETH price in USD.
- * Tries CoinGecko first, then DeFiLlama as fallback.
+ * Tries Kraken first (direct exchange), then CoinGecko, then DeFiLlama.
  * Returns null only if all sources fail.
  */
 export async function fetchLivePrice(): Promise<{ price: number; source: string } | null> {
-  // Try CoinGecko
+  // Try Kraken (primary — direct exchange data)
+  try {
+    const krakenResult = await fetchKrakenPrice();
+    if (krakenResult) {
+      lastFetchedPrice = krakenResult.price;
+      lastFetchTime = Date.now();
+      consecutiveFailures = 0;
+      return krakenResult;
+    }
+    log.debug('Kraken fetch returned null — trying CoinGecko');
+  } catch (e) {
+    log.debug('Kraken fetch failed — trying CoinGecko', { error: String(e) });
+  }
+
+  // Try CoinGecko (fallback 1)
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -64,7 +78,7 @@ export async function fetchLivePrice(): Promise<{ price: number; source: string 
     log.debug('CoinGecko fetch failed — trying DeFiLlama', { error: String(e) });
   }
 
-  // Try DeFiLlama
+  // Try DeFiLlama (fallback 2)
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -90,24 +104,10 @@ export async function fetchLivePrice(): Promise<{ price: number; source: string 
     log.debug('DeFiLlama fetch failed', { error: String(e) });
   }
 
-  // Try Kraken (3rd failover)
-  try {
-    const krakenResult = await fetchKrakenPrice();
-    if (krakenResult) {
-      lastFetchedPrice = krakenResult.price;
-      lastFetchTime = Date.now();
-      consecutiveFailures = 0;
-      return krakenResult;
-    }
-    log.debug('Kraken fetch returned null');
-  } catch (e) {
-    log.debug('Kraken fetch failed', { error: String(e) });
-  }
-
   // All three sources failed
   consecutiveFailures++;
   if (consecutiveFailures <= 2) {
-    log.warn('All live price sources failed (CoinGecko, DeFiLlama, Kraken)', { consecutiveFailures });
+    log.warn('All live price sources failed (Kraken, CoinGecko, DeFiLlama)', { consecutiveFailures });
   } else if (consecutiveFailures === MAX_CONSECUTIVE_FAILURES) {
     log.error(`Live feed failed ${MAX_CONSECUTIVE_FAILURES} consecutive times — data is stale, trading should halt`);
   }
@@ -115,11 +115,31 @@ export async function fetchLivePrice(): Promise<{ price: number; source: string 
 }
 
 /**
- * Fetch OHLC history from CoinGecko (3 days of 1h candles).
- * Returns null if fetch fails.
+ * Fetch OHLC history — Kraken primary, CoinGecko fallback.
+ * Returns null if all sources fail.
  */
 export async function fetchOHLCHistory(): Promise<MarketData | null> {
-  // Try CoinGecko first
+  // Try Kraken first (primary — direct exchange candles)
+  try {
+    const candles = await fetchKrakenOHLC('WETH/USDC', 60);
+    if (candles && candles.length >= 20) {
+      const prices = candles.map(c => c.close);
+      const highs = candles.map(c => c.high);
+      const lows = candles.map(c => c.low);
+      const timestamps = candles.map(c => c.timestamp);
+      log.info('Loaded Kraken OHLC history', {
+        candles: prices.length,
+        latest: `$${prices[prices.length - 1].toFixed(2)}`,
+        oldest: `$${prices[0].toFixed(2)}`,
+      });
+      return { prices, highs, lows, timestamps };
+    }
+    log.debug('Kraken OHLC returned insufficient data — trying CoinGecko');
+  } catch (e) {
+    log.warn('Kraken OHLC fetch failed — trying CoinGecko', { error: String(e) });
+  }
+
+  // Fallback: CoinGecko OHLC
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -163,24 +183,6 @@ export async function fetchOHLCHistory(): Promise<MarketData | null> {
     }
   } catch (e) {
     log.warn('CoinGecko OHLC fetch failed', { error: String(e) });
-  }
-
-  // Fallback: Kraken OHLC (1h candles)
-  try {
-    const candles = await fetchKrakenOHLC('WETH/USDC', 60);
-    if (candles && candles.length >= 20) {
-      const prices = candles.map(c => c.close);
-      const highs = candles.map(c => c.high);
-      const lows = candles.map(c => c.low);
-      const timestamps = candles.map(c => c.timestamp);
-      log.info('Loaded Kraken OHLC fallback', {
-        candles: prices.length,
-        latest: `$${prices[prices.length - 1].toFixed(2)}`,
-      });
-      return { prices, highs, lows, timestamps };
-    }
-  } catch (e) {
-    log.warn('Kraken OHLC fallback failed', { error: String(e) });
   }
 
   return null;

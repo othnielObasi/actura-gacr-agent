@@ -303,7 +303,7 @@ async function loadInitialMarketData(): Promise<MarketData> {
   const cached = loadPriceHistory();
 
   if (DATA_SOURCE === 'live') {
-    log.info('Fetching live OHLC history from CoinGecko...');
+    log.info('Fetching live OHLC history (Kraken primary)...');
     const liveData = await fetchOHLCHistory();
     if (liveData) {
       // Merge: prepend any cached candles that predate the OHLC response
@@ -334,7 +334,7 @@ async function loadInitialMarketData(): Promise<MarketData> {
       return liveData;
     }
 
-    // CoinGecko failed — try cached price history.
+    // All live sources failed — try cached price history.
     if (cached && cached.prices.length >= 20) {
       log.warn(`Live OHLC fetch failed — using ${cached.prices.length} cached candles from disk`);
       return cached;

@@ -456,15 +456,15 @@ function Actura() {
           </P>
 
           {/* Live Data Feeds */}
-          <P title="Live Data Feeds" tip="Real-time connection status for price data sources: Kraken WebSocket and CoinGecko REST." tag={feedsData?.status?.available ? "CONNECTED" : "OFFLINE"}>
+          <P title="Live Data Feeds" tip="Real-time price data: Kraken REST (primary), CoinGecko (fallback)." tag={feedsData?.status?.available ? "CONNECTED" : "OFFLINE"}>
             {(() => {
               const tk = feedsData?.ticker;
               const st = feedsData?.status;
               const krakenOk = st?.available && !st?.consecutiveFailures;
               const priceAge = tk?.timestamp ? Math.round((Date.now() - new Date(tk.timestamp).getTime()) / 1000) : null;
               const feeds = [
-                { name: "Kraken", ok: krakenOk, detail: tk ? `$${Number(tk.price).toFixed(2)} · spread $${Number(tk.spread).toFixed(2)}` : "no data", sub: tk ? `vol ${Number(tk.volume24h).toFixed(0)} · vwap $${Number(tk.vwap24h).toFixed(0)}` : "" },
-                { name: "CoinGecko", ok: cPrice > 0, detail: cPrice > 0 ? `$${fn(cPrice, 2)}` : "no data", sub: prices.length > 0 ? `${prices.length} data points` : "" },
+                { name: "Kraken (primary)", ok: krakenOk, detail: tk ? `$${Number(tk.price).toFixed(2)} · spread $${Number(tk.spread).toFixed(2)}` : "no data", sub: tk ? `vol ${Number(tk.volume24h).toFixed(0)} · vwap $${Number(tk.vwap24h).toFixed(0)}` : "" },
+                { name: "CoinGecko (fallback)", ok: cPrice > 0, detail: cPrice > 0 ? `$${fn(cPrice, 2)}` : "standby", sub: prices.length > 0 ? `${prices.length} data points` : "" },
               ];
               return React.createElement(React.Fragment, null,
                 priceAge !== null && React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.brd}` } },
