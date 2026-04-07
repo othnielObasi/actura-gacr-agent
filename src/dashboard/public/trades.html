@@ -132,7 +132,7 @@
     function txLink(hash) {
       if (!hash) return '<span style="color:var(--fg3)">—</span>';
       var short = hash.length > 12 ? hash.slice(0, 6) + '…' + hash.slice(-4) : hash;
-      return '<a href="https://sepolia.basescan.org/tx/' + encodeURIComponent(hash) + '" target="_blank" rel="noopener" style="color:var(--info);text-decoration:none" title="' + hash + '">🔗 ' + short + '</a>';
+      return '<a href="https://sepolia.etherscan.io/tx/' + encodeURIComponent(hash) + '" target="_blank" rel="noopener" style="color:var(--info);text-decoration:none" title="' + hash + '">🔗 ' + short + '</a>';
     }
     function reasonBadge(r) {
       var m = { stop_loss: 'badge-dn', direction_flip: 'badge-warn', reconciliation: 'badge-info', manual: 'badge-info' };
