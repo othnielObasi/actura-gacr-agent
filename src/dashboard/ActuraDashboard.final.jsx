@@ -456,27 +456,20 @@ function Actura() {
           </P>
 
           {/* Live Data Feeds */}
-          <P title="Live Data Feeds" tip="Real-time connection status and freshness for all market data sources: Kraken, CoinGecko, sentiment APIs." tag={feedsData?.status?.available ? "CONNECTED" : "OFFLINE"}>
+          <P title="Live Data Feeds" tip="Real-time connection status for price data sources: Kraken WebSocket and CoinGecko REST." tag={feedsData?.status?.available ? "CONNECTED" : "OFFLINE"}>
             {(() => {
               const tk = feedsData?.ticker;
               const st = feedsData?.status;
               const krakenOk = st?.available && !st?.consecutiveFailures;
-              const sentOk = sentiment && sentiment.sources?.length > 0;
               const priceAge = tk?.timestamp ? Math.round((Date.now() - new Date(tk.timestamp).getTime()) / 1000) : null;
               const feeds = [
                 { name: "Kraken", ok: krakenOk, detail: tk ? `$${Number(tk.price).toFixed(2)} · spread $${Number(tk.spread).toFixed(2)}` : "no data", sub: tk ? `vol ${Number(tk.volume24h).toFixed(0)} · vwap $${Number(tk.vwap24h).toFixed(0)}` : "" },
                 { name: "CoinGecko", ok: cPrice > 0, detail: cPrice > 0 ? `$${fn(cPrice, 2)}` : "no data", sub: prices.length > 0 ? `${prices.length} data points` : "" },
-                { name: "Fear & Greed", ok: sentiment?.fearGreed != null, detail: sentiment?.fearGreed != null ? `${Math.round((sentiment.fearGreed + 1) * 50)}/100` : "—", sub: sentiment?.fearGreed != null ? (sentiment.fearGreed < -0.4 ? "Extreme Fear" : sentiment.fearGreed < 0 ? "Fear" : "Greed") : "" },
-                { name: "PRISM News", ok: sentiment?.newsSentiment != null, detail: sentiment?.newsSentiment != null ? `${sentiment.newsSentiment.toFixed(3)}` : "—", sub: "PRISM sentiment API" },
-                { name: "PRISM Social", ok: sentiment?.socialSentiment != null, detail: sentiment?.socialSentiment != null ? `${sentiment.socialSentiment.toFixed(3)}` : "—", sub: "crowd sentiment" },
-                { name: "PRISM Funding", ok: sentiment?.fundingRate != null, detail: sentiment?.fundingRate != null ? `${sentiment.fundingRate.toFixed(3)}` : "—", sub: sentiment?.fundingRate != null ? (sentiment.fundingRate > 0.1 ? "Longs crowd" : sentiment.fundingRate < -0.1 ? "Shorts crowd" : "Balanced") : "" },
-                { name: "PRISM OI", ok: sentiment?.openInterest != null, detail: sentiment?.openInterest != null ? `${sentiment.openInterest.toFixed(3)}` : "—", sub: "open interest delta" },
-                { name: "PRISM Momentum", ok: sentiment?.priceMomentum != null, detail: sentiment?.priceMomentum != null ? `${sentiment.priceMomentum.toFixed(3)}` : "—", sub: "24h price change" },
               ];
               return React.createElement(React.Fragment, null,
                 priceAge !== null && React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.brd}` } },
                   React.createElement(Metric, { label: "Price Freshness", value: `${priceAge}s`, sub: priceAge < 30 ? "fresh" : priceAge < 120 ? "acceptable" : "stale", color: priceAge < 30 ? T.up : priceAge < 120 ? T.warn : T.dn }),
-                  React.createElement(Metric, { label: "Active Feeds", value: `${feeds.filter(f => f.ok).length}/${feeds.length}`, sub: "connected", color: feeds.filter(f => f.ok).length >= 4 ? T.up : T.warn }),
+                  React.createElement(Metric, { label: "Active Feeds", value: `${feeds.filter(f => f.ok).length}/${feeds.length}`, sub: "connected", color: feeds.filter(f => f.ok).length >= 2 ? T.up : T.warn }),
                 ),
                 feeds.map((f, i) => React.createElement("div", { key: f.name, style: { display: "flex", alignItems: "center", gap: 8, padding: "4px 0", borderBottom: i < feeds.length - 1 ? `1px solid ${T.brd}30` : "none" } },
                   React.createElement(Dot, { color: f.ok ? T.up : T.dn }),
