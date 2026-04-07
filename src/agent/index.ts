@@ -904,6 +904,7 @@ async function runCycle(): Promise<void> {
           () => postCheckpoint(agentId!, cpHash, cpScore, cpNotes),
           { maxRetries: 2, baseDelayMs: 1500, label: 'Validation checkpoint' },
         );
+        if (!checkpoint.onChainTxHash && cpTx) checkpoint.onChainTxHash = cpTx;
         log.info('Validation checkpoint posted', { txHash: cpTx });
       } catch (e: any) {
         log.warn('Validation checkpoint failed (non-critical)', { error: e.message?.slice(0, 80) });
@@ -921,6 +922,7 @@ async function runCycle(): Promise<void> {
           () => submitHackathonFeedbackAsReviewer(agentId!, feedbackScore, outcomeRef, comment, 1),
           { maxRetries: 2, baseDelayMs: 1500, label: 'Reputation feedback' },
         );
+        if (!checkpoint.onChainTxHash && repTx) checkpoint.onChainTxHash = repTx;
         log.info('Reputation feedback posted', { txHash: repTx });
       } catch (e: any) {
         log.warn('Reputation feedback failed (non-critical)', { error: e.message?.slice(0, 80) });
