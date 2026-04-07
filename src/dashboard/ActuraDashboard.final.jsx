@@ -275,9 +275,12 @@ function Actura() {
       if (statusRes) {
         const m = statusRes.market || {};
         const r = statusRes.risk || {};
-        if (m.currentPrice) {
-          setCPrice(m.currentPrice);
-          setPrices(prev => [...prev.slice(-71), m.currentPrice]);
+        // Use Kraken spot price (real-time) if available, else OHLC candle close
+        const krakenSpot = feedsRes?.ticker?.price ? Number(feedsRes.ticker.price) : null;
+        const bestPrice = krakenSpot || m.currentPrice;
+        if (bestPrice) {
+          setCPrice(bestPrice);
+          setPrices(prev => [...prev.slice(-71), bestPrice]);
         }
         if (m.volatility != null) setVol(m.volatility);
         if (r.volatility) setVolRatio(r.volatility.ratio || 1);
@@ -408,7 +411,7 @@ function Actura() {
         {/* ═══ 2. MARKET + PIPELINE (the governance story starts here) ═══ */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
           {/* Market Intelligence */}
-          <P title="Market Intelligence" tip="Live ETH/USD price, capital, volatility regime, and oracle health from multiple data sources." tag={`${regime} · ${profile}`}>
+          <P title="Market Intelligence" tip="Live ETH/USD from Kraken (primary), capital, volatility regime, and oracle health." tag={`${regime} · ${profile}`}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 0, marginBottom: 8, borderBottom: `1px solid ${T.brd}`, paddingBottom: 6 }}>
               <Metric label="ETH/USD" value={`$${fn(cPrice, 1)}`} color={T.w} />
               <Metric label="Capital" value={`$${fn(capital, 0)}`} sub={`${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%`} color={pnl >= 0 ? T.up : T.dn} />
