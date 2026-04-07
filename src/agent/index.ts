@@ -653,15 +653,15 @@ async function runCycle(): Promise<void> {
     : { selectedDex: 'uniswap' as DexId, quotes: [], savingsBps: 0, rationale: ['no trade'], timestamp: new Date().toISOString(), routingVersion: '1.0' };
 
   // Step 4b: Execution simulation — required pre-trade safety stage (uses DEX-specific fees)
-  // On testnet, use minimal fee assumptions — Base Sepolia has no real DEX fees.
-  const isTestnet = config.chainId === 84532;
+  // On testnet (Sepolia or Base Sepolia), use minimal fee assumptions — no real DEX fees or gas costs.
+  const isTestnet = config.chainId === 11155111 || config.chainId === 84532;
   const executionSimulation = simulateExecution({
     strategyOutput,
     riskDecision,
-    // Paper trading has no real gas cost — don't let fictional gas
+    // Testnet gas is free (Sepolia faucet ETH) — don't let fictional gas
     // eat into net edge and block trades that would be profitable.
-    // Only charge gas when Risk Router is configured for real on-chain execution.
-    gasUsd: config.riskRouterAddress ? 0.35 : 0,
+    // Only charge gas on mainnet with real on-chain execution.
+    gasUsd: isTestnet ? 0 : (config.riskRouterAddress ? 0.35 : 0),
     dexId: dexRouting.selectedDex,
     dexFeeBps: isTestnet ? 5 : getDexFeeBps(dexRouting.selectedDex),
   });
@@ -1062,7 +1062,7 @@ async function runCycle(): Promise<void> {
     `Cap: $${capital.toFixed(0)} | ` +
     `Pos: ${currentPositions.length}/${MAX_OPEN_POSITIONS} | ` +
     `${cognitive.rulesFired > 0 ? `Rules: ${cognitive.rulesFired} | ` : ''}` +
-    `${sentiment?.sources.length ? `Sent: ${sentiment.composite.toFixed(2)} [FG:${sentiment.fearGreed?.toFixed(2) ?? '-'} News:${sentiment.newsSentiment?.toFixed(2) ?? '-'} Fund:${sentiment.fundingRate?.toFixed(2) ?? '-'} Soc:${sentiment.socialSentiment?.toFixed(2) ?? '-'} OI:${sentiment.openInterest?.toFixed(2) ?? '-'} Mom:${sentiment.priceMomentum?.toFixed(2) ?? '-'}] | ` : ''}` +
+    `${sentiment?.sources.length ? `Sent: ${sentiment.composite.toFixed(2)} (${sentiment.sources.join(',')}) | ` : ''}` +
     `Oracle: ${oracleIntegrity.status} | DEX: ${dexRouting.selectedDex} | Sim: ${executionSimulation.reason} | ` +
     `${elapsed}ms`
   );
@@ -1255,7 +1255,7 @@ if (MODE === 'live') {
     }
 
     // Claim sandbox capital (idempotent — safe to call multiple times)
-    if (config.hackathonVaultAddress && config.agentId) {
+    if (config.capitalVaultAddress) {
       try {
         await claimSandboxCapital();
       } catch (e) {
