@@ -67,12 +67,12 @@ const MIN_PROFIT_FOR_TRAIL_PCT = (SLIPPAGE_BPS * 2) / 10000; // 2× one-way slip
 // Take-profit: close position when unrealized PnL reaches this percentage.
 // Used as FALLBACK when no ATR-based TP target is set on the position.
 // Dynamic TP (based on ATR at open time) is preferred and set per-position.
-const TAKE_PROFIT_PCT = parseFloat(process.env.TAKE_PROFIT_PCT || '3') / 100;
+const TAKE_PROFIT_PCT = parseFloat(process.env.TAKE_PROFIT_PCT || '0.3') / 100; // 0.3% scalp target
 
 // Max hold duration: close positions that have been open too long.
 // Prevents capital from being stuck in sideways markets forever.
-// Default 12 hours — gives positions time to reach TP in slow-moving markets.
-const MAX_HOLD_MS = parseFloat(process.env.MAX_HOLD_HOURS || '12') * 60 * 60 * 1000;
+// Default 2 hours — scalping mode: don't sit in positions, capture quick moves.
+const MAX_HOLD_MS = parseFloat(process.env.MAX_HOLD_HOURS || '2') * 60 * 60 * 1000;
 
 function applySlippage(price: number, side: 'LONG' | 'SHORT'): number {
   const slip = price * (SLIPPAGE_BPS / 10000);
@@ -263,13 +263,14 @@ export class RiskEngine {
    * Called at execution time AFTER all gates have approved the trade.
    * Returns details of each closed position for on-chain recording.
    */
-  closeOpposingPositions(direction: 'LONG' | 'SHORT', currentPrice: number): Array<{ id: number; side: string; pnl: number; entry: number; exit: number; size: number }> {
+  closeOpposingPositions(direction: 'LONG' | 'SHORT', currentPrice: number): Array<{ id: number; side: string; pnl: number; entry: number; exit: number; size: number; openedAt: string }> {
     const opposing = this.openPositions.filter(p => p.side !== direction);
-    const results: Array<{ id: number; side: string; pnl: number; entry: number; exit: number; size: number }> = [];
+    const results: Array<{ id: number; side: string; pnl: number; entry: number; exit: number; size: number; openedAt: string }> = [];
     for (const opp of opposing) {
       const size = opp.size;
+      const openedAt = opp.openedAt;
       const pnl = this.closePositionById(opp.id, currentPrice);
-      results.push({ id: opp.id, side: opp.side, pnl, entry: opp.entryPrice, exit: currentPrice, size });
+      results.push({ id: opp.id, side: opp.side, pnl, entry: opp.entryPrice, exit: currentPrice, size, openedAt });
       log.info(`Closed opposing position #${opp.id} (${opp.side}) for direction flip`, {
         entry: opp.entryPrice, exit: currentPrice, pnl: Math.round(pnl * 100) / 100,
       });
@@ -444,14 +445,14 @@ export class RiskEngine {
           // Determine effective trailing distance based on profit tier.
           // Deeper in profit → tighter trail → more profit locked in.
           let effectiveTrailDist = pos.trailingStopDistance;
-          if (unrealizedPct >= 0.025) {
-            // >2.5% profit: trail at 40% of original distance — lock solid gains
-            effectiveTrailDist = pos.trailingStopDistance * 0.40;
-          } else if (unrealizedPct >= 0.015) {
-            // >1.5% profit: trail at 60% of original distance
-            effectiveTrailDist = pos.trailingStopDistance * 0.60;
-          } else if (unrealizedPct >= 0.008) {
-            // >0.8% profit: breakeven stop
+          if (unrealizedPct >= 0.003) {
+            // >0.3% profit: trail at 30% of original distance — lock scalp gains
+            effectiveTrailDist = pos.trailingStopDistance * 0.30;
+          } else if (unrealizedPct >= 0.002) {
+            // >0.2% profit: trail at 50% of original distance
+            effectiveTrailDist = pos.trailingStopDistance * 0.50;
+          } else if (unrealizedPct >= 0.0012) {
+            // >0.12% profit (beyond costs): breakeven stop
             effectiveTrailDist = Math.abs(currentPrice - pos.entryPrice) * 0.95;
           }
 

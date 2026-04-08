@@ -941,21 +941,23 @@ async function runCycle(): Promise<void> {
         recordCloseOnChain(f.pnl, f.size * f.entry)
           .catch(e => log.warn('recordCloseOnChain (flip) failed', { error: String(e) }));
         const now = new Date().toISOString();
-        const pnlPct = f.entry > 0 ? (f.pnl / f.entry) * 100 : 0;
+        const pnlPct = f.entry > 0 ? (f.pnl / (f.entry * f.size)) * 100 : 0;
+        const openTime = new Date(f.openedAt).getTime();
+        const closeTime = Date.now();
         recordClosedTrade({
           id: f.id,
           asset: config.tradingPair,
           side: f.side as 'LONG' | 'SHORT',
-          size: 0,
+          size: f.size,
           entryPrice: f.entry,
           exitPrice: f.exit,
           pnl: f.pnl,
           pnlPct,
           stopHit: false,
           reason: 'direction_flip',
-          openedAt: now,  // approximate — original open time lost
+          openedAt: f.openedAt,
           closedAt: now,
-          durationMs: 0,
+          durationMs: closeTime - openTime,
         });
       }
     }
