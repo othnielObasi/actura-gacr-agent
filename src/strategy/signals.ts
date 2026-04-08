@@ -167,10 +167,18 @@ export function generateSignal(input: SignalInput): TradingSignal {
   // Sentiment nudge: composite [-1,+1] — light touch to avoid overriding price action
   const sentimentScore = (sentimentComposite ?? 0) * w.sentiment;
 
+  // Price-vs-MA divergence: early reversal detection.
+  // When price drops below fast MA while MAs are still bullish (or vice versa),
+  // that divergence is an early signal the trend may be reversing.
+  // This fires BEFORE the MA crossover, giving the agent a head start.
+  const priceMaDivergence = (currentPrice - smaFast) / currentPrice; // signed: negative = price below MA
+  const divergenceScore = clamp(priceMaDivergence / 0.005, -1, 1) * 0.3; // 0.5% divergence → ±0.3 contribution
+
   const alphaScore =
     trendScore +
     momentumScore +
     sentimentScore +
+    divergenceScore +
     (directionSign * crossoverBoost) -
     (directionSign * meanRevPenalty); // reduce signal magnitude regardless of direction
 
@@ -201,13 +209,13 @@ export function generateSignal(input: SignalInput): TradingSignal {
     direction = alphaScore >= 0 ? 'LONG' : 'SHORT';
   }
 
-  // Momentum contradiction override: if 5-period return strongly opposes SMA direction,
+  // Momentum contradiction override: if 5-period return opposes SMA direction,
   // flip to follow momentum at reduced confidence instead of deadlocking to NEUTRAL.
-  // This prevents shorting into rallies while still allowing the agent to trade.
-  const momentumContradiction = (direction === 'SHORT' && m5 > 0.015) || (direction === 'LONG' && m5 < -0.015);
+  // Threshold 0.8% — sensitive enough to catch reversals before stops are hit.
+  const momentumContradiction = (direction === 'SHORT' && m5 > 0.008) || (direction === 'LONG' && m5 < -0.008);
   if (momentumContradiction) {
     direction = m5 > 0 ? 'LONG' : 'SHORT';
-    confidence = clamp(confidence * 0.5, 0, 1); // halve confidence — momentum-only signal is weaker
+    confidence = clamp(confidence * 0.7, 0, 1); // moderate reduction — reversal signals deserve reasonable confidence
   }
 
   // SAGE playbook rules: apply learned filters to adjust confidence

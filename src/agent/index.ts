@@ -654,12 +654,10 @@ async function runCycle(): Promise<void> {
 
   // Minimum ATR gate: skip trading when ATR is too low (market is dead/ranging).
   // In such conditions, stops are micro and every trade becomes a coin flip.
-  // Threshold: 0.08% for testnet (real-time Kraken feed has lower vol than mainnet DEX).
   const atrPct = strategyOutput.indicators.atr !== null && strategyOutput.currentPrice > 0
     ? strategyOutput.indicators.atr / strategyOutput.currentPrice
     : null;
-  const isTestnetATR = config.chainId === 11155111 || config.chainId === 84532;
-  const atrMinPct = isTestnetATR ? 0.0008 : 0.003; // 0.08% testnet, 0.3% mainnet
+  const atrMinPct = 0.003; // 0.3% — protective floor for all networks
   const atrTooLow = atrPct !== null && atrPct < atrMinPct;
   if (riskDecision.approved && atrTooLow) {
     log.warn(`ATR too low (${(atrPct! * 100).toFixed(3)}% < ${(atrMinPct * 100).toFixed(2)}%) — market too flat, trade skipped`);
