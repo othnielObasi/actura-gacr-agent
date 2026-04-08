@@ -147,7 +147,20 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
     const state = getAgentState();
     const schedulerState = state.scheduler;
     const recentTrades = getRecentTrades(1);
-    const lastTradeAt = recentTrades.length > 0 ? recentTrades[0].closedAt : null;
+    const lastClosedAt = recentTrades.length > 0 ? recentTrades[0].closedAt : null;
+    // Also consider open positions — the most recently opened one counts as trade activity
+    const openPositions = state.risk.openPositions;
+    const lastOpenedAt = openPositions.length > 0
+      ? openPositions.reduce((latest: string | null, p: any) => {
+          if (!p.openedAt) return latest;
+          return !latest || p.openedAt > latest ? p.openedAt : latest;
+        }, null as string | null)
+      : null;
+    // Use whichever is more recent: last closed trade or last opened position
+    const lastTradeAt = [lastClosedAt, lastOpenedAt]
+      .filter(Boolean)
+      .sort()
+      .pop() ?? null;
     res.json({
       agent: {
         name: config.agentName,
