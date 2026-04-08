@@ -432,16 +432,28 @@
 
         // Share — fetch from share API
         let shareText;
+        const perf = tradeStats || {};
+        const totalTradesCount = perf.totalTrades || status?.risk?.totalTrades || 0;
+        const winRatePct = perf.winRate != null ? perf.winRate.toFixed(0) : '—';
+        const totalPnlUsd = perf.totalPnl != null ? (perf.totalPnl >= 0 ? '+' : '') + perf.totalPnl.toFixed(2) : '0';
+        const totalReturnStr = perf.totalReturnPct != null ? (perf.totalReturnPct >= 0 ? '+' : '') + perf.totalReturnPct.toFixed(2) + '%' : '—';
+        const trustStr = latest?.trustScore?.toFixed(0) || '—';
+        const capitalStr = status?.capital?.toFixed(0) || '—';
+        const artCount = artifacts?.total || artifacts?.artifacts?.length || 0;
+        const openPos = status?.risk?.openPositions || 0;
+        const validScoreStr = sandbox?.validationScore > 0 ? sandbox.validationScore + '/100' : '—';
+        const repScoreStr = sandbox?.reputationScore > 0 ? sandbox.reputationScore + '/100' : '—';
         try {
           const shareData = await fetch('/api/share/daily').then(r=>r.json()).catch(()=>null);
           shareText = shareData?.post?.text || `🤖 Actura GACR Agent — ERC-8004 Trust-Governed Trading
 
-📊 Trust Score: ${latest?.trustScore?.toFixed(0) || '80'} | Capital: $${status?.capital?.toFixed(0) || '10,000'}
-🔗 ${artifacts?.total || 0} IPFS artifacts | ${status?.risk?.totalTrades || 0} trades executed
-⚡ 8-stage governance pipeline | 3 price feeds | 2 DEXes
+📊 PnL: $${totalPnlUsd} (${totalReturnStr}) | Capital: $${capitalStr}
+📈 Trades: ${totalTradesCount} | Win Rate: ${winRatePct}% | Open: ${openPos}
+🛡️ Trust: ${trustStr} | Validation: ${validScoreStr} | Reputation: ${repScoreStr}
+🔗 ${artCount} IPFS artifacts | 8-stage governance pipeline
 
-Built on @base_protocol with ERC-8004
-@krakenfx @Surgexyz_ @lablabai #SurgeHackathon #ERC8004 #DeFi #KrakenCLI`;
+Fully governed. Every decision auditable.
+@Surgexyz_ @lablabai #SurgeHackathon #ERC8004 #DeFi`;
         } catch (_) {
           shareText = 'Actura GACR Agent — ERC-8004 Trust-Governed Trading';
         }
