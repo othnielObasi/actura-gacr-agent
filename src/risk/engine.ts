@@ -67,12 +67,16 @@ const MIN_PROFIT_FOR_TRAIL_PCT = (SLIPPAGE_BPS * 2) / 10000; // 2× one-way slip
 // Take-profit: close position when unrealized PnL reaches this percentage.
 // Used as FALLBACK when no ATR-based TP target is set on the position.
 // Dynamic TP (based on ATR at open time) is preferred and set per-position.
-const TAKE_PROFIT_PCT = parseFloat(process.env.TAKE_PROFIT_PCT || '0.3') / 100; // 0.3% scalp target
+const TAKE_PROFIT_PCT = parseFloat(process.env.TAKE_PROFIT_PCT || '0.2') / 100; // 0.2% scalp target — faster turnover
 
 // Max hold duration: close positions that have been open too long.
 // Prevents capital from being stuck in sideways markets forever.
-// Default 2 hours — scalping mode: don't sit in positions, capture quick moves.
-const MAX_HOLD_MS = parseFloat(process.env.MAX_HOLD_HOURS || '2') * 60 * 60 * 1000;
+// Default 1 hour — scalping mode: don't sit in positions, capture quick moves.
+const MAX_HOLD_MS = parseFloat(process.env.MAX_HOLD_HOURS || '1') * 60 * 60 * 1000;
+
+// Absolute per-trade loss cap — prevents any single trade from losing more
+// than this dollar amount regardless of stop-loss distance or direction flips.
+const MAX_LOSS_PER_TRADE = parseFloat(process.env.MAX_LOSS_PER_TRADE || '3');
 
 function applySlippage(price: number, side: 'LONG' | 'SHORT'): number {
   const slip = price * (SLIPPAGE_BPS / 10000);
@@ -154,7 +158,7 @@ export class RiskEngine {
     });
 
     // Check 2: Signal quality
-    const signalOk = strategyOutput.signal.direction !== 'NEUTRAL' && strategyOutput.signal.confidence > 0.05;
+    const signalOk = strategyOutput.signal.direction !== 'NEUTRAL' && strategyOutput.signal.confidence > 0.02;
     checks.push({
       name: 'signal_quality',
       passed: signalOk,
@@ -262,17 +266,46 @@ export class RiskEngine {
    * Close all positions opposing the given direction.
    * Called at execution time AFTER all gates have approved the trade.
    * Returns details of each closed position for on-chain recording.
+   * 
+   * Loss protection: if a direction flip would realize a loss worse than
+   * the stop-loss level, close at the stop-loss price instead (same as
+   * gap protection in updateStops). This prevents signal whipsaw from
+   * creating unbounded losses on flips.
    */
-  closeOpposingPositions(direction: 'LONG' | 'SHORT', currentPrice: number): Array<{ id: number; side: string; pnl: number; entry: number; exit: number; size: number; openedAt: string }> {
+  closeOpposingPositions(direction: 'LONG' | 'SHORT', currentPrice: number): Array<{ id: number; side: string; pnl: number; entry: number; exit: number; size: number; openedAt: string; ipfsCid?: string | null; txHash?: string | null }> {
     const opposing = this.openPositions.filter(p => p.side !== direction);
-    const results: Array<{ id: number; side: string; pnl: number; entry: number; exit: number; size: number; openedAt: string }> = [];
+    const results: Array<{ id: number; side: string; pnl: number; entry: number; exit: number; size: number; openedAt: string; ipfsCid?: string | null; txHash?: string | null }> = [];
     for (const opp of opposing) {
       const size = opp.size;
       const openedAt = opp.openedAt;
-      const pnl = this.closePositionById(opp.id, currentPrice);
-      results.push({ id: opp.id, side: opp.side, pnl, entry: opp.entryPrice, exit: currentPrice, size, openedAt });
+      const ipfsCid = opp.ipfsCid;
+      const txHash = opp.txHash;
+      // Cap flip loss at stop-loss level: if price is worse than the stop,
+      // use the stop price to avoid unbounded direction-flip losses.
+      let closePrice = currentPrice;
+      if (opp.stopLoss !== null) {
+        if (opp.side === 'LONG' && currentPrice < opp.stopLoss) {
+          closePrice = opp.stopLoss;
+        } else if (opp.side === 'SHORT' && currentPrice > opp.stopLoss) {
+          closePrice = opp.stopLoss;
+        }
+      }
+      // Also enforce absolute per-trade max loss cap ($3)
+      const rawPnl = opp.side === 'LONG'
+        ? (closePrice - opp.entryPrice) * opp.size
+        : (opp.entryPrice - closePrice) * opp.size;
+      if (rawPnl < -MAX_LOSS_PER_TRADE) {
+        // Tighten close price to cap loss at MAX_LOSS_PER_TRADE
+        const maxMove = MAX_LOSS_PER_TRADE / opp.size;
+        closePrice = opp.side === 'LONG'
+          ? opp.entryPrice - maxMove
+          : opp.entryPrice + maxMove;
+      }
+      const pnl = this.closePositionById(opp.id, closePrice, /* skipSlippage */ true);
+      results.push({ id: opp.id, side: opp.side, pnl, entry: opp.entryPrice, exit: closePrice, size, openedAt, ipfsCid, txHash });
       log.info(`Closed opposing position #${opp.id} (${opp.side}) for direction flip`, {
-        entry: opp.entryPrice, exit: currentPrice, pnl: Math.round(pnl * 100) / 100,
+        entry: opp.entryPrice, exit: closePrice, pnl: Math.round(pnl * 100) / 100,
+        lossCapped: closePrice !== currentPrice,
       });
     }
     return results;
@@ -508,15 +541,9 @@ export class RiskEngine {
         const stopped = (pos.side === 'LONG' && currentPrice <= pos.stopLoss) ||
                         (pos.side === 'SHORT' && currentPrice >= pos.stopLoss);
         if (stopped) {
-          // If price gapped through the stop (e.g. after feed outage or
-          // fast move), close at the stop price rather than the worse
-          // current price.  This matches restart reconciliation behavior
-          // and prevents feed-recovery gaps from inflating losses.
           const gapped = (pos.side === 'LONG' && currentPrice < pos.stopLoss) ||
                          (pos.side === 'SHORT' && currentPrice > pos.stopLoss);
           const closePrice = gapped ? pos.stopLoss : currentPrice;
-          // Stop-loss closes skip exit slippage: the stop price already
-          // represents the intended risk boundary.
           const size = pos.size;
           const entry = pos.entryPrice;
           const pnl = this.closeAtIndex(i, closePrice, /* skipSlippage */ true);
@@ -525,6 +552,32 @@ export class RiskEngine {
             side: pos.side, entry: pos.entryPrice, exit: closePrice,
             pnl: Math.round(pnl * 100) / 100,
             ...(gapped ? { gapProtection: true, actualPrice: currentPrice } : {}),
+          });
+          continue;
+        }
+      }
+
+      // Hard per-trade loss cap: if unrealized loss exceeds MAX_LOSS_PER_TRADE,
+      // force-close at the capped price to prevent runaway losses regardless of
+      // stop-loss distance or trailing stop state.
+      {
+        const unrealizedPnl = pos.side === 'LONG'
+          ? (currentPrice - pos.entryPrice) * pos.size
+          : (pos.entryPrice - currentPrice) * pos.size;
+        if (unrealizedPnl < -MAX_LOSS_PER_TRADE) {
+          const maxMove = MAX_LOSS_PER_TRADE / pos.size;
+          const cappedPrice = pos.side === 'LONG'
+            ? pos.entryPrice - maxMove
+            : pos.entryPrice + maxMove;
+          const size = pos.size;
+          const entry = pos.entryPrice;
+          const pnl = this.closeAtIndex(i, cappedPrice, /* skipSlippage */ true);
+          closed.push({ id: pos.id, pnl, reason: 'stop_loss', size, entryPrice: entry });
+          log.warn(`Max loss cap hit: position #${pos.id} — capped at $${MAX_LOSS_PER_TRADE}`, {
+            side: pos.side, entry: pos.entryPrice, exit: cappedPrice,
+            actualPrice: currentPrice,
+            uncappedLoss: Math.round(unrealizedPnl * 100) / 100,
+            pnl: Math.round(pnl * 100) / 100,
           });
           continue;
         }

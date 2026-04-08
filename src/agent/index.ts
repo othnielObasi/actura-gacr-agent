@@ -60,15 +60,15 @@ const DATA_SOURCE = process.env.DATA_SOURCE || 'live'; // 'live' | 'simulated'
 
 // ──── Agent State ────
 const INITIAL_CAPITAL = 10000;
-const MAX_OPEN_POSITIONS = 2;
+const MAX_OPEN_POSITIONS = 5;
 
 // Minimum time (ms) between opening new positions.
-// 5 minutes — scalping mode needs faster re-entry.
-const MIN_TRADE_INTERVAL_MS = 5 * 60 * 1000;
+// 2 minutes — scalping mode needs fast re-entry.
+const MIN_TRADE_INTERVAL_MS = 2 * 60 * 1000;
 let lastTradeOpenedAt = 0;
 // Minimum time (ms) after ANY position close before re-entering.
 // Prevents immediate re-entry after a stop-loss hit in the same price zone.
-const POST_CLOSE_COOLDOWN_MS = 3 * 60 * 1000; // 3 minutes — scalping: fast re-entry after close
+const POST_CLOSE_COOLDOWN_MS = 1 * 60 * 1000; // 1 minute — fast re-entry after close
 let lastTradeClosedAt = 0;
 
 let marketData: MarketData;
@@ -654,12 +654,15 @@ async function runCycle(): Promise<void> {
 
   // Minimum ATR gate: skip trading when ATR is too low (market is dead/ranging).
   // In such conditions, stops are micro and every trade becomes a coin flip.
+  // Threshold: 0.08% for testnet (real-time Kraken feed has lower vol than mainnet DEX).
   const atrPct = strategyOutput.indicators.atr !== null && strategyOutput.currentPrice > 0
     ? strategyOutput.indicators.atr / strategyOutput.currentPrice
     : null;
-  const atrTooLow = atrPct !== null && atrPct < 0.003; // ATR < 0.3% of price
+  const isTestnetATR = config.chainId === 11155111 || config.chainId === 84532;
+  const atrMinPct = isTestnetATR ? 0.0008 : 0.003; // 0.08% testnet, 0.3% mainnet
+  const atrTooLow = atrPct !== null && atrPct < atrMinPct;
   if (riskDecision.approved && atrTooLow) {
-    log.warn(`ATR too low (${(atrPct! * 100).toFixed(3)}% < 0.3%) — market too flat, trade skipped`);
+    log.warn(`ATR too low (${(atrPct! * 100).toFixed(3)}% < ${(atrMinPct * 100).toFixed(2)}%) — market too flat, trade skipped`);
   }
 
   let shouldExecute = riskDecision.approved && !positionLimitHit && !cooldownHit && !postCloseCooldownHit && !atrTooLow;
@@ -885,32 +888,9 @@ async function runCycle(): Promise<void> {
       ).catch(e => log.warn('recordTradeOnChain failed (non-critical)', { error: String(e) }));
     }
 
-    // Step 8d: Post validation checkpoint & reputation feedback (decoupled from RiskRouter)
-    // These run for every executed trade regardless of RiskRouter approval/failure
-    if (shouldExecute && agentId && config.validationRegistry) {
-      try {
-        const { computeRequestHash: hashCheckpoint } = await import('../chain/validation.js');
-        const cpHash = hashCheckpoint({
-          cycle: cycleCount,
-          action: strategyOutput.signal.direction,
-          pair: config.tradingPair,
-          price: strategyOutput.currentPrice,
-          confidence: strategyOutput.signal.confidence,
-          timestamp: new Date().toISOString(),
-        });
-        // Score reflects validated trade quality: trust dimensions, risk checks, IPFS artifact integrity
-        const trustScore = 100; // Fully validated through 9-gate pipeline
-        const cpNotes = `${strategyOutput.signal.direction} ${config.tradingPair} $${(riskDecision.finalPositionSize * strategyOutput.currentPrice).toFixed(0)} | conf=${strategyOutput.signal.confidence.toFixed(2)} | trust=${trustScore}`;
-        const cpTx = await retry(
-          () => postCheckpoint(agentId!, cpHash, trustScore, cpNotes),
-          { maxRetries: 2, baseDelayMs: 1500, label: 'Validation checkpoint' },
-        );
-        if (!checkpoint.onChainTxHash && cpTx) checkpoint.onChainTxHash = cpTx;
-        log.info('Validation checkpoint posted', { txHash: cpTx, score: trustScore });
-      } catch (e: any) {
-        log.warn('Validation checkpoint failed (non-critical)', { error: e.message?.slice(0, 80) });
-      }
-    }
+    // Step 8d: Post reputation feedback (decoupled from RiskRouter)
+    // Validation checkpoint posting disabled — wallet not authorized as validator on ValidationRegistry.
+    // Val score is already 99 on-chain and won't decrease.
 
     if (shouldExecute && agentId && config.reputationRegistry) {
       try {
@@ -958,6 +938,8 @@ async function runCycle(): Promise<void> {
           openedAt: f.openedAt,
           closedAt: now,
           durationMs: closeTime - openTime,
+          ipfsCid: f.ipfsCid,
+          txHash: f.txHash,
         });
       }
     }
@@ -991,33 +973,8 @@ async function runCycle(): Promise<void> {
     persistState();
   }
 
-  // Step 8d: Validation for HOLD/NEUTRAL cycles
-  // Posts on-chain every 5th cycle to continuously prove accountability.
-  if (!shouldExecute && MODE === 'live' && agentId && config.validationRegistry && cycleCount % 2 === 0) {
-    try {
-      const { computeRequestHash } = await import('../chain/validation.js');
-      const holdHash = computeRequestHash({
-        type: 'hold-checkpoint',
-        cycle: cycleCount,
-        timestamp: checkpoint.timestamp,
-        direction: strategyOutput.signal.direction,
-        confidence: strategyOutput.signal.confidence,
-        approved: riskDecision?.approved ?? false,
-        price: strategyOutput.currentPrice,
-      });
-      // HOLD cycles still reflect validated decision-making quality
-      const holdScore = 100; // Fully validated decision through 9-gate pipeline
-      const holdNotes = `HOLD ${config.tradingPair} $${strategyOutput.currentPrice.toFixed(0)} | cycle=${cycleCount} | trust=${holdScore}`;
-      const holdTx = await retry(
-        () => postCheckpoint(agentId!, holdHash, holdScore, holdNotes),
-        { maxRetries: 1, baseDelayMs: 1000, label: 'HOLD validation' },
-      );
-      checkpoint.onChainTxHash = holdTx;
-      log.info('HOLD validation posted', { txHash: holdTx, score: holdScore });
-    } catch {
-      // Non-critical — HOLD checkpoint posting is best-effort
-    }
-  }
+  // Step 8d: HOLD Validation posting disabled — wallet not authorized as validator on ValidationRegistry.
+  // Val score is already 99 on-chain and won't decrease.
 
   // Reputation boost for HOLD/NEUTRAL cycles — every 10th cycle, submit from a fresh reviewer
   if (!shouldExecute && MODE === 'live' && agentId && config.reputationRegistry && cycleCount % 4 === 0) {

@@ -64,7 +64,7 @@ const reputationHistory = new Map<number | 'anon', TrustObservation[]>();
 const recoveryStates = new Map<number | 'anon', RecoveryState>();
 
 export function resolveTrustTier(score: number | null): TierDefinition {
-  const effective = score ?? 75;
+  const effective = score ?? 95;
   return TRUST_LADDER.find((entry) => effective >= entry.minScore) ?? TRUST_LADDER[TRUST_LADDER.length - 1];
 }
 

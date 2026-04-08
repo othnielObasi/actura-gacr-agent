@@ -19,13 +19,15 @@ export function initChain(): { provider: ethers.JsonRpcProvider; wallet: ethers.
     throw new Error('PRIVATE_KEY not set in .env');
   }
 
-  provider = new ethers.JsonRpcProvider(config.rpcUrl);
+  provider = new ethers.JsonRpcProvider(config.rpcUrl, undefined, {
+    batchMaxCount: 1,       // disable batching — free-tier RPCs reject batch requests
+  });
   wallet = new ethers.Wallet(
     config.privateKey.startsWith('0x') ? config.privateKey : `0x${config.privateKey}`,
     provider
   );
 
-  console.log(`[CHAIN] Connected to ${config.rpcUrl} (chainId: ${config.chainId})`);
+  console.log(`[CHAIN] Connected to ${config.rpcUrl} (chainId: ${config.chainId}, batchMaxCount=1)`);
   console.log(`[CHAIN] Wallet: ${wallet.address}`);
 
   return { provider, wallet };

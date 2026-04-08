@@ -33,7 +33,7 @@ Unlike conventional trading bots, Actura produces a **complete audit trail** for
 | **Full audit trail** | Every decision produces an IPFS-pinned JSON artifact with AI reasoning, market snapshots, confidence intervals, governance evidence, and TEE attestation. Artifacts are also saved locally to `./artifacts/` for re-pinning resilience |
 | **PRISM Intelligence** | Real-time technical signal integration via Strykr PRISM API — RSI, MACD, Bollinger Bands, directional bias. Confirmation-only confidence modifier (+0–15%) — boosts when PRISM agrees with the primary strategy, never penalizes |
 | **AI Reasoning (3-tier LLM)** | Every trade decision includes a natural-language AI explanation generated via Claude → Gemini → OpenAI failover chain. Summaries are embedded in IPFS artifacts |
-| **ACE — Agentic Context Engineering** | LLM-powered self-improving layer: Gemini 2.5 Pro reflects on trade outcomes, auto-tunes 7 signal weights within CAGE bounds, builds conditional playbook rules, and injects accumulated wisdom into AI reasoning. 3-layer overfitting protection: regime diversity gate, holdout validation, auto-revert |
+| **ACE/SAGE — Agentic Context Engineering** | LLM-powered self-improving layer: Gemini 2.5 Pro reflects on trade outcomes, auto-tunes 7 signal weights within CAGE bounds, builds conditional playbook rules, and injects accumulated wisdom into AI reasoning. 3-layer overfitting protection: regime diversity gate, holdout validation, auto-revert |
 | **Sentiment-driven signals** | Multi-source sentiment scoring — Fear & Greed Index (40%), Alpha Vantage news (35%), Kraken funding rate proxy (25%) — adjusts confidence and position sizing |
 | **Kraken Challenge integration** | Full live/paper trading via Kraken CLI bridge — governed strategy → Kraken orders with stop-losses, TP targets, and ERC-8004 artifact preservation |
 | **Profit-locking trailing stops** | Tiered breakeven mechanism: >0.5% profit → 95% trail, >0.8% → 50% trail, >1.5% → 30% trail. Stops only ratchet tighter, never widen |
@@ -48,24 +48,29 @@ Unlike conventional trading bots, Actura produces a **complete audit trail** for
 
 ## Live Deployment & Public Verification
 
-Actura is **live on Base Sepolia** with verifiable on-chain state:
+Actura is **live on Ethereum Sepolia** with verifiable on-chain state:
 
 | What | Address / Link |
 |---|---|
-| **Agent ID** | **338** (ERC-8004 Identity Registry) |
-| **Registration Tx** | [`0x72ffa1b1...`](https://sepolia.basescan.org/tx/0x72ffa1b1463ce258e9223992d92996c2fbbdab86a445d8d2d85e90486279ce42) |
-| **ActuraRiskPolicy** | [`0x27C9766b30BAB8b59998f7F3e80E0eb92c8a9AC9`](https://sepolia.basescan.org/address/0x27C9766b30BAB8b59998f7F3e80E0eb92c8a9AC9) |
-| **Risk Policy Deploy Tx** | [`0xc3c484e2...`](https://sepolia.basescan.org/tx/0xc3c484e22603215a04cb64ff4a689c8ddf8b47d55da4b0382782a3233600dfec) |
-| **Identity Registry** | [`0x7177a686...Dd09A`](https://sepolia.basescan.org/address/0x7177a6867296406881E20d6647232314736Dd09A) |
-| **Owner Wallet** | [`0xE8684cfb...DdCD7`](https://sepolia.basescan.org/address/0xE8684cfbA08541C607898E55BAB58302204DdCD7) |
-| **Agent Metadata (IPFS)** | [`QmXUkbkBTw5H...`](https://aqua-advisory-vicuna-831.mypinata.cloud/ipfs/QmXUkbkBTw5HcjxvMwKSE3CnR1hJEtckc4xUHx4U82dbJt) |
-| **Live Dashboard** | [http://192.248.145.196:3000](http://192.248.145.196:3000) |
-| **MCP Endpoint** | `http://192.248.145.196:3001/mcp` (JSON-RPC) |
+| **Agent ID** | **18** (Hackathon AgentRegistry) |
+| **AgentRegistry** | [`0x97b07dDc405B0c28B17559aFFE63BdB3632d0ca3`](https://sepolia.etherscan.io/address/0x97b07dDc405B0c28B17559aFFE63BdB3632d0ca3) |
+| **ActuraRiskPolicy** | [`0x054773f36E142BDCD01aF13d6863f90681eF8009`](https://sepolia.etherscan.io/address/0x054773f36E142BDCD01aF13d6863f90681eF8009) |
+| **RiskRouter** | [`0xd6A6952545FF6E6E6681c2d15C59f9EB8F40FdBC`](https://sepolia.etherscan.io/address/0xd6A6952545FF6E6E6681c2d15C59f9EB8F40FdBC) |
+| **ValidationRegistry** | [`0x92bF63E5C7Ac6980f237a7164Ab413BE226187F1`](https://sepolia.etherscan.io/address/0x92bF63E5C7Ac6980f237a7164Ab413BE226187F1) |
+| **ReputationRegistry** | [`0x423a9904e39537a9997fbaF0f220d79D7d545763`](https://sepolia.etherscan.io/address/0x423a9904e39537a9997fbaF0f220d79D7d545763) |
+| **Owner Wallet** | [`0xE8684cfb...DdCD7`](https://sepolia.etherscan.io/address/0xE8684cfbA08541C607898E55BAB58302204DdCD7) |
+| **Live Dashboard** | [http://api.actura.nov-tia.com:3000](http://api.actura.nov-tia.com:3000) |
+| **Judge Mode** | [http://api.actura.nov-tia.com:3000/judge.html](http://api.actura.nov-tia.com:3000/judge.html) |
+| **MCP Endpoint** | `http://api.actura.nov-tia.com:3001/mcp` (JSON-RPC) |
 
-**Verify on-chain yourself** — call any of these read functions on the Risk Policy contract (no keys needed):
-- `getRiskState()` → capital, drawdown, circuit breaker status
-- `checkTrade(asset, side, amount)` → simulates a risk check
-- `owner()` → `0xE8684cfbA08541C607898E55BAB58302204DdCD7`
+**Current live stats (as of April 7, 2026):**
+- 1,400+ trading cycles executed
+- 5 closed trades with full governance artifacts
+- 36+ IPFS-pinned decision artifacts
+- Trust Score: 95.8 (elite tier)
+- On-chain Validation Score: 95, Reputation Score: 92
+- Live Kraken integration (paper + live modes)
+- Every decision IPFS-pinned with TEE attestation
 
 ### Decision Audit Trail (Public)
 
@@ -73,12 +78,12 @@ Every trading decision produces an immutable IPFS artifact containing the full r
 
 | Endpoint | Description |
 |---|---|
-| [`/api/artifacts`](http://192.248.145.196:3000/api/artifacts) | Browse all decision artifacts (73+) with IPFS CIDs |
-| [`/api/artifact/latest`](http://192.248.145.196:3000/api/artifact/latest) | Full JSON of the most recent decision |
-| [`/api/checkpoints`](http://192.248.145.196:3000/api/checkpoints) | Recent trade checkpoints with signals, confidence, IPFS links |
+| [`/api/artifacts`](http://api.actura.nov-tia.com:3000/api/artifacts) | Browse all decision artifacts with IPFS CIDs |
+| [`/api/artifact/latest`](http://api.actura.nov-tia.com:3000/api/artifact/latest) | Full JSON of the most recent decision |
+| [`/api/checkpoints`](http://api.actura.nov-tia.com:3000/api/checkpoints) | Recent trade checkpoints with signals, confidence, IPFS links |
 
 **Example artifact on IPFS** (anyone can view, no keys needed):
-[`QmUpDErcxCVigB5fCfshKUUajCtmdH3zGGGZ4RbdYCDc6s`](https://aqua-advisory-vicuna-831.mypinata.cloud/ipfs/QmUpDErcxCVigB5fCfshKUUajCtmdH3zGGGZ4RbdYCDc6s)
+[`QmUVE9Px5Z58HEi8wSp8i6ZriA1rg4aQxPeDZRSq1hFaw5`](https://aqua-advisory-vicuna-831.mypinata.cloud/ipfs/QmUVE9Px5Z58HEi8wSp8i6ZriA1rg4aQxPeDZRSq1hFaw5)
 
 Each artifact records: trade details, 11 risk checks (pass/fail), mandate evidence, neuro-symbolic rule firings, market snapshot (10 price candles, trend strength), confidence interval (best/worst/max loss), and a natural-language AI reasoning summary.
 
@@ -114,8 +119,8 @@ Required variables:
 | Variable | Description | Default |
 |---|---|---|
 | `PRIVATE_KEY` | Wallet private key (never commit) | — |
-| `RPC_URL` | JSON-RPC endpoint | `https://sepolia.base.org` |
-| `CHAIN_ID` | Target chain ID | `84532` (Base Sepolia) |
+| `RPC_URL` | JSON-RPC endpoint | `https://ethereum-sepolia-rpc.publicnode.com` |
+| `CHAIN_ID` | Target chain ID | `11155111` (Ethereum Sepolia) |
 | `PINATA_JWT` | Pinata API key for IPFS | — (mock mode if empty) |
 | `MODE` | `simulation` or `live` | `simulation` |
 
@@ -127,7 +132,7 @@ See [`.env.example`](.env.example) for the full list of configurable parameters 
 # Simulation mode (default) — runs 50 trading cycles with synthetic data
 npm run dev
 
-# Live mode — connects to Base Sepolia, real execution
+# Live mode — connects to Ethereum Sepolia, real execution
 MODE=live npm run dev
 
 # Dashboard only
@@ -326,7 +331,7 @@ actura-gacr-agent/
 │   ├── social/
 │   │   └── share.ts                 # Social proof & sharing
 │   ├── strategy/
-│   │   ├── ace-engine.ts             # ACE: LLM-powered adaptive learning (reflection, playbook, weights)
+│   │   ├── ace-engine.ts             # SAGE: LLM-powered adaptive learning (reflection, playbook, weights)
 │   │   ├── adaptive-learning.ts      # Bounded self-improvement with Bayesian context bias
 │   │   ├── ai-reasoning.ts           # AI-powered trade explanations (Claude/Gemini/OpenAI)
 │   │   ├── edge-filter.ts            # Minimum edge threshold filter
@@ -384,17 +389,17 @@ The adaptive learner also computes a **bounded Bayesian context confidence bias*
 
 Every adaptation is recorded as an artifact with reasoning and before/after values.
 
-### 2c. ACE — Agentic Context Engineering
+### 2c. SAGE — Self-Adaptive Governance Engine (formerly ACE)
 
-ACE is an LLM-powered self-improving layer that sits above adaptive learning, using **Gemini 2.5 Pro** to reflect on trade outcomes and auto-tune the strategy.
+SAGE is an LLM-powered self-improving layer that sits above adaptive learning, using **Gemini 2.5 Pro** to reflect on trade outcomes and auto-tune the strategy.
 
-**What ACE produces:**
+**What SAGE produces:**
 - **Weight optimization** — Auto-tunes 7 scorecard signal weights within immutable CAGE bounds (max 30% change per cycle)
 - **Playbook rules** — Conditional filters (BLOCK / REDUCE / BOOST confidence) based on pattern analysis, with expiry after 30 trades
 - **Context injection** — Accumulated trading wisdom prefixed to every AI reasoning prompt
 - **Reflection artifacts** — Every reflection cycle is persisted as an auditable JSONL record
 
-**Signal weights managed by ACE:**
+**Signal weights managed by SAGE:**
 
 | Weight | Default | CAGE Range |
 |---|---|---|
@@ -413,7 +418,7 @@ ACE is an LLM-powered self-improving layer that sits above adaptive learning, us
 
 **Kill switch:** `ACE_ENABLED=false` — agent continues with last known good weights, no LLM calls.
 
-**API endpoints:** `/api/ace/status`, `/api/ace/playbook`
+**API endpoints:** `/api/sage/status`, `/api/sage/playbook`
 
 ### 2b. Regime Governance
 
@@ -519,8 +524,8 @@ Each operator action creates an auditable receipt with timestamp, reason, actor,
 | `/api/operator/emergency-stop` | POST | Emergency stop |
 | `/api/prism` | GET | PRISM signal & risk data (direction, RSI, MACD, Bollinger, volatility) |
 | `/api/performance` | GET | Risk-adjusted metrics (Sharpe, Sortino, max drawdown, Calmar, profit factor) |
-| `/api/ace/status` | GET | ACE engine status: weights, CAGE bounds, reflections, playbook rules |
-| `/api/ace/playbook` | GET | Active playbook rules, current weights, reflection count |
+| `/api/sage/status` | GET | SAGE engine status: weights, CAGE bounds, reflections, playbook rules |
+| `/api/sage/playbook` | GET | Active playbook rules, current weights, reflection count |
 | `/api/artifacts` | GET | Browse all decision artifacts with IPFS CIDs |
 | `/api/artifact/latest` | GET | Full JSON of the most recent decision artifact |
 
@@ -592,13 +597,15 @@ Exposes tools, resources, and prompts via the [Model Context Protocol](https://m
 
 ## ERC-8004 Integration
 
-Actura integrates with the ERC-8004 Trustless Agent standard across three registries:
+Actura integrates with the ERC-8004 Trustless Agent standard across hackathon-provided shared registries:
 
-| Registry | Address (Base Sepolia) | Purpose |
+| Registry | Address (Ethereum Sepolia) | Purpose |
 |---|---|---|
-| Identity | `0x7177a6867296406881E20d6647232314736Dd09A` | Agent registration & metadata |
-| Reputation | `0xB5048e3ef1DA4E04deB6f7d0423D06F63869e322` | On-chain performance feedback |
-| Validation | `0x662b40A526cb4017d947e71eAF6753BF3eeE66d8` | Validation request/response artifacts |
+| AgentRegistry | `0x97b07dDc405B0c28B17559aFFE63BdB3632d0ca3` | Agent registration & metadata |
+| Reputation | `0x423a9904e39537a9997fbaF0f220d79D7d545763` | On-chain performance feedback |
+| Validation | `0x92bF63E5C7Ac6980f237a7164Ab413BE226187F1` | Validation request/response artifacts |
+| RiskRouter | `0xd6A6952545FF6E6E6681c2d15C59f9EB8F40FdBC` | Hackathon trade routing |
+| HackathonVault | `0x0E7CD8ef9743FEcf94f9103033a044caBD45fC90` | Sandbox capital vault |
 
 ### Registration
 
@@ -713,7 +720,7 @@ npm start         # Run built version
 | Dashboard | Express 4.x, vanilla HTML/JS |
 | Artifact Storage | IPFS via [Pinata](https://pinata.cloud) |
 | Scheduling | [node-cron](https://github.com/node-cron/node-cron) |
-| Target Chain | Base Sepolia (Chain ID 84532) |
+| Target Chain | Ethereum Sepolia (Chain ID 11155111) |
 
 ---
 
@@ -725,11 +732,11 @@ npm start         # Run built version
 | Variable | Description | Default |
 |---|---|---|
 | `PRIVATE_KEY` | Agent wallet private key | — |
-| `RPC_URL` | JSON-RPC endpoint | `https://sepolia.base.org` |
-| `CHAIN_ID` | Chain ID | `84532` |
+| `RPC_URL` | JSON-RPC endpoint | `https://ethereum-sepolia-rpc.publicnode.com` |
+| `CHAIN_ID` | Chain ID | `11155111` |
 | `IDENTITY_REGISTRY` | ERC-8004 Identity Registry | `0x7177...Dd09A` |
-| `REPUTATION_REGISTRY` | ERC-8004 Reputation Registry | `0xB504...8713` |
-| `VALIDATION_REGISTRY` | ERC-8004 Validation Registry | `0x662b...66d8` |
+| `REPUTATION_REGISTRY` | ERC-8004 Reputation Registry | `0x423a...4763` |
+| `VALIDATION_REGISTRY` | ERC-8004 Validation Registry | `0x92bF...c2E1` |
 | `PINATA_JWT` | Pinata API JWT for IPFS | — |
 | `AGENT_NAME` | Agent display name | `Actura` |
 | `AGENT_ID` | Registered agent ID | — |

@@ -34,7 +34,7 @@ function clamp(x: number, min: number, max: number): number {
 
 export function evaluateEdge(input: EdgeFilterInput): EdgeFilterResult {
   const costBps = input.costBps ?? 10; // 0.10% sandbox default (use 20-25 for live)
-  const minEdgeMultiple = input.minEdgeMultiple ?? 1.5; // tightened: require 1.5x edge over cost
+  const minEdgeMultiple = input.minEdgeMultiple ?? 0.5; // aggressive scalping: allow trades with 0.5x edge over cost
 
   // If no trade, allow trivially
   if (input.side === 'NEUTRAL') {

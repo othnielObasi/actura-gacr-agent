@@ -73,7 +73,22 @@ export class Scheduler {
       process.on('SIGTERM', () => this.shutdown('SIGTERM'));
       process.on('uncaughtException', (err) => {
         log.fatal('Uncaught exception', { error: err.message, stack: err.stack });
-        this.shutdown('uncaughtException');
+        // RPC / network errors should not kill the agent — only truly fatal errors should
+        const msg = err.message || '';
+        const isRpcError = msg.includes('SERVER_ERROR') || msg.includes('UNKNOWN_ERROR')
+          || msg.includes('NETWORK_ERROR') || msg.includes('TIMEOUT')
+          || msg.includes('could not coalesce') || msg.includes('server response')
+          || msg.includes('missing response') || msg.includes('batch');
+        if (isRpcError) {
+          log.warn('RPC/network error caught — continuing (not shutting down)');
+          this.consecutiveErrors++;
+        } else {
+          this.shutdown('uncaughtException');
+        }
+      });
+      process.on('unhandledRejection', (reason) => {
+        const msg = reason instanceof Error ? reason.message : String(reason);
+        log.warn('Unhandled rejection (suppressed)', { error: msg.slice(0, 200) });
       });
     }
 

@@ -37,10 +37,10 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/
 // ── Weight CAGE (immutable bounds) ──
 
 export const WEIGHT_CAGE = Object.freeze({
-  trend:      { min: 0.0, max: 2.0, default: 0.6 },
-  ret5:       { min: 0.0, max: 4.0, default: 1.8 },
+  trend:      { min: 0.0, max: 2.5, default: 1.2 },
+  ret5:       { min: 0.0, max: 4.0, default: 1.0 },
   ret20:      { min: 0.0, max: 3.0, default: 1.1 },
-  crossover:  { min: 0.0, max: 0.5, default: 0.15 },
+  crossover:  { min: 0.0, max: 1.0, default: 0.40 },
   rsi:        { min: 0.0, max: 2.0, default: 0.6 },
   zscore:     { min: 0.0, max: 2.0, default: 0.5 },
   sentiment:  { min: 0.0, max: 0.5, default: 0.12 },

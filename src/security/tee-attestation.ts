@@ -43,7 +43,7 @@ function getAttestationDomain(): ethers.TypedDataDomain {
   return {
     name: 'ActuraTEEAttestation',
     version: '1',
-    chainId: 84532, // Base Sepolia
+    chainId: 11155111, // Ethereum Sepolia
   };
 }
 

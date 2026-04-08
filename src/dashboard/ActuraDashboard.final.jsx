@@ -145,6 +145,7 @@ function Actura() {
   const [governance, setGovernance] = useState(null);
   const [agentRunning, setAgentRunning] = useState(false);
   const [cycleCount, setCycleCount] = useState(0);
+  const [heartbeat, setHeartbeat] = useState({ lastCycleAt: null, lastTradeAt: null, uptime: 0, consecutiveErrors: 0, lastError: null, lastErrorAt: null });
   const [sentiment, setSentiment] = useState(null);
   const [security, setSecurity] = useState(null);
   const [latestAi, setLatestAi] = useState(null);
@@ -288,6 +289,7 @@ function Actura() {
         setCircuitBreaker(r.circuitBreaker?.state || "ARMED");
         setAgentRunning(statusRes.agent?.running || false);
         setCycleCount(statusRes.agent?.cycleCount || 0);
+        if (statusRes.heartbeat) setHeartbeat(statusRes.heartbeat);
         // Oracle: derive from circuit breaker + volatility
         if (r.circuitBreaker?.active) setOracleStatus("BLOCKED");
         else if (r.volatility?.ratio > 2.0) setOracleStatus("WATCH");
@@ -375,7 +377,7 @@ function Actura() {
   return (
     <div style={{ minHeight: "100vh", background: T.bg, color: T.fg, fontFamily: F, fontSize: 11, lineHeight: 1.4 }}>
       <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-      <style>{`*{margin:0;padding:0;box-sizing:border-box}body{background:${T.bg}}::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:${T.brd};border-radius:2px}button{font-family:${F};cursor:pointer;transition:opacity .1s}button:hover{opacity:.8}`}</style>
+      <style>{`*{margin:0;padding:0;box-sizing:border-box}body{background:${T.bg}}::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:${T.brd};border-radius:2px}button{font-family:${F};cursor:pointer;transition:opacity .1s}button:hover{opacity:.8}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}`}</style>
 
       {/* ═══ 1. STATUS BAR ═══ */}
       <header style={{ display: "flex", alignItems: "center", height: 40, padding: "0 16px", borderBottom: `1px solid ${T.brd}`, background: T.s2, gap: 16 }}>
@@ -405,6 +407,66 @@ function Actura() {
           </div>
         </div>
       </header>
+
+      {/* ═══ SYSTEM HEARTBEAT BANNER ═══ */}
+      {(() => {
+        const now = Date.now();
+        const lastCycle = heartbeat.lastCycleAt ? new Date(heartbeat.lastCycleAt).getTime() : null;
+        const lastTrade = heartbeat.lastTradeAt ? new Date(heartbeat.lastTradeAt).getTime() : null;
+        const cycleAgoMs = lastCycle ? now - lastCycle : null;
+        const tradeAgoMs = lastTrade ? now - lastTrade : null;
+        const formatAgo = (ms) => {
+          if (ms == null) return "never";
+          const s = Math.floor(ms / 1000);
+          if (s < 60) return `${s}s ago`;
+          const m = Math.floor(s / 60);
+          if (m < 60) return `${m}m ago`;
+          const h = Math.floor(m / 60);
+          if (h < 24) return `${h}h ${m % 60}m ago`;
+          return `${Math.floor(h / 24)}d ${h % 24}h ago`;
+        };
+        const formatUptime = (s) => { const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); return h > 0 ? `${h}h ${m}m` : `${m}m`; };
+        const isOn = agentRunning;
+        const cycleStale = cycleAgoMs != null && cycleAgoMs > 120000; // >2min without a cycle
+        const tradeStale = tradeAgoMs != null && tradeAgoMs > 3600000; // >1hr without a trade
+        const noTrades = lastTrade == null;
+        const hasError = heartbeat.consecutiveErrors > 0;
+        const statusColor = !isOn ? T.dn : (cycleStale || hasError) ? T.warn : T.up;
+        const statusLabel = !isOn ? "SYSTEM OFF" : cycleStale ? "STALE" : hasError ? "ERRORS" : "SYSTEM ON";
+        const tradeWarnColor = (noTrades || tradeStale) ? T.warn : T.fg2;
+        return (
+          <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "6px 16px", borderBottom: `1px solid ${T.brd}`, background: `${statusColor}08`, fontSize: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: statusColor, boxShadow: `0 0 8px ${statusColor}60`, animation: isOn && !cycleStale ? "pulse 2s infinite" : "none" }} />
+              <span style={{ fontWeight: 800, color: statusColor, letterSpacing: 1 }}>{statusLabel}</span>
+            </div>
+            <span style={{ color: T.fg3 }}>|</span>
+            <span style={{ color: T.fg2 }}>Last Cycle:</span>
+            <span style={{ color: cycleStale ? T.warn : T.fg, fontWeight: 600 }}>{formatAgo(cycleAgoMs)}</span>
+            <span style={{ color: T.fg3 }}>|</span>
+            <span style={{ color: T.fg2 }}>Last Trade:</span>
+            <span style={{ color: tradeWarnColor, fontWeight: 600 }}>{formatAgo(tradeAgoMs)}{tradeStale ? " ⚠" : ""}</span>
+            <span style={{ color: T.fg3 }}>|</span>
+            <span style={{ color: T.fg2 }}>Uptime:</span>
+            <span style={{ color: T.fg, fontWeight: 600 }}>{formatUptime(heartbeat.uptime)}</span>
+            <span style={{ color: T.fg3 }}>|</span>
+            <span style={{ color: T.fg2 }}>Cycles:</span>
+            <span style={{ color: T.fg, fontWeight: 600 }}>{cycleCount}</span>
+            {hasError && (
+              <React.Fragment>
+                <span style={{ color: T.fg3 }}>|</span>
+                <span style={{ color: T.dn, fontWeight: 700 }}>{heartbeat.consecutiveErrors} consecutive error{heartbeat.consecutiveErrors > 1 ? "s" : ""}</span>
+              </React.Fragment>
+            )}
+            {(noTrades || tradeStale) && isOn && (
+              <React.Fragment>
+                <span style={{ color: T.fg3 }}>|</span>
+                <span style={{ color: T.warn, fontWeight: 600 }}>{noTrades ? "No trades recorded yet" : "No trades in " + formatAgo(tradeAgoMs).replace(" ago", "")}</span>
+              </React.Fragment>
+            )}
+          </div>
+        );
+      })()}
 
       <div style={{ padding: "10px 14px 30px", display: "grid", gap: 10 }}>
 

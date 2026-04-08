@@ -5,7 +5,7 @@ export const config = {
   privateKey: process.env.PRIVATE_KEY || '',
   
   // Network
-  rpcUrl: process.env.RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com',
+  rpcUrl: process.env.RPC_URL || 'https://1rpc.io/sepolia',
   chainId: parseInt(process.env.CHAIN_ID || '11155111'),
   
   // Hackathon Shared Contracts (Sepolia)
@@ -63,9 +63,9 @@ export const config = {
     smaSlow: 50,
     ewmaSpan: 20,
     atrPeriod: 14,
-    basePositionPct: 0.02,  // 2% of capital per trade
-    stopLossAtrMultiple: 1.5,
-    baselineVolatility: 0.02,  // 2% daily vol baseline
+    basePositionPct: 0.04,  // 4% of capital per trade
+    stopLossAtrMultiple: 2.5,
+    baselineVolatility: 0.01,  // 1% daily vol baseline — ETH sandbox vol is low
   },
 
   // Kraken CLI

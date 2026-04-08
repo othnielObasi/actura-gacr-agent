@@ -118,7 +118,7 @@ export function generateSignal(input: SignalInput): TradingSignal {
   // Trend strength from MA separation
   const maSep = (smaFast - smaSlow) / currentPrice;         // signed
   const maSepAbs = Math.abs(maSep);
-  const trendStrength = clamp(maSepAbs / 0.02, 0, 1);       // 2% separation → strong
+  const trendStrength = clamp(maSepAbs / 0.005, 0, 1);      // 0.5% separation → strong (was 2% — too laggy)
 
   // Momentum features
   const m5 = ret5 ?? 0;
@@ -175,8 +175,8 @@ export function generateSignal(input: SignalInput): TradingSignal {
     (directionSign * meanRevPenalty); // reduce signal magnitude regardless of direction
 
   // Confidence mapping: higher absolute score → higher confidence.
-  // Keep conservative to reduce overtrading.
-  const rawConf = clamp(sigmoid(Math.abs(alphaScore) * 2.2) - 0.5, 0, 0.5) * 2; // maps to ~[0..1]
+  // Sensitivity 2.5 — aggressive scalping: trade on weaker signals
+  const rawConf = clamp(sigmoid(Math.abs(alphaScore) * 2.5) - 0.5, 0, 0.5) * 2;
   let confidence = clamp(rawConf * volConfidence * structure.confidenceMultiplier, 0, 1);
 
   // Guard against NaN propagation from indicator calculations
@@ -192,12 +192,12 @@ export function generateSignal(input: SignalInput): TradingSignal {
   }
 
   // Note: structure regime already applies confidence multiplier (0.80 for RANGING, 0.55 for STRESSED).
-  // Only add extra penalty for STRESSED (high-risk); RANGING multiplier alone is sufficient.
-  if (structure.regime === 'STRESSED') confidence = clamp(confidence - 0.10, 0, 1);
+  // Scalping mode: no extra STRESSED penalty — the multiplier alone is sufficient.
 
   // Determine direction (NEUTRAL if weak)
+  // Threshold lowered to 0.02 for aggressive scalping — let more signals through
   let direction: SignalDirection = 'NEUTRAL';
-  if (confidence >= 0.05) {
+  if (confidence >= 0.02) {
     direction = alphaScore >= 0 ? 'LONG' : 'SHORT';
   }
 
@@ -242,7 +242,7 @@ export function generateSignal(input: SignalInput): TradingSignal {
     confidence,
     side: direction,
     costBps: costBps ?? 5, // sandbox testnet: 5 bps (use 18+ for live)
-    minEdgeMultiple: 1.2
+    minEdgeMultiple: 0.9
   });
 
   if (!edge.allowed && direction !== 'NEUTRAL') {

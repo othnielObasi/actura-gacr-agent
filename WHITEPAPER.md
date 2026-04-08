@@ -230,7 +230,7 @@ The risk engine performs 6 checks on every trade:
 
 ### 5.3 On-Chain Risk Enforcement
 
-The `ActuraRiskPolicy.sol` smart contract, deployed on Base Sepolia, provides **trustless risk enforcement**:
+The `ActuraRiskPolicy.sol` smart contract, deployed on Ethereum Sepolia, provides **trustless risk enforcement**:
 
 ```solidity
 function checkTrade(address asset, uint8 side, uint256 amountUsd)
@@ -248,7 +248,7 @@ Enforced limits:
 
 **Critical property:** Risk parameters are **immutable after deployment**. Not even the contract owner can weaken them. They can be audited by any on-chain observer.
 
-Contract address: [`0x27C9766b30BAB8b59998f7F3e80E0eb92c8a9AC9`](https://sepolia.basescan.org/address/0x27C9766b30BAB8b59998f7F3e80E0eb92c8a9AC9)
+Contract address: [`0x054773f36E142BDCD01aF13d6863f90681eF8009`](https://sepolia.etherscan.io/address/0x054773f36E142BDCD01aF13d6863f90681eF8009)
 
 ---
 
@@ -302,13 +302,13 @@ The system maintains a **Beta(1,1) posterior mean** over observed win rates per 
 
 This is not a black-box ML model — it is a transparent, interpretable Bayesian update with hard-coded bounds.
 
-### 7.3 ACE — Agentic Context Engineering
+### 7.3 SAGE — Self-Adaptive Governance Engine
 
-Above the adaptive learning layer, Actura deploys **ACE (Agentic Context Engineering)** — an LLM-powered self-improving layer that uses structured reflection to progressively optimize the trading strategy.
+Above the adaptive learning layer, Actura deploys **SAGE (Self-Adaptive Governance Engine)** — an LLM-powered self-improving layer that uses structured reflection to progressively optimize the trading strategy.
 
 #### 7.3.1 Reflection Cycle
 
-After every batch of 5+ trade outcomes (minimum 10 agent cycles between reflections), ACE sends the trade history with full feature vectors to **Gemini 2.5 Pro** for analysis. The LLM receives:
+After every batch of 5+ trade outcomes (minimum 10 agent cycles between reflections), SAGE sends the trade history with full feature vectors to **Gemini 2.5 Pro** for analysis. The LLM receives:
 
 - Per-trade outcome data: direction, PnL, regime, confidence, stop-hit status
 - Feature vectors: ret5, ret20, RSI, ADX, z-score, sentiment composite
@@ -319,7 +319,7 @@ The LLM returns structured JSON containing: insights (pattern analysis), weight 
 
 #### 7.3.2 Signal Weight Optimization
 
-ACE manages 7 scorecard weights that drive signal generation:
+SAGE manages 7 scorecard weights that drive signal generation:
 
 | Weight | Default | CAGE Range | Purpose |
 |--------|---------|------------|---------|
@@ -338,7 +338,7 @@ ACE manages 7 scorecard weights that drive signal generation:
 
 #### 7.3.3 Playbook Rules
 
-ACE builds a library of conditional rules based on observed patterns:
+SAGE builds a library of conditional rules based on observed patterns:
 
 - **BLOCK** — Force NEUTRAL for specific regime×direction×indicator combinations
 - **REDUCE_CONFIDENCE** — Lower confidence by a specified magnitude (0.05–0.50)
@@ -352,7 +352,7 @@ Accumulated trading wisdom from reflections is injected as a prefix into every A
 
 #### 7.3.5 Overfitting Protections
 
-ACE implements three layers of overfitting defense:
+SAGE implements three layers of overfitting defense:
 
 1. **Regime diversity gate** — Weight changes require outcomes from at least 2 distinct market regimes (or 10+ total trades). This prevents overfitting to a single market condition.
 
@@ -368,7 +368,7 @@ If the LLM is unavailable, returns malformed output, or the API key is exhausted
 - All existing playbook rules remain active
 - The cycle counter resets, and reflection is reattempted next cycle
 
-**Kill switch:** Setting `ACE_ENABLED=false` disables all ACE operations. The agent reverts to default weights and no playbook rules are applied.
+**Kill switch:** Setting `ACE_ENABLED=false` disables all SAGE operations. The agent reverts to default weights and no playbook rules are applied.
 
 ---
 
@@ -397,7 +397,7 @@ Artifacts are uploaded to IPFS via Pinata and are globally accessible via any IP
 ### 8.3 TEE Attestation
 
 Each artifact includes a software-based Trusted Execution Environment attestation that binds:
-- Agent identity (Agent ID 338)
+- Agent identity (Agent ID 18)
 - Runtime environment (code hash, git commit SHA)
 - OS fingerprint
 - Cryptographic nonce
@@ -449,18 +449,18 @@ Access is controlled by **visibility tiers** (public, restricted, operator). Ext
 
 ### 11.1 Live System
 
-Actura is deployed on Base Sepolia with the following verifiable components:
+Actura is deployed on Ethereum Sepolia with the following verifiable components:
 
 | Component | Address / Link |
 |-----------|---------------|
-| Agent ID | 338 (ERC-8004 Identity Registry) |
-| ActuraRiskPolicy | `0x27C9766b30BAB8b59998f7F3e80E0eb92c8a9AC9` |
-| Identity Registry | `0x7177a6867296406881E20d6647232314736Dd09A` |
-| Reputation Registry | `0xB5048e3ef1DA4E04deB6f7d0423D06F63869e322` |
-| Validation Registry | `0x662b40A526cb4017d947e71eAF6753BF3eeE66d8` |
+| Agent ID | 18 (Hackathon AgentRegistry) |
+| ActuraRiskPolicy | `0x054773f36E142BDCD01aF13d6863f90681eF8009` |
+| AgentRegistry | `0x97b07dDc405B0c28B17559aFFE63BdB3632d0ca3` |
+| ReputationRegistry | `0x423a9904e39537a9997fbaF0f220d79D7d545763` |
+| ValidationRegistry | `0x92bF63E5C7Ac6980f237a7164Ab413BE226187F1` |
 | Owner Wallet | `0xE8684cfbA08541C607898E55BAB58302204DdCD7` |
-| Dashboard | `http://192.248.145.196:3000` |
-| MCP Endpoint | `http://192.248.145.196:3001/mcp` |
+| Dashboard | `http://api.actura.nov-tia.com:3000` |
+| MCP Endpoint | `http://api.actura.nov-tia.com:3001/mcp` |
 
 ### 11.2 Verification
 
@@ -486,7 +486,7 @@ Any observer can verify Actura's behavior:
 
 | Phase | Timeline | Goal |
 |-------|----------|------|
-| 1. ACE Maturation | Month 1 | Accumulate reflection data, validate ACE weight optimization across multiple market regimes |
+| 1. SAGE Maturation | Month 1 | Accumulate reflection data, validate SAGE weight optimization across multiple market regimes |
 | 2. Backtesting Engine | Month 1–2 | Validate strategies against 2+ years of historical data |
 | 3. Signal Improvement | Month 2 | Move from current win rate to 45%+ via ML features and multi-timeframe analysis |
 | 4. Multi-Asset Portfolio | Month 3 | BTC, SOL, ARB pairs with correlation-aware sizing |
@@ -503,10 +503,10 @@ Actura demonstrates that autonomous trading agents can be simultaneously **capab
 - **Dynamic trust** — The agent earns capital rights through demonstrated behavior, not static configuration.
 - **Complete provenance** — Every decision produces a permanent, verifiable artifact.
 - **Trustless enforcement** — Risk limits are enforced at the smart-contract level, beyond the agent's control.
-- **Responsible self-improvement** — ACE auto-tunes strategy weights using LLM reflection, bounded by immutable CAGE limits and protected by 3-layer overfitting defense.
+- **Responsible self-improvement** — SAGE auto-tunes strategy weights using LLM reflection, bounded by immutable CAGE limits and protected by 3-layer overfitting defense.
 - **Interoperability** — External agents and auditors can interact through MCP without bypassing governance.
 
-The system is live on Base Sepolia (Agent ID 338, 500+ cycles executed) and fully aligned with the ERC-8004 Trustless Agent standard.
+The system is live on Ethereum Sepolia (Agent ID 18, 1,400+ cycles executed) and fully aligned with the ERC-8004 Trustless Agent standard.
 
 The path to autonomous finance does not require choosing between AI capability and human trust. It requires building systems where trust is **earned, measured, enforced, and proven** — on every decision, every cycle, every trade.
 

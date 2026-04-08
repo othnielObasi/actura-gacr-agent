@@ -14,7 +14,7 @@ import { getRecentTrades, getTradeStats, loadClosedTrades } from '../agent/trade
 import { computeRiskAdjustedMetrics, type EquityPoint } from '../analytics/performance-metrics.js';
 import { getCheckpoints, getTradeCheckpoints } from '../trust/checkpoint.js';
 import { config } from '../agent/config.js';
-import { getReputationTimeline } from '../trust/trust-policy-scorecard.js';
+import { getReputationTimeline, getLastTrustScore } from '../trust/trust-policy-scorecard.js';
 import { getOperatorControlState, getOperatorActionReceipts, pauseTrading, resumeTrading, emergencyStop } from '../agent/operator-control.js';
 import { buildRegistrationJson } from '../chain/identity.js';
 import { generateTradePost, generateDailySummaryPost, buildTwitterIntentUrl } from '../social/share.js';
@@ -145,12 +145,24 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
   /** Agent overview */
   app.get('/api/status', (_req, res) => {
     const state = getAgentState();
+    const schedulerState = state.scheduler;
+    const recentTrades = getRecentTrades(1);
+    const lastTradeAt = recentTrades.length > 0 ? recentTrades[0].closedAt : null;
     res.json({
       agent: {
         name: config.agentName,
         pair: config.tradingPair,
         running: state.running,
         cycleCount: state.cycleCount,
+      },
+      heartbeat: {
+        running: state.running,
+        lastCycleAt: schedulerState?.lastCycleAt ?? null,
+        lastTradeAt,
+        uptime: schedulerState?.uptime ?? 0,
+        consecutiveErrors: schedulerState?.consecutiveErrors ?? 0,
+        lastError: schedulerState?.lastError ?? null,
+        lastErrorAt: schedulerState?.lastErrorAt ?? null,
       },
       capital: state.risk.capital,
       market: state.market,
@@ -515,7 +527,7 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
       price: cp.strategyOutput.currentPrice,
       approved: cp.riskDecision.approved,
       explanation: cp.riskDecision.explanation,
-      trustScore: (state.risk as any)?.trustScore ?? 80,
+      trustScore: getLastTrustScore(state.agentId) ?? (state.risk as any)?.trustScore ?? 95,
       artifactCid: cp.ipfs?.cid,
     });
     res.json({ post, twitterUrl: buildTwitterIntentUrl(post) });
@@ -529,7 +541,7 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
       trades: stats.totalTrades ?? 0,
       pnl: stats.totalPnl ?? 0,
       capital: state.risk?.capital ?? 0,
-      trustScore: (state.risk as any)?.trustScore ?? 80,
+      trustScore: getLastTrustScore(state.agentId) ?? (state.risk as any)?.trustScore ?? 95,
       winRate: stats.winRate ?? 0,
       artifactCount: stats.totalTrades ?? 0,
     });

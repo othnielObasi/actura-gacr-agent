@@ -53,8 +53,8 @@ export function classifyStructureRegime(input: StructureRegimeInput): StructureR
   // Stress detection: very high volatility + choppy structure → defensive posture
   if (v >= 1.8 && c >= 55) {
     regime = 'STRESSED';
-    confidenceMultiplier = 0.55;
-    sizeMultiplier = 0.60;
+    confidenceMultiplier = 0.75;
+    sizeMultiplier = 0.70;
     parts.push(`stress: volRatio ${v.toFixed(2)} and CHOP ${c.toFixed(1)}`);
   }
   // Trending detection: strong trend + low chop + positive autocorr
@@ -70,19 +70,19 @@ export function classifyStructureRegime(input: StructureRegimeInput): StructureR
     ((a <= 18 ? 1 : 0) + (c >= 55 ? 1 : 0) + (Math.abs(ac) <= 0.05 ? 1 : 0)) >= 2
   ) {
     regime = 'RANGING';
-    confidenceMultiplier = 0.80;
-    sizeMultiplier = 0.85;
+    confidenceMultiplier = 0.90;
+    sizeMultiplier = 0.90;
     parts.push(`range: ADX ${a.toFixed(1)}, CHOP ${c.toFixed(1)}, AC1 ${ac.toFixed(2)}`);
   } else {
     regime = 'UNCERTAIN';
-    confidenceMultiplier = 0.90;
-    sizeMultiplier = 0.90;
+    confidenceMultiplier = 0.95;
+    sizeMultiplier = 0.95;
     parts.push(`uncertain: ADX ${a.toFixed(1)}, CHOP ${c.toFixed(1)}, AC1 ${ac.toFixed(2)}`);
   }
 
   // Additional mild volatility penalty (keeps confidence from spiking in noisy markets)
   const volPenalty = clamp(1.0 / Math.max(1.0, v), 0.65, 1.0);
-  confidenceMultiplier = clamp(confidenceMultiplier * volPenalty, 0.40, 1.20);
+  confidenceMultiplier = clamp(confidenceMultiplier * volPenalty, 0.60, 1.20);
 
   return {
     regime,

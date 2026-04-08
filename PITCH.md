@@ -31,7 +31,7 @@ The agent doesn't just trade. It **earns the right to trade** through continuous
 ```
 Market Signal
   → Sentiment & PRISM Intelligence
-    → ACE Weight Optimization & Playbook Rules
+    → SAGE Weight Optimization & Playbook Rules
       → Neuro-Symbolic Safety Layer
         → Mandate Enforcement
           → Oracle Integrity Guard
@@ -39,7 +39,7 @@ Market Signal
               → Supervisory Approval
                 → Risk Engine (6 checks)
                   → On-Chain Execution + IPFS Artifact
-                    → ACE Reflection (learns from outcome)
+                    → SAGE Reflection (learns from outcome)
 ```
 
 **Only trades that pass ALL 8 stages execute.** Every rejected trade still produces an artifact explaining why.
@@ -91,7 +91,7 @@ The agent **dynamically earns or loses the right to control capital** based on i
 
 ### 4. On-Chain Risk Enforcement
 
-`ActuraRiskPolicy.sol` — a Solidity smart contract deployed on Base Sepolia — enforces risk limits **at the contract level**:
+`ActuraRiskPolicy.sol` — a Solidity smart contract deployed on Ethereum Sepolia — enforces risk limits **at the contract level**:
 - Max position size, total exposure, open positions
 - Daily loss circuit breaker
 - Max drawdown circuit breaker
@@ -121,9 +121,9 @@ Every decision produces an IPFS-pinned JSON artifact containing:
 
 **Anyone can verify any decision by fetching its IPFS CID.**
 
-### 7. ACE — Agentic Context Engineering (Self-Improving)
+### 7. SAGE — Self-Adaptive Governance Engine (Self-Improving)
 
-Acura doesn't just trade — it **learns from every trade** using LLM-powered reflection.
+Actura doesn't just trade — it **learns from every trade** using LLM-powered reflection.
 
 **How it works:**
 - After every batch of trades, Gemini 2.5 Pro analyzes outcomes: which signals worked, which failed, and why
@@ -145,22 +145,25 @@ Acura doesn't just trade — it **learns from every trade** using LLM-powered re
 
 ## Live System
 
-Actura is **live on Base Sepolia** right now:
+Actura is **live on Ethereum Sepolia** right now:
 
 | Component | Details |
-|-----------|---------|
-| Agent ID | **338** (ERC-8004 Identity Registry) |
-| Risk Policy | [`0x27C9766b...`](https://sepolia.basescan.org/address/0x27C9766b30BAB8b59998f7F3e80E0eb92c8a9AC9) |
-| Dashboard | [http://192.248.145.196:3000](http://192.248.145.196:3000) |
-| MCP Server | `http://192.248.145.196:3001/mcp` (12 tools, 8 resources, 4 prompts) |
-| Artifacts | [Browse all decisions](http://192.248.145.196:3000/api/artifacts) |
-| Chain | Base Sepolia (84532) |
+|-----------|--------|
+| Agent ID | **18** (Hackathon AgentRegistry) |
+| Risk Policy | [`0x054773f3...`](https://sepolia.etherscan.io/address/0x054773f36E142BDCD01aF13d6863f90681eF8009) |
+| Dashboard | [http://api.actura.nov-tia.com:3000](http://api.actura.nov-tia.com:3000) |
+| Judge Mode | [http://api.actura.nov-tia.com:3000/judge.html](http://api.actura.nov-tia.com:3000/judge.html) |
+| MCP Server | `http://api.actura.nov-tia.com:3001/mcp` (12 tools, 8 resources, 4 prompts) |
+| Artifacts | [Browse all decisions](http://api.actura.nov-tia.com:3000/api/artifacts) |
+| Chain | Ethereum Sepolia (11155111) |
 
-**Current stats (as of April 1, 2026):**
-- 500+ trading cycles executed
-- 13+ closed trades with full governance artifacts
+**Current stats (as of April 7, 2026):**
+- 1,400+ trading cycles executed
+- 5 closed trades with full governance artifacts
+- 36+ IPFS-pinned decision artifacts
+- Trust Score: 95.8 (elite tier) — on-chain Validation: 95, Reputation: 92
+- Live Kraken integration (paper + live modes)
 - Every decision IPFS-pinned with TEE attestation
-- Live Kraken paper trading integration
 
 ---
 
@@ -179,7 +182,7 @@ Actura is **live on Base Sepolia** right now:
 └────────────────────────┬─────────────────────────────────┘
                          ▼
 ┌──────────────────────────────────────────────────────────┐
-│            ACE — Agentic Context Engineering               │
+│            SAGE — Self-Adaptive Governance Engine             │
 │  LLM Reflection · Weight Optimization · Playbook Rules    │
 │  Overfitting Guards · Context Injection                   │
 └────────────────────────┬─────────────────────────────────┘
@@ -231,9 +234,9 @@ External agents can query Actura's governance state, propose trades through its 
 
 | Lane | Fit |
 |------|-----|
-| **Best Trustless Trading Agent** | Full ERC-8004 integration, live trading, governance pipeline, ACE self-improving engine |
-| **Best Validation & Trust Model** | Four-dimensional trust scoring, capital ladder, IPFS artifacts, TEE attestation |
-| **Best Compliance & Risk Guardrails** | On-chain risk contract, 11 risk checks, circuit breaker, mandate enforcement, ACE overfitting protections |
+| **Best Trustless Trading Agent** | Full ERC-8004 integration, live trading, governance pipeline, SAGE self-improving engine |
+| **Best Validation & Trust Model** | Four-dimensional trust scoring, capital ladder, IPFS artifacts, TEE attestation, on-chain validation score 95 |
+| **Best Compliance & Risk Guardrails** | On-chain risk contract, 11 risk checks, circuit breaker, mandate enforcement, SAGE overfitting protections |
 
 ---
 
