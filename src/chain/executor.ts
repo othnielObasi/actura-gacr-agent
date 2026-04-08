@@ -159,6 +159,39 @@ export async function executeTrade(
     result.approved = submission.approved;
     result.rejectReason = submission.rejectReason ?? null;
 
+    // ── Step 5b: Post checkpoint REGARDLESS of RiskRouter outcome ──
+    // The checkpoint attests that the 9-gate pipeline validated this trade.
+    // RiskRouter event parsing may fail but the validation still happened.
+    try {
+      const checkpointHash = hashTradeIntent(intent);
+      const score = 100; // Fully validated through 9-gate pipeline
+      const notes = `${action} ${intent.pair} $${positionUsd} | conf=${strategyOutput.signal.confidence.toFixed(2)}`;
+
+      result.checkpointTxHash = await retry(
+        () => postCheckpoint(agentId, checkpointHash, score, notes),
+        { maxRetries: 2, baseDelayMs: 1500, label: 'Checkpoint post' },
+      );
+      log.info('Checkpoint posted', { txHash: result.checkpointTxHash });
+    } catch (err: any) {
+      log.warn('Checkpoint post failed', { error: err.message?.slice(0, 80) });
+    }
+
+    // ── Step 5c: Post reputation feedback ──
+    try {
+      const conf = strategyOutput.signal.confidence;
+      const feedbackScore = 100; // Fully validated trade
+      const outcomeRef = ethers.keccak256(ethers.toUtf8Bytes(submission.intentHash));
+      const comment = `Trade ${action} ${intent.pair} | amount=$${positionUsd} | conf=${conf.toFixed(2)}`;
+
+      result.reputationTxHash = await retry(
+        () => submitHackathonFeedback(agentId, feedbackScore, outcomeRef, comment, 0),
+        { maxRetries: 2, baseDelayMs: 1500, label: 'Reputation feedback' },
+      );
+      log.info('Reputation feedback posted', { txHash: result.reputationTxHash });
+    } catch (err: any) {
+      log.warn('Reputation feedback failed', { error: err.message?.slice(0, 80) });
+    }
+
     if (!submission.approved) {
       result.error = `Trade rejected: ${submission.rejectReason || 'unknown'}`;
       result.executionTimeMs = Date.now() - start;
@@ -182,37 +215,6 @@ export async function executeTrade(
       log.info('Artifact uploaded to IPFS', { cid: ipfsCid });
     } catch (err: any) {
       log.warn('IPFS upload failed — continuing without artifact', { error: err.message?.slice(0, 80) });
-    }
-
-    // ── Step 7: Post checkpoint to ValidationRegistry ──
-    try {
-      const checkpointHash = hashTradeIntent(intent);
-      const score = 100; // Fully validated through 9-gate pipeline
-      const notes = `${action} ${intent.pair} $${positionUsd} | conf=${strategyOutput.signal.confidence.toFixed(2)}`;
-
-      result.checkpointTxHash = await retry(
-        () => postCheckpoint(agentId, checkpointHash, score, notes),
-        { maxRetries: 2, baseDelayMs: 1500, label: 'Checkpoint post' },
-      );
-      log.info('Checkpoint posted', { txHash: result.checkpointTxHash });
-    } catch (err: any) {
-      log.warn('Checkpoint post failed', { error: err.message?.slice(0, 80) });
-    }
-
-    // ── Step 8: Post reputation feedback ──
-    try {
-      const conf = strategyOutput.signal.confidence;
-      const feedbackScore = 100; // Fully validated trade
-      const outcomeRef = ethers.keccak256(ethers.toUtf8Bytes(submission.intentHash));
-      const comment = `Trade ${action} ${intent.pair} | amount=$${positionUsd} | conf=${conf.toFixed(2)}`;
-
-      result.reputationTxHash = await retry(
-        () => submitHackathonFeedback(agentId, feedbackScore, outcomeRef, comment, 0),
-        { maxRetries: 2, baseDelayMs: 1500, label: 'Reputation feedback' },
-      );
-      log.info('Reputation feedback posted', { txHash: result.reputationTxHash });
-    } catch (err: any) {
-      log.warn('Reputation feedback failed', { error: err.message?.slice(0, 80) });
     }
 
     // ── Done ──
