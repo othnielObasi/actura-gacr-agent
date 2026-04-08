@@ -312,7 +312,7 @@
         document.getElementById('walletBalance').textContent = sandbox?.walletBalance ? Number(sandbox.walletBalance).toFixed(3) + ' ETH' : '—';
         document.getElementById('validationScore').textContent = sandbox?.validationScore > 0 ? sandbox.validationScore + '/100' : '—';
         document.getElementById('reputationScore').textContent = sandbox?.reputationScore > 0 ? sandbox.reputationScore + '/100' : '—';
-        document.getElementById('ownerWallet').textContent = health?.ownerAddress || '0xE868...DdCD7';
+        document.getElementById('ownerWallet').textContent = health?.ownerAddress || sandbox?.walletAddress || '—';
 
         // Tech checks
         const techEl = document.getElementById('techChecks');
@@ -337,15 +337,22 @@
 
         // Risk
         document.getElementById('capital').textContent = '$' + (status?.capital?.toFixed(2) || '0');
-        document.getElementById('volatility').textContent = status?.risk?.volatility?.toFixed?.(4) || '—';
-        document.getElementById('circuitBreaker').textContent = status?.risk?.circuitBreaker ? 'ACTIVE' : 'ARMED';
+        // volatility is an object {current, ratio, regime}, not a number
+        const volObj = status?.risk?.volatility;
+        document.getElementById('volatility').textContent = volObj ? (volObj.ratio?.toFixed(2) + 'x · σ' + (volObj.current * 100)?.toFixed(2) + '% · ' + (volObj.regime || '')) : '—';
+        // circuitBreaker is an object {state, active}, not a boolean
+        const cbObj = status?.risk?.circuitBreaker;
+        const cbEl = document.getElementById('circuitBreaker');
+        cbEl.textContent = cbObj?.active ? 'TRIPPED' : (cbObj?.state || 'ARMED');
+        cbEl.style.color = cbObj?.active ? '#f87171' : '#34d399';
         document.getElementById('openPositions').textContent = status?.risk?.openPositions || 0;
-        document.getElementById('totalTrades').textContent = status?.risk?.totalTrades || 0;
+        // totalTrades from state may reset; use performance stats if available
+        document.getElementById('totalTrades').textContent = tradeStats?.totalTrades || status?.risk?.totalTrades || 0;
 
         // Market
         const price = status?.market?.currentPrice;
         document.getElementById('currentPrice').textContent = price ? '$' + price.toFixed(2) : '—';
-        document.getElementById('dataSources').textContent = 'CoinGecko → DeFiLlama → Kraken';
+        document.getElementById('dataSources').textContent = 'Kraken REST (primary) → CoinGecko (fallback)';
         document.getElementById('dexRouting').textContent = 'Uniswap V3 (testnet) · Aerodrome (mainnet-ready)';
 
         // Trade Stats + Risk-Adjusted Metrics

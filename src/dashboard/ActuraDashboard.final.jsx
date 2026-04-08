@@ -239,7 +239,8 @@ function Actura() {
     };
   }, [governance, capital]);
 
-  const erc = { agentId: sandboxData?.agentId || "—", agentRegistry: sandboxData?.contracts?.agentRegistry ? `eip155:${sandboxData.chainId}:${sandboxData.contracts.agentRegistry.slice(0, 8)}...${sandboxData.contracts.agentRegistry.slice(-4)}` : "—", ownerWallet: "0xE868...DdCD7", agentWallet: "0xE868...DdCD7", tradeIntentHash: trades[0]?.tx !== "—" ? trades[0].tx : "pending…", validationRequestHash: "pending…", lastFeedbackTag: "tradingYield:day", registrationStatus: agentRunning ? "READY" : "OFFLINE" };
+  const walletAddr = sandboxData?.walletAddress || "0xE868...DdCD7";
+  const erc = { agentId: sandboxData?.agentId || "—", agentRegistry: sandboxData?.contracts?.agentRegistry ? `eip155:${sandboxData.chainId}:${sandboxData.contracts.agentRegistry.slice(0, 8)}...${sandboxData.contracts.agentRegistry.slice(-4)}` : "—", ownerWallet: walletAddr, agentWallet: walletAddr, tradeIntentHash: trades[0]?.tx !== "—" ? trades[0].tx : "—", validationRequestHash: liveCheckpoints[0]?.artifactIpfs || "—", lastFeedbackTag: "tradingYield:day", registrationStatus: agentRunning ? "READY" : "OFFLINE" };
   const mcp = { status: "ACTIVE", endpoint: "/mcp", mode: "governed", visibility: "public + restricted + operator", tools: { public: 7, restricted: 2, operator: 3, total: 12 }, resources: 8, prompts: 4, publicTools: ["get_market_state", "explain_trade", "get_trust_state", "get_capital_rights"], restrictedTools: ["propose_trade", "execute_trade"], operatorTools: ["pause_agent", "resume_agent", "emergency_stop"] };
 
   const checks = useMemo(() => [
