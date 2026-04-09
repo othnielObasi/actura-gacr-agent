@@ -50,7 +50,7 @@ import { executeKrakenTrade, closeKrakenPosition, getKrakenAccountSnapshot, krak
 import { getCliStatus } from '../data/kraken-cli.js';
 import { startIndexer, getIndexerStatus, getIndexedEvents } from '../chain/event-indexer.js';
 import { getOperatorControlState, getLatestOperatorAction } from './operator-control.js';
-import { recordClosedTrade, getRecentTrades, getTradeStats, loadClosedTrades, type ClosedTrade } from './trade-log.js';
+import { recordClosedTrade, getRecentTrades, getTradeStats, type ClosedTrade } from './trade-log.js';
 
 const log = createLogger('AGENT');
 
@@ -104,19 +104,10 @@ async function initAgent(): Promise<void> {
       positions: savedState.openPositions.length,
       lastCycle: savedState.lastCycle,
     });
-    // Reconcile capital with trade log to prevent drift from restarts
-    const closedTrades = loadClosedTrades();
-    const tradePnlSum = closedTrades.reduce((s, t) => s + t.pnl, 0);
-    const expectedCapital = INITIAL_CAPITAL + tradePnlSum;
-    const drift = Math.abs(savedState.capital - expectedCapital);
-    if (drift > 0.01 && savedState.openPositions.length === 0) {
-      log.warn('Capital drift detected — correcting from trade log', {
-        stateCapital: savedState.capital,
-        expectedCapital,
-        drift: drift.toFixed(4),
-      });
-      savedState.capital = expectedCapital;
-    }
+    // Note: we previously reconciled capital with trade log sum to prevent drift,
+    // but the trade log may be incomplete (e.g. after git pull overwrites or history
+    // restoration). The saved state capital is the authoritative source of truth.
+    // Do NOT override it with trade log sums.
 
     riskEngine = new RiskEngine(savedState.capital);
     cycleCount = savedState.lastCycle;
