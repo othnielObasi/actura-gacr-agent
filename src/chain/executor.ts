@@ -97,7 +97,7 @@ export async function executeTrade(
     const direction = strategyOutput.signal.direction as 'LONG' | 'SHORT';
     const action = direction === 'LONG' ? 'BUY' : 'SELL';
     // Position size in USD (capped at $500 per hackathon rules)
-    const positionUsd = Math.min(riskDecision.finalPositionSize * 100, 500);
+    const positionUsd = Math.min(riskDecision.finalPositionSize * strategyOutput.currentPrice, 500);
 
     const intent = buildTradeIntent({
       agentId,

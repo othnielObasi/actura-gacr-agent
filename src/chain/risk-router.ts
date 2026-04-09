@@ -22,8 +22,8 @@ const RISK_ROUTER_ABI = [
   'function submitTradeIntent(tuple(uint256 agentId, address agentWallet, string pair, string action, uint256 amountUsdScaled, uint256 maxSlippageBps, uint256 nonce, uint256 deadline) intent, bytes signature) external',
   'function simulateIntent(tuple(uint256 agentId, address agentWallet, string pair, string action, uint256 amountUsdScaled, uint256 maxSlippageBps, uint256 nonce, uint256 deadline) intent) external view returns (bool valid, string reason)',
   'function getIntentNonce(uint256 agentId) external view returns (uint256)',
-  'event TradeApproved(uint256 indexed agentId, bytes32 intentHash, uint256 amountUsdScaled)',
-  'event TradeRejected(uint256 indexed agentId, bytes32 intentHash, string reason)',
+  'event TradeApproved(uint256 indexed agentId, bytes32 indexed intentHash, uint256 amountUsdScaled)',
+  'event TradeRejected(uint256 indexed agentId, bytes32 indexed intentHash, string reason)',
 ];
 
 let contract: ethers.Contract | null = null;
