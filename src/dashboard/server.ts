@@ -407,13 +407,22 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
     const trades = loadClosedTrades();
     const stats = getTradeStats();
 
-    // Build equity curve from closed trades
+    // Use actual capital for authoritative PnL
+    const state = getAgentState();
+    const currentCapital = state.risk?.capital ?? 10_000;
+    stats.totalPnl = Math.round((currentCapital - 10_000) * 100) / 100;
+
+    // Build equity curve from closed trades, then scale final point to match real capital
     const initialCapital = 10_000;
     let equity = initialCapital;
     const equityPoints: EquityPoint[] = [{ timestamp: trades[0]?.closedAt || new Date().toISOString(), equity: initialCapital }];
     for (const t of trades) {
       equity += t.pnl;
       equityPoints.push({ timestamp: t.closedAt, equity });
+    }
+    // Correct final equity to match actual capital
+    if (equityPoints.length > 0) {
+      equityPoints[equityPoints.length - 1].equity = currentCapital;
     }
 
     const metrics = computeRiskAdjustedMetrics(
@@ -428,9 +437,9 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
       maxDrawdownPct: Math.round(metrics.maxDrawdown * 10000) / 100,
       calmarRatio: Math.round(metrics.calmarRatio * 1000) / 1000,
       profitFactor: Math.round(metrics.profitFactor * 100) / 100,
-      totalReturnPct: Math.round(metrics.totalReturn * 10000) / 100,
+      totalReturnPct: Math.round((currentCapital - 10_000) / 10_000 * 10000) / 100,
       volatility: Math.round(metrics.volatility * 10000) / 100,
-      currentEquity: Math.round(equity * 100) / 100,
+      currentEquity: Math.round(currentCapital * 100) / 100,
       equityPoints: equityPoints.length,
     });
   });
