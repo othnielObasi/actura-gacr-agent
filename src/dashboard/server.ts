@@ -564,10 +564,12 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
   app.get('/api/share/daily', (_req, res) => {
     const state = getAgentState();
     const stats = getTradeStats();
+    const currentCapital = state.risk?.capital ?? 10_000;
+    const realPnl = Math.round((currentCapital - 10_000) * 100) / 100;
     const post = generateDailySummaryPost({
       trades: stats.totalTrades ?? 0,
-      pnl: stats.totalPnl ?? 0,
-      capital: state.risk?.capital ?? 0,
+      pnl: realPnl,
+      capital: currentCapital,
       trustScore: getLastTrustScore(state.agentId) ?? (state.risk as any)?.trustScore ?? 95,
       winRate: stats.winRate ?? 0,
       artifactCount: stats.totalTrades ?? 0,
