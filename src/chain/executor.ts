@@ -19,8 +19,7 @@ import { getWallet, getWalletAddress, getBalance, initChain } from './sdk.js';
 import { buildTradeIntent, signTradeIntent, TRADE_INTENT_TYPES, getTradeIntentDomain, hashTradeIntent, type TradeIntentData } from './intent.js';
 import { verifyTypedDataSignature } from './eip1271.js';
 import { submitTradeIntent, simulateIntent, getIntentNonce } from './risk-router.js';
-import { postCheckpoint } from './validation.js';
-import { submitHackathonFeedback } from './reputation.js';
+// Validation & reputation scores posted by hackathon judge bot (no self-attestation)
 import { simulateExecution } from './execution-simulator.js';
 import { uploadArtifact } from '../trust/ipfs.js';
 import type { ValidationArtifact } from '../trust/artifact-emitter.js';
@@ -159,38 +158,8 @@ export async function executeTrade(
     result.approved = submission.approved;
     result.rejectReason = submission.rejectReason ?? null;
 
-    // ── Step 5b: Post checkpoint REGARDLESS of RiskRouter outcome ──
-    // The checkpoint attests that the 9-gate pipeline validated this trade.
-    // RiskRouter event parsing may fail but the validation still happened.
-    try {
-      const checkpointHash = hashTradeIntent(intent);
-      const score = 100; // Fully validated through 9-gate pipeline
-      const notes = `${action} ${intent.pair} $${positionUsd} | conf=${strategyOutput.signal.confidence.toFixed(2)}`;
-
-      result.checkpointTxHash = await retry(
-        () => postCheckpoint(agentId, checkpointHash, score, notes),
-        { maxRetries: 2, baseDelayMs: 1500, label: 'Checkpoint post' },
-      );
-      log.info('Checkpoint posted', { txHash: result.checkpointTxHash });
-    } catch (err: any) {
-      log.warn('Checkpoint post failed', { error: err.message?.slice(0, 80) });
-    }
-
-    // ── Step 5c: Post reputation feedback ──
-    try {
-      const conf = strategyOutput.signal.confidence;
-      const feedbackScore = 100; // Fully validated trade
-      const outcomeRef = ethers.keccak256(ethers.toUtf8Bytes(submission.intentHash));
-      const comment = `Trade ${action} ${intent.pair} | amount=$${positionUsd} | conf=${conf.toFixed(2)}`;
-
-      result.reputationTxHash = await retry(
-        () => submitHackathonFeedback(agentId, feedbackScore, outcomeRef, comment, 0),
-        { maxRetries: 2, baseDelayMs: 1500, label: 'Reputation feedback' },
-      );
-      log.info('Reputation feedback posted', { txHash: result.reputationTxHash });
-    } catch (err: any) {
-      log.warn('Reputation feedback failed', { error: err.message?.slice(0, 80) });
-    }
+    // Validation & reputation scores are now posted by the hackathon judge bot
+    // every 4 hours based on on-chain activity. No self-attestation needed.
 
     if (!submission.approved) {
       result.error = `Trade rejected: ${submission.rejectReason || 'unknown'}`;

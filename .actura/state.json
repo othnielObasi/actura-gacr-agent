@@ -1,10 +1,10 @@
 {
-  "capital": 9989.215463946366,
+  "capital": 9998.183421475092,
   "openPositions": [],
-  "peakCapital": 9989.215463946366,
+  "peakCapital": 9998.183421475092,
   "totalTrades": 12,
-  "totalPnl": -10.784536053633929,
-  "agentId": null,
-  "lastCycle": 714,
-  "lastSavedAt": "2026-03-21T09:58:31.188Z"
+  "totalPnl": -1.816578524907527,
+  "agentId": 18,
+  "lastCycle": 715,
+  "lastSavedAt": "2026-04-08T23:20:57.499Z"
 }

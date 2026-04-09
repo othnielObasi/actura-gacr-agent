@@ -45,8 +45,7 @@ import { fetchSentiment, type SentimentResult } from '../data/sentiment-feed.js'
 import { fetchPrismData, fetchPrismResolve, prismConfidenceModifier, type PrismData } from '../data/prism-feed.js';
 import { getKrakenFeedStatus } from '../data/kraken-feed.js';
 import { checkTradeOnChain, recordTradeOnChain, recordCloseOnChain, getOnChainRiskState } from '../chain/risk-policy-client.js';
-import { postCheckpoint } from '../chain/validation.js';
-import { submitHackathonFeedbackAsReviewer, submitReputationWithFreshReviewer } from '../chain/reputation.js';
+// Validation & reputation scores posted by hackathon judge bot (no self-attestation)
 import { executeKrakenTrade, closeKrakenPosition, getKrakenAccountSnapshot, krakenPreflight } from '../data/kraken-bridge.js';
 import { getCliStatus } from '../data/kraken-cli.js';
 import { startIndexer, getIndexerStatus, getIndexedEvents } from '../chain/event-indexer.js';
@@ -657,7 +656,7 @@ async function runCycle(): Promise<void> {
   const atrPct = strategyOutput.indicators.atr !== null && strategyOutput.currentPrice > 0
     ? strategyOutput.indicators.atr / strategyOutput.currentPrice
     : null;
-  const atrMinPct = 0.003; // 0.3% — protective floor for all networks
+  const atrMinPct = 0.0015; // 0.15% — allow low-vol mean-reversion trades (simulator at volMult=600 is the real safety net)
   const atrTooLow = atrPct !== null && atrPct < atrMinPct;
   if (riskDecision.approved && atrTooLow) {
     log.warn(`ATR too low (${(atrPct! * 100).toFixed(3)}% < ${(atrMinPct * 100).toFixed(2)}%) — market too flat, trade skipped`);
@@ -886,23 +885,8 @@ async function runCycle(): Promise<void> {
       ).catch(e => log.warn('recordTradeOnChain failed (non-critical)', { error: String(e) }));
     }
 
-    // Step 8d: Post reputation feedback (decoupled from RiskRouter)
-    // Validation checkpoint posting disabled — wallet not authorized as validator on ValidationRegistry.
-    // Val score is already 99 on-chain and won't decrease.
-
-    if (shouldExecute && agentId && config.reputationRegistry) {
-      try {
-        const repScore = 100; // Fully validated trade
-        const comment = `Trade ${strategyOutput.signal.direction} ${config.tradingPair} | amount=$${(riskDecision.finalPositionSize * strategyOutput.currentPrice).toFixed(0)} | trust=${repScore}`;
-        const repTx = await retry(
-          () => submitReputationWithFreshReviewer(agentId!, repScore, comment),
-          { maxRetries: 2, baseDelayMs: 1500, label: 'Reputation feedback' },
-        );
-        log.info('Reputation feedback posted', { txHash: repTx, score: repScore });
-      } catch (e: any) {
-        log.warn('Reputation feedback failed (non-critical)', { error: e.message?.slice(0, 80) });
-      }
-    }
+    // Validation & reputation scores are now posted by the hackathon judge bot
+    // every 4 hours based on on-chain activity. No self-attestation needed.
 
     // Always record position locally (for our risk engine tracking)
     // First, close any opposing positions (deferred from risk evaluation).
@@ -971,36 +955,8 @@ async function runCycle(): Promise<void> {
     persistState();
   }
 
-  // Step 8d: Validation checkpoint for HOLD cycles — post score=100 to push on-chain average up
-  if (!shouldExecute && MODE === 'live' && agentId && cycleCount % 4 === 0) {
-    try {
-      const { createHash } = await import('crypto');
-      const holdHash = '0x' + createHash('sha256').update(`hold-${cycleCount}-${Date.now()}`).digest('hex');
-      const notes = `HOLD ${config.tradingPair} $${strategyOutput.currentPrice.toFixed(0)} | 9-gate validated cycle ${cycleCount}`;
-      const cpTx = await retry(
-        () => postCheckpoint(agentId!, holdHash, 100, notes),
-        { maxRetries: 1, baseDelayMs: 1000, label: 'HOLD checkpoint' },
-      );
-      log.info('HOLD checkpoint posted', { txHash: cpTx, score: 100 });
-    } catch {
-      // Non-critical
-    }
-  }
-
-  // Reputation boost for HOLD/NEUTRAL cycles — every 4th cycle, submit from a fresh reviewer
-  if (!shouldExecute && MODE === 'live' && agentId && config.reputationRegistry && cycleCount % 4 === 0) {
-    try {
-      const repScore = 100; // Fully validated decision
-      const comment = `HOLD ${config.tradingPair} $${strategyOutput.currentPrice.toFixed(0)} | validated cycle ${cycleCount}`;
-      const repTx = await retry(
-        () => submitReputationWithFreshReviewer(agentId!, repScore, comment),
-        { maxRetries: 1, baseDelayMs: 1000, label: 'HOLD reputation' },
-      );
-      log.info('HOLD reputation posted', { txHash: repTx, score: repScore });
-    } catch {
-      // Non-critical
-    }
-  }
+  // Validation & reputation scores are now posted by the hackathon judge bot
+  // every 4 hours based on on-chain activity. No self-attestation needed.
 
   // Step 9: Update trailing stops and check stop-losses
   // Skip price-based stop-loss/TP checks when price is noise-injected from a feed failure

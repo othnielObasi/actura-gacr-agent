@@ -7,8 +7,8 @@
   "zscore": 1.14,
   "sentiment": 0.084,
   "_meta": {
-    "learnedAt": "2026-03-21T09:58:31Z",
-    "cyclesObserved": 714,
-    "note": "Seed weights from SAGE learning over 714 live cycles. Copy to .actura/sage-weights.json on fresh deploys."
+    "learnedAt": "2026-04-08T23:20:39.321Z",
+    "totalOutcomes": 0,
+    "note": "Auto-updated by SAGE after reflection. Copy to .actura/sage-weights.json on fresh deploys."
   }
 }
