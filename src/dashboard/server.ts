@@ -304,7 +304,7 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
           cid: match ? match[2] : null,
           ipfsUrl: match ? `${config.pinataGateway.replace(/\/+$/, '')}/${match[2]}` : null,
         };
-      });
+      }).filter(a => a.cid && !a.cid.startsWith('QmMock'));
       res.json({ count: artifacts.length, total: allFiles.length, artifacts });
     } catch (e) {
       res.json({ count: 0, artifacts: [], error: String(e) });
