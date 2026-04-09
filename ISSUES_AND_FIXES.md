@@ -1,10 +1,10 @@
 # Actura — Issues & Fixes Log
 
-**Agent ID:** 338  
+**Agent ID:** 18  
 **Hackathon:** AI Trading Agents (March 30 – April 12, 2026, $55K prize pool)  
 **Track:** Combined (ERC-8004 + Kraken Challenge)  
 **VPS:** Vultr 192.248.145.196  
-**Pair:** WETH/USDC on Base Sepolia  
+**Pair:** WETH/USDC on Ethereum Sepolia  
 
 ---
 
@@ -18,6 +18,17 @@
 | Mar 30 | Gemini LLM 404 / truncated responses | Model swap + token limit fix | `707c545`, `a657d88` |
 | Mar 30 | CryptoPanic 429 rate limiting | Increased cache TTL | `3482bcf` |
 | Mar 31 | CryptoPanic still unreliable | Replaced with Alpha Vantage | `de4a96a` |
+| Mar 31 | 0% win rate — TP unreachable | Dynamic ATR-based TP + tighter filters | `a91179f` |
+| Mar 31 | Positions stuck, no profit locking | Breakeven stops + retroactive TP | `5af310f` |
+| Apr 8 | Dashboard heartbeat banner missing | Added ON/OFF heartbeat indicator | `3f816e1` |
+| Apr 8 | Judge page misleading data | Fixed judge.html display issues | `3c61df0` |
+| Apr 8 | Social share section broken | Fixed social share card generation | `3b5a622` |
+| Apr 8 | ATR gate blocking ALL trades | Lowered from 0.30% to 0.15% | `55627c6` |
+| Apr 8 | Reversal detection missing | Added price-vs-MA divergence signal | `55627c6` |
+| Apr 8 | **RiskRouter BUFFER_OVERRUN** | **Fixed `indexed` keyword in event ABI** | **`b0134a4`** |
+| Apr 8 | USD amount calculation wrong | Fixed `positionSize * 100` → `* currentPrice` | `b0134a4` |
+| Apr 8 | Self-attestation "not authorized" | Removed all self-posting (judge bot handles it) | `7c12499` |
+| Apr 8 | Trade history overwritten by git pull | Added `.actura/` to `.gitignore`, removed from tracking | `ec2925e` |
 | Mar 31 | 0% win rate — TP unreachable | Dynamic ATR-based TP + tighter filters | `a91179f` |
 | Mar 31 | Positions stuck, no profit locking | Breakeven stops + retroactive TP | `5af310f` |
 
@@ -328,7 +339,7 @@ Agent Loop (5-min cycles)
   ├── Risk Engine: 6-layer defense + circuit breaker + trailing stops + dynamic TP
   ├── Execution: Edge filter → DEX router → Kraken paper bridge → on-chain record
   ├── AI Reasoning: Claude → Gemini → OpenAI fallback chain
-  └── Trust: ERC-8004 artifacts → IPFS → Base Sepolia Validation Registry
+  └── Trust: ERC-8004 artifacts → IPFS → Ethereum Sepolia Validation Registry
 ```
 
 ### Key Configuration
@@ -359,3 +370,204 @@ Agent Loop (5-min cycles)
 6. **Legacy positions need migration paths.** When changing position data structures, old positions must be retroactively updated or they'll use fallback behavior that may not be suitable.
 
 7. **Tighter is better for edge filters.** A 0.15% minimum edge allowed too many marginal trades. Raising to 0.25% with 2× cost multiple eliminated thin-edge losers.
+
+---
+
+## April 8–9 Fixes (Live Production Session)
+
+### Issue 9: RiskRouter Event Parsing — BUFFER_OVERRUN (CRITICAL)
+
+**Discovered:** April 8  
+**Severity:** Critical  
+**Commit:** `b0134a4`
+
+#### Problem
+Every trade submitted to the RiskRouter was logged as **"Trade rejected: unknown"** even though the on-chain transaction succeeded. The agent believed all trades were being rejected.
+
+#### Root Cause
+The `intentHash` parameter in the `TradeApproved` and `TradeRejected` event ABIs was declared as a non-indexed `bytes32`, but the actual on-chain contract has it as an **indexed** parameter. When ethers.js tried to decode the event log, the indexed topic was misinterpreted as inline data, causing a `BUFFER_OVERRUN` error during ABI decoding. The error was caught silently and every trade was classified as "unknown rejection."
+
+#### Fix
+Added the `indexed` keyword to the event ABI in `src/chain/risk-router.ts`:
+
+```typescript
+// Before (WRONG):
+'event TradeApproved(uint256 indexed agentId, bytes32 intentHash, uint256 amountUsdScaled)'
+// After (CORRECT):
+'event TradeApproved(uint256 indexed agentId, bytes32 indexed intentHash, uint256 amountUsdScaled)'
+```
+
+Same fix applied to `TradeRejected`.
+
+#### Result
+First trade after fix: **"Trade APPROVED"** with correct parsing. On-chain activity now properly recorded.
+
+#### Lesson
+**Always verify `indexed` vs non-indexed parameters against the actual deployed contract bytecode.** A mismatch silently corrupts event parsing in ethers.js v6.
+
+---
+
+### Issue 10: USD Amount Calculation Wrong ($18 Instead of $400)
+
+**Discovered:** April 8  
+**Severity:** High  
+**Commit:** `b0134a4`
+
+#### Problem
+The `amountUsd` sent to the RiskRouter was calculated as `finalPositionSize * 100`, which produced ~$18 for a 0.18 ETH position. The correct value should have been ~$400.
+
+#### Root Cause
+`finalPositionSize` is denominated in ETH (e.g., 0.18). Multiplying by 100 was a placeholder that never got updated to use the actual ETH price.
+
+#### Fix
+Changed to `finalPositionSize * currentPrice`:
+
+```typescript
+// Before:
+positionUsd = Math.min(riskDecision.finalPositionSize * 100, 500)
+// After:
+positionUsd = Math.min(riskDecision.finalPositionSize * strategyOutput.currentPrice, 500)
+```
+
+#### Result
+Trade amounts now correctly show ~$400 on-chain instead of ~$18.
+
+---
+
+### Issue 11: ATR Gate Blocking All Trades
+
+**Discovered:** April 8  
+**Severity:** High  
+**Commit:** `55627c6`
+
+#### Problem
+The ATR ratio gate was set to 0.30% (ATR/Price threshold). In the current low-volatility ETH market, ATR was consistently ~0.20–0.26%, meaning **every single trade was blocked** by this gate for hours.
+
+#### Root Cause
+The 0.30% threshold was set during a higher-volatility period. Market conditions changed, and the threshold became a permanent blocker.
+
+#### Fix History
+1. **First attempt:** Lowered to 0.08% — too aggressive. Combined with lowered simulator volMultiplier (600→200), this let through 22 losing trades, causing -$44 loss.
+2. **Reverted:** Back to 0.30% + volMult=600 (commit `55627c6`).
+3. **Final setting:** 0.15% — allows trades in current market while the execution simulator at volMult=600 remains the real safety net.
+
+#### Lesson
+**Never lower multiple protective gates simultaneously.** Change one gate at a time and observe. The ATR gate and simulator were both safety nets — lowering both removed all protection.
+
+---
+
+### Issue 12: Self-Attestation "Not Authorized"
+
+**Discovered:** April 8  
+**Severity:** Medium  
+**Commit:** `7c12499`
+
+#### Problem
+The agent's `postEIP712Attestation` calls to the ValidationRegistry reverted with "ValidationRegistry: not an authorized validator." The agent had previously posted 314 successful attestations, but the contract was updated.
+
+#### Root Cause
+Hackathon organizers closed open validation due to **self-attestation abuse** by participants. A **judge bot** was introduced that reads on-chain activity and posts validation + reputation scores every 4 hours. Self-posting was no longer needed or allowed.
+
+#### Fix
+Removed all self-attestation code from:
+- `src/chain/executor.ts` — removed checkpoint posting (Step 5b) and reputation posting (Step 5c)
+- `src/agent/index.ts` — removed HOLD cycle checkpoint/reputation posting
+- Cleaned unused imports (`postEIP712Attestation`, `submitReputationFeedback`)
+
+Added comment: "Validation & reputation scores are now posted by the hackathon judge bot every 4 hours based on on-chain activity."
+
+#### Lesson
+**In hackathon environments, the rules can change mid-competition.** Monitor announcements and adapt quickly.
+
+---
+
+### Issue 13: Trade History Overwritten by Git Pull
+
+**Discovered:** April 8  
+**Severity:** Critical  
+**Commit:** `ec2925e`
+
+#### Problem
+Every `git pull` on the production server **overwrote** the `.actura/` directory containing `trades.jsonl`, `state.json`, `ace-weights.json`, and other runtime data. This destroyed live trade history and agent state.
+
+#### Root Cause
+The `.actura/` directory was tracked in git. Files committed from the dev environment had different data than the production server, so `git pull` replaced production data with dev data.
+
+#### Fix
+1. Added `.actura/` to `.gitignore`
+2. Removed all `.actura/` files from git tracking: `git rm -r --cached .actura/`
+3. Restored production trade history from merged backup (101 trades)
+
+#### Lesson
+**Runtime state directories must NEVER be tracked in git.** Add them to `.gitignore` from the start, especially when deploying to a production server via `git pull`.
+
+---
+
+### Issue 14: Reversal Detection Missing from Signals
+
+**Discovered:** April 8  
+**Severity:** Medium  
+**Commit:** `55627c6`
+
+#### Problem
+The signal scorecard had no mechanism to detect when price was diverging from the moving average — a key reversal indicator. This contributed to entering trades in the wrong direction right before reversals.
+
+#### Fix
+Added three enhancements to `src/strategy/signals.ts`:
+1. **Price-vs-MA divergence signal** — computes how far price is from the 20-SMA. If >0.5% divergence, applies a 0.3 weight reversal signal opposing the current direction.
+2. **Lowered momentum contradiction threshold** — from 1.5% to 0.8%, detecting contradictions earlier.
+3. **Reduced flip penalty** — from 0.5x to 0.7x, allowing faster directional changes when signals change.
+
+---
+
+### Issue 15: Dashboard Heartbeat / Judge Page / Social Share
+
+**Discovered:** April 8  
+**Severity:** Low–Medium  
+**Commits:** `3f816e1`, `3c61df0`, `3b5a622`
+
+#### Problem
+Three UI issues:
+1. Dashboard had no visual indicator showing if the agent was running or stopped
+2. Judge page displayed misleading/stale data
+3. Social share card section was broken
+
+#### Fix
+1. Added green/red ON/OFF heartbeat banner to the dashboard
+2. Fixed judge.html data display to show accurate real-time state
+3. Fixed social share card generation and rendering
+
+---
+
+## Current Production State (as of April 9, 2026)
+
+| Metric | Value |
+|--------|-------|
+| Capital | $9,998.18 |
+| Starting Capital | $10,000.00 |
+| Total Closed Trades | 50 |
+| Win Rate | 34.0% (17W / 33L) |
+| Total PnL | -$12.16 |
+| Open Positions | 3 SHORT |
+| IPFS Artifacts | 50+ |
+| Agent Cycle | 886+ |
+| On-chain Validation | 99 |
+| On-chain Reputation | 99 |
+| Leaderboard Rank | 4 / 48 |
+
+---
+
+## Full Lessons Learned (Updated)
+
+1. **Fixed take-profit percentages are dangerous in low-vol markets.** ATR-based targets that adapt to actual volatility are essential.
+2. **Trailing stops need profit-locking tiers.** A fixed-width trail never protects gains.
+3. **Most early "trading losses" were deployment artifacts.** PM2 restarts triggered reconciliation closes, not bad trades.
+4. **Third-party API reliability varies wildly.** CryptoPanic required 5 fixes before being replaced. Always have fallbacks.
+5. **LLM fallback chains work.** Claude → Gemini → OpenAI chain handles credit exhaustion gracefully.
+6. **Legacy positions need migration paths.** Changed data structures need retroactive updates.
+7. **Tighter is better for edge filters.** 0.25% min edge with 2× cost multiple eliminates thin-edge losers.
+8. **Always verify `indexed` event parameters against the deployed contract.** A mismatch silently breaks ethers.js event parsing with BUFFER_OVERRUN.
+9. **Never lower multiple protective gates simultaneously.** Lowering ATR gate + simulator together caused 22 losing trades (-$44).
+10. **Runtime state must never be tracked in git.** `.actura/` in git caused production data loss on every `git pull`.
+11. **Hackathon rules change mid-competition.** Open validation was closed due to abuse; a judge bot replaced self-attestation.
+12. **USD calculations must use actual asset prices, not hardcoded multipliers.** `positionSize * 100` ≠ the real dollar value.

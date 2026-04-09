@@ -63,12 +63,13 @@ Actura is **live on Ethereum Sepolia** with verifiable on-chain state:
 | **Judge Mode** | [http://api.actura.nov-tia.com:3000/judge.html](http://api.actura.nov-tia.com:3000/judge.html) |
 | **MCP Endpoint** | `http://api.actura.nov-tia.com:3001/mcp` (JSON-RPC) |
 
-**Current live stats (as of April 7, 2026):**
-- 1,400+ trading cycles executed
-- 5 closed trades with full governance artifacts
-- 36+ IPFS-pinned decision artifacts
-- Trust Score: 95.8 (elite tier)
-- On-chain Validation Score: 95, Reputation Score: 92
+**Current live stats (as of April 9, 2026):**
+- 890+ trading cycles executed
+- 50+ closed trades with full governance artifacts
+- 50+ IPFS-pinned decision artifacts
+- Trust Score: elite tier
+- On-chain Validation Score: 99, Reputation Score: 99
+- Leaderboard: Rank 4/48
 - Live Kraken integration (paper + live modes)
 - Every decision IPFS-pinned with TEE attestation
 
@@ -761,12 +762,27 @@ npm start         # Run built version
 
 ## Operational Observations & Tuning Log
 
-See [OBSERVATIONS.md](OBSERVATIONS.md) for detailed analysis of live trading behavior, root causes of identified issues, and the exact code changes made — written for reproducibility.
+See [ISSUES_AND_FIXES.md](ISSUES_AND_FIXES.md) for the complete chronological log of all 15 issues discovered and fixed during live operation, with root cause analysis, exact code changes, and lessons learned.
 
-**Summary of findings (March 9, 2026):**
+See [OBSERVATIONS.md](OBSERVATIONS.md) for detailed early-stage analysis (execution simulator tuning, restart-induced losses).
 
-1. **Execution simulator was too conservative** — slippage gate (75 bps) and net-edge gate (0.05%) blocked ~99.7% of cycles. Raised to 120 bps / 0.01% respectively. Trade execution rate went from ~0.3% to ~40% of cycles.
-2. **Restart-induced losses** — positions survived PM2 restarts but stop-losses evaluated at stale prices, causing excess losses during price gaps. Fixed with offline stop-loss reconciliation: breached positions now close at the stop-loss price, not the current (worse) price.
+See [TUNING_CHANGELOG.md](TUNING_CHANGELOG.md) for parameter tuning history and ACE/SAGE implementation details.
+
+**Key fixes by severity:**
+
+| # | Date | Issue | Severity |
+|---|------|-------|----------|
+| 9 | Apr 8 | RiskRouter event parsing BUFFER_OVERRUN — `indexed` keyword mismatch | Critical |
+| 13 | Apr 8 | Trade history overwritten on every `git pull` | Critical |
+| 6 | Mar 31 | 0% win rate — take-profit unreachable in low-vol market | Critical |
+| 8 | Mar 31 | Positions stuck — no profit-locking mechanism | Critical |
+| 1 | Mar 30 | SHORT-only signal bias in scorecard | Critical |
+| 10 | Apr 8 | USD amount calculation $18 instead of $400 | High |
+| 11 | Apr 8 | ATR gate blocking 100% of trades | High |
+| 12 | Apr 8 | Self-attestation rejected (judge bot takeover) | Medium |
+| 14 | Apr 8 | Missing reversal detection in signals | Medium |
+
+**12 lessons learned** documented in [ISSUES_AND_FIXES.md](ISSUES_AND_FIXES.md#full-lessons-learned-updated).
 
 ---
 

@@ -394,7 +394,12 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
 
   /** Trade statistics */
   app.get('/api/trades/stats', (_req, res) => {
-    res.json(getTradeStats());
+    const stats = getTradeStats();
+    // Use actual capital for PnL instead of summing trades (trade log may be incomplete)
+    const state = getAgentState();
+    const capital = state.risk?.capital ?? 10_000;
+    stats.totalPnl = Math.round((capital - 10_000) * 100) / 100;
+    res.json(stats);
   });
 
   /** Risk-adjusted performance metrics (Sharpe, Sortino, Calmar, Max DD) */

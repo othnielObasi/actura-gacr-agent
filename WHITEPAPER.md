@@ -506,7 +506,7 @@ Actura demonstrates that autonomous trading agents can be simultaneously **capab
 - **Responsible self-improvement** — SAGE auto-tunes strategy weights using LLM reflection, bounded by immutable CAGE limits and protected by 3-layer overfitting defense.
 - **Interoperability** — External agents and auditors can interact through MCP without bypassing governance.
 
-The system is live on Ethereum Sepolia (Agent ID 18, 1,400+ cycles executed) and fully aligned with the ERC-8004 Trustless Agent standard.
+The system is live on Ethereum Sepolia (Agent ID 18, 890+ cycles executed, 50+ closed trades with IPFS artifacts) and fully aligned with the ERC-8004 Trustless Agent standard.
 
 The path to autonomous finance does not require choosing between AI capability and human trust. It requires building systems where trust is **earned, measured, enforced, and proven** — on every decision, every cycle, every trade.
 

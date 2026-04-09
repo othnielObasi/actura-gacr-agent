@@ -157,11 +157,12 @@ Actura is **live on Ethereum Sepolia** right now:
 | Artifacts | [Browse all decisions](http://api.actura.nov-tia.com:3000/api/artifacts) |
 | Chain | Ethereum Sepolia (11155111) |
 
-**Current stats (as of April 7, 2026):**
-- 1,400+ trading cycles executed
-- 5 closed trades with full governance artifacts
-- 36+ IPFS-pinned decision artifacts
-- Trust Score: 95.8 (elite tier) — on-chain Validation: 95, Reputation: 92
+**Current stats (as of April 9, 2026):**
+- 890+ trading cycles executed
+- 50+ closed trades with full governance artifacts
+- 50+ IPFS-pinned decision artifacts
+- Trust Score: elite tier — on-chain Validation: 99, Reputation: 99
+- Leaderboard: Rank 4/48
 - Live Kraken integration (paper + live modes)
 - Every decision IPFS-pinned with TEE attestation
 
@@ -235,7 +236,7 @@ External agents can query Actura's governance state, propose trades through its 
 | Lane | Fit |
 |------|-----|
 | **Best Trustless Trading Agent** | Full ERC-8004 integration, live trading, governance pipeline, SAGE self-improving engine |
-| **Best Validation & Trust Model** | Four-dimensional trust scoring, capital ladder, IPFS artifacts, TEE attestation, on-chain validation score 95 |
+| **Best Validation & Trust Model** | Four-dimensional trust scoring, capital ladder, IPFS artifacts, TEE attestation, on-chain validation score 99, reputation 99 |
 | **Best Compliance & Risk Guardrails** | On-chain risk contract, 11 risk checks, circuit breaker, mandate enforcement, SAGE overfitting protections |
 
 ---
