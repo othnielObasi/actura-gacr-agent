@@ -522,7 +522,7 @@ export class RiskEngine {
       if (tpHit) {
         const size = pos.size;
         const entry = pos.entryPrice;
-        const pnl = this.closeAtIndex(i, currentPrice, /* skipSlippage */ false);
+        const pnl = this.closeAtIndex(i, currentPrice, /* skipSlippage */ true);
         const unrealizedPctForTP = pos.side === 'LONG'
           ? (currentPrice - pos.entryPrice) / pos.entryPrice
           : (pos.entryPrice - currentPrice) / pos.entryPrice;
