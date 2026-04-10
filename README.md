@@ -63,13 +63,14 @@ Actura is **live on Ethereum Sepolia** with verifiable on-chain state:
 | **Judge Mode** | [http://api.actura.nov-tia.com:3000/judge.html](http://api.actura.nov-tia.com:3000/judge.html) |
 | **MCP Endpoint** | `http://api.actura.nov-tia.com:3001/mcp` (JSON-RPC) |
 
-**Current live stats (as of April 9, 2026):**
-- 890+ trading cycles executed
-- 50+ closed trades with full governance artifacts
-- 50+ IPFS-pinned decision artifacts
-- Trust Score: elite tier
-- On-chain Validation Score: 99, Reputation Score: 99
-- Leaderboard: Rank 4/48
+**Current live stats (as of April 10, 2026):**
+- **2,730+ trading cycles** executed continuously since March 2026
+- **153 closed trades** with full governance artifacts
+- **153 IPFS-pinned** decision artifacts (zero mock CIDs)
+- Trust Score: **elite** tier (95+)
+- On-chain Validation Score: **99**, Reputation Score: **99**
+- Leaderboard: **Rank 1/51**
+- Win rate: **52%** | Sharpe: −0.16 | Max drawdown: 0.39%
 - Live Kraken integration (paper + live modes)
 - Every decision IPFS-pinned with TEE attestation
 
@@ -390,7 +391,7 @@ The adaptive learner also computes a **bounded Bayesian context confidence bias*
 
 Every adaptation is recorded as an artifact with reasoning and before/after values.
 
-### 2c. SAGE — Self-Adaptive Governance Engine (formerly ACE)
+### 3. SAGE — Self-Adaptive Governance Engine (formerly ACE)
 
 SAGE is an LLM-powered self-improving layer that sits above adaptive learning, using **Gemini 2.5 Pro** to reflect on trade outcomes and auto-tune the strategy.
 
@@ -421,16 +422,16 @@ SAGE is an LLM-powered self-improving layer that sits above adaptive learning, u
 
 **API endpoints:** `/api/sage/status`, `/api/sage/playbook`
 
-### 2b. Regime Governance
+### 4. Regime Governance
 
 The **Regime Governance Controller** provides deterministic volatility-regime profile switching with hysteresis:
 
-| Profile | Stop-Loss ATR | Position Size | Confidence Threshold |
-|---|---|---|---|
-| LOW_VOL | 1.35 | 2.2% | 8.5% |
-| NORMAL | 1.50 | 2.0% | 10% |
-| HIGH_VOL | 1.75 | 1.6% | 12% |
-| EXTREME_DEFENSIVE | 2.00 | 1.2% | 15% |
+| Profile | Stop-Loss ATR | Take-Profit ATR | Position Size | Confidence Threshold |
+|---|---|---|---|---|
+| LOW_VOL | 0.50 | 0.80 | 4.0% | 3% |
+| NORMAL | 0.50 | 1.00 | 4.0% | 2% |
+| HIGH_VOL | 0.60 | 1.20 | 3.0% | 3% |
+| EXTREME_DEFENSIVE | 0.75 | 1.00 | 2.0% | 5% |
 
 Key behaviors:
 - **Hysteresis-based transitions** — separate enter/exit thresholds prevent oscillation
@@ -439,7 +440,7 @@ Key behaviors:
 - **Cooldown** — minimum 8 cycles between profile switches
 - Every profile switch emits an auditable `ProfileSwitchArtifact`
 
-### 3. Trust Policy Scorecard
+### 5. Trust Policy Scorecard
 
 Every action is scored across four weighted dimensions:
 
@@ -450,7 +451,7 @@ Every action is scored across four weighted dimensions:
 | Validation Completeness | 20% | Were reasoning traces, artifacts, and evidence present? |
 | Outcome Quality | 20% | Did execution stay within acceptable quality bounds? |
 
-### 4. Capital Trust Ladder
+### 6. Capital Trust Ladder
 
 Trust score determines the agent's capital rights:
 
@@ -468,7 +469,7 @@ When trust falls below a threshold, the agent enters **Trust Recovery Mode**:
 - **Graduated deduction** — minor dips reduce the compliance streak by 1 instead of resetting it; only severe regressions (Δ < −5) trigger a full reset
 - **Regime-specific tier cap** — during recovery, capital tier is capped at `standard` in TRENDING markets and `limited` in all other regimes
 
-### 5. On-Chain Risk Enforcement
+### 7. On-Chain Risk Enforcement
 
 The `ActuraRiskPolicy.sol` smart contract enforces risk limits trustlessly:
 
@@ -480,7 +481,7 @@ The `ActuraRiskPolicy.sol` smart contract enforces risk limits trustlessly:
 - Trade cooldown (anti-churn)
 - Asset whitelisting
 
-### 6. Circuit Breaker
+### 8. Circuit Breaker
 
 Production-grade state machine: **ARMED → TRIPPED → COOLING → ARMED**
 
@@ -489,7 +490,7 @@ Production-grade state machine: **ARMED → TRIPPED → COOLING → ARMED**
 - Conditions must improve before re-arming
 - Daily reset at midnight
 
-### 7. Human Oversight Controls
+### 9. Human Oversight Controls
 
 The dashboard exposes operator controls:
 
@@ -701,6 +702,25 @@ npm run bootstrap:erc8004
 MODE=live npm run dev
 ```
 
+### Production Deployment (Vultr VPS)
+
+```bash
+# 1. Build and deploy to Vultr
+npm run build
+rsync -avz --exclude node_modules . root@<your-vultr-ip>:/opt/actura/
+
+# 2. Install dependencies on server
+ssh root@<your-vultr-ip> 'cd /opt/actura && npm ci --production'
+
+# 3. Start with PM2
+ssh root@<your-vultr-ip> 'cd /opt/actura && pm2 start ecosystem.config.cjs'
+
+# 4. Verify
+curl http://<your-vultr-ip>:3000/api/health
+```
+
+The Express server serves both the REST API and frontend dashboard on port 3000. The MCP server runs on port 3001.
+
 ### Build
 
 ```bash
@@ -719,6 +739,10 @@ npm start         # Run built version
 | Blockchain | [ethers.js](https://docs.ethers.org/v6/) v6, EIP-712 typed signing |
 | Smart Contract | Solidity ^0.8.20 |
 | Dashboard | Express 4.x, vanilla HTML/JS |
+| Hosting | [Vultr](https://www.vultr.com) VPS (backend API + frontend dashboard) |
+| Process Management | [PM2](https://pm2.keymetrics.io) with ecosystem config |
+| AI / LLMs | Claude (primary) → Gemini 2.5 Pro (fallback) → OpenAI (tertiary) |
+| Market Data | [CoinGecko](https://www.coingecko.com), [Kraken](https://www.kraken.com), [Strykr PRISM](https://strykr.com) |
 | Artifact Storage | IPFS via [Pinata](https://pinata.cloud) |
 | Scheduling | [node-cron](https://github.com/node-cron/node-cron) |
 | Target Chain | Ethereum Sepolia (Chain ID 11155111) |

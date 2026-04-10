@@ -67,8 +67,15 @@ const MIN_TRADE_INTERVAL_MS = 2 * 60 * 1000;
 let lastTradeOpenedAt = 0;
 // Minimum time (ms) after ANY position close before re-entering.
 // Prevents immediate re-entry after a stop-loss hit in the same price zone.
-const POST_CLOSE_COOLDOWN_MS = 1 * 60 * 1000; // 1 minute — fast re-entry after close
+const POST_CLOSE_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes — avoid whipsaw re-entry
 let lastTradeClosedAt = 0;
+
+// Global loss streak cooldown: after N consecutive losses (any direction),
+// pause trading for a longer period to avoid chop-market bleeding.
+const LOSS_STREAK_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
+const LOSS_STREAK_THRESHOLD = 3;
+let recentCloseTimestamps: { time: number; win: boolean }[] = [];
+let lossStreakCooldownUntil = 0;
 
 let marketData: MarketData;
 let riskEngine: RiskEngine;
@@ -642,6 +649,14 @@ async function runCycle(): Promise<void> {
     log.warn(`Post-close cooldown active (${Math.round(timeSinceLastClose / 1000)}s < ${POST_CLOSE_COOLDOWN_MS / 1000}s) — trade skipped`);
   }
 
+  // Global loss streak cooldown: if we've hit N consecutive losses recently,
+  // pause trading entirely to avoid bleeding in choppy markets.
+  const lossStreakCooldownHit = Date.now() < lossStreakCooldownUntil;
+  if (riskDecision.approved && lossStreakCooldownHit) {
+    const remaining = Math.round((lossStreakCooldownUntil - Date.now()) / 1000);
+    log.warn(`Loss streak cooldown active (${remaining}s remaining) — trade skipped`);
+  }
+
   // Minimum ATR gate: skip trading when ATR is too low (market is dead/ranging).
   // In such conditions, stops are micro and every trade becomes a coin flip.
   const atrPct = strategyOutput.indicators.atr !== null && strategyOutput.currentPrice > 0
@@ -653,7 +668,7 @@ async function runCycle(): Promise<void> {
     log.warn(`ATR too low (${(atrPct! * 100).toFixed(3)}% < ${(atrMinPct * 100).toFixed(2)}%) — market too flat, trade skipped`);
   }
 
-  let shouldExecute = riskDecision.approved && !positionLimitHit && !cooldownHit && !postCloseCooldownHit && !atrTooLow;
+  let shouldExecute = riskDecision.approved && !positionLimitHit && !cooldownHit && !postCloseCooldownHit && !lossStreakCooldownHit && !atrTooLow;
 
   // Step 4a: DEX routing — governed best-execution venue selection
   const routingInput = {
@@ -1014,6 +1029,26 @@ async function runCycle(): Promise<void> {
         result: closed.pnl >= 0 ? 'win' : 'loss',
         timestamp: new Date().toISOString(),
       });
+
+      // Track loss streak for global cooldown
+      const isWin = closed.pnl >= 0;
+      recentCloseTimestamps.push({ time: Date.now(), win: isWin });
+      // Keep only last 10 closes
+      if (recentCloseTimestamps.length > 10) recentCloseTimestamps.shift();
+      if (!isWin) {
+        // Count consecutive recent losses (any direction)
+        let streak = 0;
+        for (let i = recentCloseTimestamps.length - 1; i >= 0; i--) {
+          if (!recentCloseTimestamps[i].win) streak++;
+          else break;
+        }
+        if (streak >= LOSS_STREAK_THRESHOLD) {
+          lossStreakCooldownUntil = Date.now() + LOSS_STREAK_COOLDOWN_MS;
+          log.warn(`${streak} consecutive losses — activating ${LOSS_STREAK_COOLDOWN_MS / 60000}min cooldown`, {
+            streak, cooldownUntil: new Date(lossStreakCooldownUntil).toISOString(),
+          });
+        }
+      }
       recordTradeOutcome({
         direction: pos.side as 'LONG' | 'SHORT',
         entryPrice: pos.entryPrice,
