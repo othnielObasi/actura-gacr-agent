@@ -59,7 +59,7 @@ const DATA_SOURCE = process.env.DATA_SOURCE || 'live'; // 'live' | 'simulated'
 
 // ──── Agent State ────
 const INITIAL_CAPITAL = 10000;
-const MAX_OPEN_POSITIONS = 5;
+const MAX_OPEN_POSITIONS = 2;
 
 // Minimum time (ms) between opening new positions.
 // 2 minutes — scalping mode needs fast re-entry.
