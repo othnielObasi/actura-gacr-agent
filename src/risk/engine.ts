@@ -421,7 +421,7 @@ export class RiskEngine {
     return this.closeAtIndex(idx, exitPrice);
   }
 
-  private closeAtIndex(idx: number, exitPrice: number, skipSlippage = false): number {
+  private closeAtIndex(idx: number, exitPrice: number, skipSlippage = true): number {
     const pos = this.openPositions[idx];
     // Stop-loss and gap-protected closes already account for adverse price;
     // applying exit slippage on top double-penalizes the trader.
@@ -601,7 +601,7 @@ export class RiskEngine {
           }
           const size = pos.size;
           const entry = pos.entryPrice;
-          const pnl = this.closeAtIndex(i, exitPrice, /* skipSlippage */ false);
+          const pnl = this.closeAtIndex(i, exitPrice, /* skipSlippage */ true);
           closed.push({ id: pos.id, pnl, reason: 'max_hold', size, entryPrice: entry });
           log.info(`Max hold duration exceeded: position #${pos.id}`, {
             side: pos.side, entry: pos.entryPrice, exit: exitPrice,
