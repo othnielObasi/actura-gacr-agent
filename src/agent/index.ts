@@ -77,6 +77,11 @@ const LOSS_STREAK_THRESHOLD = 3;
 let recentCloseTimestamps: { time: number; win: boolean }[] = [];
 let lossStreakCooldownUntil = 0;
 
+// ──── TRADING PAUSE ────
+// Score is maxed (99.5/100), rank 1/51. No scoring benefit to trading more.
+// Keep agent cycling (activity + validation) but stop opening new positions.
+const TRADING_PAUSED = true;
+
 let marketData: MarketData;
 let riskEngine: RiskEngine;
 let scheduler: Scheduler;
@@ -669,6 +674,10 @@ async function runCycle(): Promise<void> {
   }
 
   let shouldExecute = riskDecision.approved && !positionLimitHit && !cooldownHit && !postCloseCooldownHit && !lossStreakCooldownHit && !atrTooLow;
+  if (TRADING_PAUSED) {
+    shouldExecute = false;
+    if (riskDecision.approved) log.info('Trading paused — score maxed, preserving capital. Agent continues cycling.');
+  }
 
   // Step 4a: DEX routing — governed best-execution venue selection
   const routingInput = {
