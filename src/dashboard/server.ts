@@ -263,7 +263,9 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
         explanation: cp.riskDecision.explanation,
         positionSize: cp.riskDecision.finalPositionSize,
         artifactIpfs: cp.ipfs?.uri || null,
+        ipfsCid: cp.ipfs?.cid || null,
         txHash: cp.onChainTxHash || null,
+        onChainTxHash: cp.onChainTxHash || null,
       })),
     });
   });

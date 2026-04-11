@@ -207,8 +207,8 @@ function Actura() {
       approved: cp.approved,
       trustScore,
       tier,
-      receipt: cp.artifactIpfs || "—",
-      tx: cp.txHash || "—",
+      receipt: cp.ipfsCid || "—",
+      tx: cp.onChainTxHash || cp.txHash || "—",
     }));
   }, [liveCheckpoints, cPrice, regime, profile, trustScore, tier]);
 
