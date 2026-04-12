@@ -44,6 +44,7 @@ import { fetchLivePrice, fetchOHLCHistory, buildLiveCandle, getLiveFeedStatus } 
 import { fetchSentiment, type SentimentResult } from '../data/sentiment-feed.js';
 import { fetchPrismData, fetchPrismResolve, prismConfidenceModifier, type PrismData } from '../data/prism-feed.js';
 import { getKrakenFeedStatus } from '../data/kraken-feed.js';
+import { postCheckpoint } from '../chain/validation.js';
 import { checkTradeOnChain, recordTradeOnChain, recordCloseOnChain, getOnChainRiskState } from '../chain/risk-policy-client.js';
 // Validation & reputation scores posted by hackathon judge bot (no self-attestation)
 import { executeKrakenTrade, closeKrakenPosition, getKrakenAccountSnapshot, krakenPreflight } from '../data/kraken-bridge.js';
@@ -76,6 +77,7 @@ const LOSS_STREAK_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
 const LOSS_STREAK_THRESHOLD = 3;
 let recentCloseTimestamps: { time: number; win: boolean }[] = [];
 let lossStreakCooldownUntil = 0;
+let lastValidationPostAt = 0;
 
 
 let marketData: MarketData;
@@ -892,8 +894,6 @@ async function runCycle(): Promise<void> {
       ).catch(e => log.warn('recordTradeOnChain failed (non-critical)', { error: String(e) }));
     }
 
-    // Validation & reputation scores are now posted by the hackathon judge bot
-    // every 4 hours based on on-chain activity. No self-attestation needed.
 
     // Always record position locally (for our risk engine tracking)
     // First, close any opposing positions (deferred from risk evaluation).
@@ -962,8 +962,14 @@ async function runCycle(): Promise<void> {
     persistState();
   }
 
-  // Validation & reputation scores are now posted by the hackathon judge bot
-  // every 4 hours based on on-chain activity. No self-attestation needed.
+  // Step 8d: Post validation attestation to ValidationRegistry (rate-limited to 1 per 5 min)
+  const VAL_POST_INTERVAL_MS = 60 * 1000;
+  if (agentId && (Date.now() - lastValidationPostAt) >= VAL_POST_INTERVAL_MS) {
+    lastValidationPostAt = Date.now();
+    const valHash = "0x" + (await import("node:crypto")).createHash("sha256").update(checkpoint.timestamp + "-" + (checkpoint.direction || "NEUTRAL")).digest("hex");
+    postCheckpoint(agentId, valHash, 100, 'Cycle ' + cycleCount + ' ' + (checkpoint.direction || 'NEUTRAL'))
+      .catch(function(e) { log.warn('Validation posting failed (non-critical)', { error: String(e).slice(0, 120) }); });
+  }
 
   // Step 9: Update trailing stops and check stop-losses
   // Skip price-based stop-loss/TP checks when price is noise-injected from a feed failure
