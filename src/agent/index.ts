@@ -77,10 +77,6 @@ const LOSS_STREAK_THRESHOLD = 3;
 let recentCloseTimestamps: { time: number; win: boolean }[] = [];
 let lossStreakCooldownUntil = 0;
 
-// ──── TRADING PAUSE ────
-// Score is maxed (99.5/100), rank 1/51. No scoring benefit to trading more.
-// Keep agent cycling (activity + validation) but stop opening new positions.
-const TRADING_PAUSED = true;
 
 let marketData: MarketData;
 let riskEngine: RiskEngine;
@@ -667,17 +663,13 @@ async function runCycle(): Promise<void> {
   const atrPct = strategyOutput.indicators.atr !== null && strategyOutput.currentPrice > 0
     ? strategyOutput.indicators.atr / strategyOutput.currentPrice
     : null;
-  const atrMinPct = 0.0015; // 0.15% — allow low-vol mean-reversion trades (simulator at volMult=600 is the real safety net)
+  const atrMinPct = 0.0010; // 0.15% — allow low-vol mean-reversion trades (simulator at volMult=600 is the real safety net)
   const atrTooLow = atrPct !== null && atrPct < atrMinPct;
   if (riskDecision.approved && atrTooLow) {
     log.warn(`ATR too low (${(atrPct! * 100).toFixed(3)}% < ${(atrMinPct * 100).toFixed(2)}%) — market too flat, trade skipped`);
   }
 
   let shouldExecute = riskDecision.approved && !positionLimitHit && !cooldownHit && !postCloseCooldownHit && !lossStreakCooldownHit && !atrTooLow;
-  if (TRADING_PAUSED) {
-    shouldExecute = false;
-    if (riskDecision.approved) log.info('Trading paused — score maxed, preserving capital. Agent continues cycling.');
-  }
 
   // Step 4a: DEX routing — governed best-execution venue selection
   const routingInput = {
