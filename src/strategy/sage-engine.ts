@@ -28,9 +28,12 @@ const log = createLogger('SAGE');
 // ── Configuration ──
 
 const SAGE_ENABLED = process.env.SAGE_ENABLED !== 'false';
-const SAGE_MIN_OUTCOMES = parseInt(process.env.SAGE_MIN_OUTCOMES || '3');
-const SAGE_MAX_RULES = parseInt(process.env.SAGE_MAX_RULES || '20');
+const SAGE_MIN_OUTCOMES = parseInt(process.env.SAGE_MIN_OUTCOMES || '5');
+const SAGE_MAX_RULES = parseInt(process.env.SAGE_MAX_RULES || '15');
 const SAGE_REFLECTION_COOLDOWN = parseInt(process.env.SAGE_REFLECTION_COOLDOWN || '5');
+const SAGE_RULE_TTL_MS = parseInt(process.env.SAGE_RULE_TTL_MS || String(48 * 60 * 60 * 1000)); // 48h time-based expiry
+const SAGE_MAX_PENALTY_STACK = -0.3; // floor for cumulative REDUCE_CONFIDENCE
+const SAGE_MIN_BLOCK_EVIDENCE = 3; // minimum trades to justify a BLOCK rule
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent';
 
@@ -301,6 +304,7 @@ export function applyPlaybookRules(context: {
 
   let modifier = 0;
   const rulesApplied: string[] = [];
+  let reduceCount = 0;
 
   for (const rule of activeRules) {
     if (matchesRule(rule, context)) {
@@ -308,6 +312,7 @@ export function applyPlaybookRules(context: {
         rulesApplied.push(`BLOCK: ${rule.id}`);
         return { modifier: -1.0, rulesApplied };
       } else if (rule.action === 'REDUCE_CONFIDENCE') {
+        reduceCount++;
         modifier -= rule.magnitude;
         rulesApplied.push(`REDUCE(${rule.magnitude}): ${rule.id}`);
       } else if (rule.action === 'BOOST_CONFIDENCE') {
@@ -317,8 +322,8 @@ export function applyPlaybookRules(context: {
     }
   }
 
-  // Clamp total modifier
-  return { modifier: clamp(modifier, -0.5, 0.5), rulesApplied };
+  // Cap stacking: prevent multiple REDUCE rules from killing every signal
+  return { modifier: clamp(modifier, SAGE_MAX_PENALTY_STACK, 0.5), rulesApplied };
 }
 
 // ── Persistence ──
@@ -488,16 +493,22 @@ async function callReflectionLLM(
       const action = rawRule.action as PlaybookRule['action'];
       if (!['BLOCK', 'REDUCE_CONFIDENCE', 'BOOST_CONFIDENCE'].includes(action)) continue;
 
+      // Reject BLOCK rules without sufficient evidence
+      if (action === 'BLOCK' && pendingOutcomes.length < SAGE_MIN_BLOCK_EVIDENCE) {
+        log.info(`Rejecting BLOCK rule with insufficient evidence (${pendingOutcomes.length} < ${SAGE_MIN_BLOCK_EVIDENCE} trades): ${rawRule.rule}`);
+        continue;
+      }
+
       const rule: PlaybookRule = {
         id: `sage-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         rule: String(rawRule.rule).slice(0, 200),
         condition: rawRule.condition || {},
         action,
-        magnitude: clamp(rawRule.magnitude || 0.1, 0.05, 0.5),
+        magnitude: clamp(rawRule.magnitude || 0.1, 0.05, action === 'BLOCK' ? 0.5 : 0.3),
         evidence: String(rawRule.evidence || '').slice(0, 200),
         createdAt: now,
         tradesAtCreation: totalOutcomesRecorded,
-        expiresAfterTrades: rawRule.expiresAfterTrades || 30,
+        expiresAfterTrades: rawRule.expiresAfterTrades || 20,
       };
       newRules.push(rule);
     }
@@ -560,9 +571,13 @@ CONSTRAINTS:
 - Weight changes must be within the stated ranges
 - Weight changes should be gradual (max 30% change from current value)
 - Playbook rules can only: BLOCK (force NEUTRAL), REDUCE_CONFIDENCE (lower by magnitude), or BOOST_CONFIDENCE (raise by magnitude)
-- Magnitude must be between 0.05 and 0.50
+- Magnitude must be between 0.05 and 0.30 for REDUCE/BOOST, up to 0.50 for BLOCK
+- BLOCK rules require at least 3 supporting trades — do NOT create BLOCK rules from 1-2 trades
+- REDUCE_CONFIDENCE is preferred over BLOCK when evidence is limited
 - Rules should be specific and evidence-based, not generic
+- Avoid creating rules that overlap with or contradict existing rules
 - If data is insufficient to draw conclusions, say so and make minimal changes
+- Consider that multiple REDUCE rules can stack — keep individual magnitudes conservative
 
 Respond ONLY with valid JSON (no markdown, no backticks):
 {
@@ -664,12 +679,17 @@ function addPlaybookRule(rule: PlaybookRule): void {
 
 function expireStaleRules(): void {
   const before = activeRules.length;
+  const now = Date.now();
   activeRules = activeRules.filter(rule => {
     const tradesSinceCreation = totalOutcomesRecorded - rule.tradesAtCreation;
-    return tradesSinceCreation < rule.expiresAfterTrades;
+    const ageMs = now - new Date(rule.createdAt).getTime();
+    // Expire by trade count OR by wall-clock time (prevents rule deadlock when no trades execute)
+    if (tradesSinceCreation >= rule.expiresAfterTrades) return false;
+    if (ageMs >= SAGE_RULE_TTL_MS) return false;
+    return true;
   });
   const expired = before - activeRules.length;
-  if (expired > 0) log.info(`Expired ${expired} stale playbook rules`);
+  if (expired > 0) log.info(`Expired ${expired} stale playbook rules (trade-count + time-based)`);
 }
 
 // ── Internal: Persistence ──
