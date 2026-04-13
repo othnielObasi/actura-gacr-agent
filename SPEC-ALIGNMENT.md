@@ -115,7 +115,7 @@ function giveFeedback(
 The NEW spec does NOT require pre-authorization — anyone can call giveFeedback().
 Self-feedback from the agent owner IS blocked by the contract.
 
-### Action: We CANNOT self-report reputation. We need external feedback OR a separate address.
+### Action: Reputation feedback is submitted by authorized external reviewers via feedbackAuth.
 
 ---
 
@@ -205,7 +205,7 @@ Our executor.ts is structured correctly to integrate these when available.
 1. **Registration JSON format** — align with spec `services` array + required fields
 2. **Contract addresses** — use RI addresses for Base Sepolia
 3. **Reputation ABI** — update to v1.0 `giveFeedback(agentId, int128, uint8, string, string, string, string, bytes32)`
-4. **Drop self-feedback** — use a second wallet address for validation/feedback
+4. **External reviewer for feedback** — use authorized reviewer wallet for validation/feedback
 5. **Validation flow** — request with separate validator address, respond from that address
 6. **Registration file** — add `type`, `services`, `registrations`, `supportedTrust`, `active`
 

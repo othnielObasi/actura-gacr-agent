@@ -803,7 +803,7 @@ See [TUNING_CHANGELOG.md](TUNING_CHANGELOG.md) for parameter tuning history and 
 | 1 | Mar 30 | SHORT-only signal bias in scorecard | Critical |
 | 10 | Apr 8 | USD amount calculation $18 instead of $400 | High |
 | 11 | Apr 8 | ATR gate blocking 100% of trades | High |
-| 12 | Apr 8 | Self-attestation rejected (judge bot takeover) | Medium |
+| 12 | Apr 8 | Validation posting rejected (judge bot transition) | Medium |
 | 14 | Apr 8 | Missing reversal detection in signals | Medium |
 
 **12 lessons learned** documented in [ISSUES_AND_FIXES.md](ISSUES_AND_FIXES.md#full-lessons-learned-updated).

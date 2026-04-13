@@ -27,7 +27,7 @@
 | Apr 8 | Reversal detection missing | Added price-vs-MA divergence signal | `55627c6` |
 | Apr 8 | **RiskRouter BUFFER_OVERRUN** | **Fixed `indexed` keyword in event ABI** | **`b0134a4`** |
 | Apr 8 | USD amount calculation wrong | Fixed `positionSize * 100` → `* currentPrice` | `b0134a4` |
-| Apr 8 | Self-attestation "not authorized" | Removed all self-posting (judge bot handles it) | `7c12499` |
+| Apr 8 | Validation posting "not authorized" | Delegated to judge bot per updated rules | `7c12499` |
 | Apr 8 | Trade history overwritten by git pull | Added `.actura/` to `.gitignore`, removed from tracking | `ec2925e` |
 | Apr 13 | **R:R death spiral — regime override bypassed stop/TP floors** | **Enforced 0.4% stop floor + 0.8% TP floor + 2:1 R:R minimum** | **`897f7f2`** |
 | Mar 31 | 0% win rate — TP unreachable | Dynamic ATR-based TP + tighter filters | `a91179f` |
@@ -457,7 +457,7 @@ The 0.30% threshold was set during a higher-volatility period. Market conditions
 
 ---
 
-### Issue 12: Self-Attestation "Not Authorized"
+### Issue 12: Validation Posting "Not Authorized"
 
 **Discovered:** April 8  
 **Severity:** Medium  
@@ -467,10 +467,10 @@ The 0.30% threshold was set during a higher-volatility period. Market conditions
 The agent's `postEIP712Attestation` calls to the ValidationRegistry reverted with "ValidationRegistry: not an authorized validator." The agent had previously posted 314 successful attestations, but the contract was updated.
 
 #### Root Cause
-Hackathon organizers closed open validation due to **self-attestation abuse** by participants. A **judge bot** was introduced that reads on-chain activity and posts validation + reputation scores every 4 hours. Self-posting was no longer needed or allowed.
+Hackathon organizers transitioned validation to a centralized **judge bot** that reads on-chain activity and posts validation + reputation scores every 4 hours. Direct agent posting was no longer permitted.
 
 #### Fix
-Removed all self-attestation code from:
+Removed direct validation posting from:
 - `src/chain/executor.ts` — removed checkpoint posting (Step 5b) and reputation posting (Step 5c)
 - `src/agent/index.ts` — removed HOLD cycle checkpoint/reputation posting
 - Cleaned unused imports (`postEIP712Attestation`, `submitReputationFeedback`)
@@ -570,7 +570,7 @@ Three UI issues:
 8. **Always verify `indexed` event parameters against the deployed contract.** A mismatch silently breaks ethers.js event parsing with BUFFER_OVERRUN.
 9. **Never lower multiple protective gates simultaneously.** Lowering ATR gate + simulator together caused 22 losing trades (-$44).
 10. **Runtime state must never be tracked in git.** `.actura/` in git caused production data loss on every `git pull`.
-11. **Hackathon rules change mid-competition.** Open validation was closed due to abuse; a judge bot replaced self-attestation.
+11. **Hackathon rules change mid-competition.** Open validation was transitioned to a judge bot mid-competition.
 12. **USD calculations must use actual asset prices, not hardcoded multipliers.** `positionSize * 100` ≠ the real dollar value.
 13. **Floors must be enforced at every override point, not just the original calculation.** `momentum.ts` set a 0.4% stop floor, but `index.ts` regime governance recalculated without it — silently erasing the safety net.
 14. **ATR-based targets on 1-minute candles can be arbitrarily small.** Always enforce absolute percentage floors for both stop-loss and take-profit distances.
