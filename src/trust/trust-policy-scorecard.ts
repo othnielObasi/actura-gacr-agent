@@ -61,10 +61,10 @@ export interface TrustScoreInput {
 }
 
 const DEFAULT_WEIGHTS: TrustWeights = {
-  policyCompliance: 0.3,
-  riskDiscipline: 0.3,
-  validationCompleteness: 0.2,
-  outcomeQuality: 0.2,
+  policyCompliance: 0.25,
+  riskDiscipline: 0.25,
+  validationCompleteness: 0.10,
+  outcomeQuality: 0.40,
 };
 
 const trustHistory = new Map<number | 'anon', TrustPolicyScorecard[]>();
@@ -263,13 +263,14 @@ function scoreOutcomeQuality(outcome: TrustOutcomeContext | null, approved: bool
 }
 
 function computeOutcomeScore(outcome: TrustOutcomeContext): number {
-  let score = 88;
+  let score = 80;
   if (typeof outcome.pnlPct === 'number') {
-    if (outcome.pnlPct > 0.01) score += 12;
-    else if (outcome.pnlPct > 0) score += 8;
-    else if (outcome.pnlPct < -0.05) score -= 16;
-    else if (outcome.pnlPct < -0.02) score -= 10;
-    else if (outcome.pnlPct < 0) score -= 5;
+    if (outcome.pnlPct > 0.01) score += 20;       // solid win → 100
+    else if (outcome.pnlPct > 0) score += 12;      // small win → 92
+    else if (outcome.pnlPct < -0.05) score -= 40;  // big loss → 40
+    else if (outcome.pnlPct < -0.02) score -= 30;  // medium loss → 50
+    else if (outcome.pnlPct < -0.005) score -= 20; // small loss → 60
+    else if (outcome.pnlPct < 0) score -= 10;      // tiny loss → 70
   }
   if (typeof outcome.slippageBps === 'number') {
     if (outcome.slippageBps <= 10) score += 8;
