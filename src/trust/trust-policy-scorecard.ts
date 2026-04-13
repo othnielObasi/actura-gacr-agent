@@ -175,6 +175,17 @@ export function seedOutcomeHistory(agentId: number | null, trades: Array<{ pnlPc
   }
 }
 
+/**
+ * Record a single trade outcome into the rolling tracker.
+ * Call this whenever a position closes so the trust score reflects
+ * real-time performance instead of only the seeded history.
+ * @param pnlPct — percentage form, e.g. 0.5 for 0.5%. Will be divided by 100 internally.
+ */
+export function recordTradeOutcome(agentId: number | null, pnlPct: number, slippageBps?: number): void {
+  const score = computeOutcomeScore({ pnlPct: pnlPct / 100, slippageBps });
+  recordOutcomeScore(agentId, score);
+}
+
 function recordTrustScorecard(scorecard: TrustPolicyScorecard): void {
   const key = scorecard.agentId ?? 'anon';
   const history = trustHistory.get(key) ?? [];

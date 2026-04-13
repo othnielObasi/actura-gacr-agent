@@ -1,14 +1,14 @@
 {
   "trend": 0.6,
-  "ret5": 0.706,
+  "ret5": 0.565,
   "ret20": 0.77,
   "crossover": 0.15,
   "rsi": 0.82,
-  "zscore": 1.14,
+  "zscore": 0.912,
   "sentiment": 0.084,
   "_meta": {
-    "learnedAt": "2026-04-08T23:20:39.321Z",
-    "totalOutcomes": 0,
+    "learnedAt": "2026-04-13T15:16:10.632Z",
+    "totalOutcomes": 3,
     "note": "Auto-updated by SAGE after reflection. Copy to .actura/sage-weights.json on fresh deploys."
   }
 }

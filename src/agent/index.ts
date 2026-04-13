@@ -25,7 +25,7 @@ import { runStrategy, resetStrategy, type MarketData } from '../strategy/momentu
 import { RiskEngine } from '../risk/engine.js';
 import { atr as computeATR } from '../strategy/indicators.js';
 import { buildTradeArtifact, enrichArtifact, attachGovernanceEvidence } from '../trust/artifact-emitter.js';
-import { getLastTrustScore, seedOutcomeHistory } from '../trust/trust-policy-scorecard.js';
+import { getLastTrustScore, seedOutcomeHistory, recordTradeOutcome as recordTrustOutcome } from '../trust/trust-policy-scorecard.js';
 import { evaluateSupervisoryDecision, applySupervisorySizing, summarizeSupervisoryDecision } from './supervisory-meta-agent.js';
 import { generateReasoning } from '../strategy/ai-reasoning.js';
 import { applySymbolicReasoning, recordOutcome } from '../strategy/neuro-symbolic.js';
@@ -196,6 +196,7 @@ async function initAgent(): Promise<void> {
         reconPnlTotal += pnl;
         reconClosedCount++;
         const pnlPct = pos.entryPrice > 0 ? (pnl / (pos.entryPrice * pos.size)) * 100 : 0;
+        recordTrustOutcome(agentId, pnlPct);
         recordClosedTrade({
           id: pos.id, asset: pos.asset, side: pos.side, size: pos.size,
           entryPrice: pos.entryPrice, exitPrice: closePrice, pnl, pnlPct,
@@ -204,6 +205,7 @@ async function initAgent(): Promise<void> {
           durationMs: Date.now() - new Date(pos.openedAt).getTime(),
           ipfsCid: pos.ipfsCid, txHash: pos.txHash,
         });
+        recordTrustOutcome(agentId, pnlPct);
         log.warn('Restart reconciliation: stop-loss was breached while offline', {
           positionId: pos.id, side: pos.side, entry: pos.entryPrice,
           stopLoss: pos.stopLoss, currentPrice: startupPrice,
@@ -937,6 +939,7 @@ async function runCycle(): Promise<void> {
           ipfsCid: f.ipfsCid,
           txHash: f.txHash,
         });
+        recordTrustOutcome(agentId, pnlPct);
       }
     }
 
@@ -1036,6 +1039,7 @@ async function runCycle(): Promise<void> {
         durationMs: Date.now() - new Date(pos.openedAt).getTime(),
         ipfsCid: pos.ipfsCid, txHash: pos.txHash,
       });
+      recordTrustOutcome(agentId, pnlPct);
       recordOutcome({
         direction: pos.side,
         confidence: strategyOutput.signal.confidence,
