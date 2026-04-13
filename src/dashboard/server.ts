@@ -26,7 +26,7 @@ import { getKrakenAccountSnapshot, krakenPreflight } from '../data/kraken-bridge
 import { getIndexedEvents, getIndexerStatus } from '../chain/event-indexer.js';
 import { generateAttestationSummary } from '../security/tee-attestation.js';
 import { getAverageValidationScore } from '../chain/validation.js';
-import { getHackathonReputation } from '../chain/reputation.js';
+import { getReputationSummary } from '../chain/reputation.js';
 import { ethers } from 'ethers';
 import { getWallet } from '../chain/sdk.js';
 
@@ -220,7 +220,7 @@ export function startDashboard(port: number = DASHBOARD_PORT): void {
 
       if (aId) {
         try { validationScore = await getAverageValidationScore(aId); } catch { /* no score yet */ }
-        try { reputationScore = await getHackathonReputation(aId); } catch { /* no score yet */ }
+        try { const rep = await getReputationSummary(aId, []); reputationScore = rep.averageScore; } catch { /* no score yet */ }
       }
 
       res.json({
