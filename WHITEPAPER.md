@@ -302,9 +302,9 @@ The system maintains a **Beta(1,1) posterior mean** over observed win rates per 
 
 This is not a black-box ML model — it is a transparent, interpretable Bayesian update with hard-coded bounds.
 
-### 7.3 SAGE — Self-Adaptive Governance Engine
+### 7.3 SAGE — Self-Adapting Generative Engine
 
-Above the adaptive learning layer, Actura deploys **SAGE (Self-Adaptive Governance Engine)** — an LLM-powered self-improving layer that uses structured reflection to progressively optimize the trading strategy.
+Above the adaptive learning layer, Actura deploys **SAGE (Self-Adapting Generative Engine)** — an LLM-powered self-improving layer that uses structured reflection to progressively optimize the trading strategy.
 
 #### 7.3.1 Reflection Cycle
 

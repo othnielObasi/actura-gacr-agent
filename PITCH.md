@@ -121,7 +121,7 @@ Every decision produces an IPFS-pinned JSON artifact containing:
 
 **Anyone can verify any decision by fetching its IPFS CID.**
 
-### 7. SAGE — Self-Adaptive Governance Engine (Self-Improving)
+### 7. SAGE — Self-Adapting Generative Engine (Self-Improving)
 
 Actura doesn't just trade — it **learns from every trade** using LLM-powered reflection.
 
@@ -183,7 +183,7 @@ Actura is **live on Ethereum Sepolia** right now:
 └────────────────────────┬─────────────────────────────────┘
                          ▼
 ┌──────────────────────────────────────────────────────────┐
-│            SAGE — Self-Adaptive Governance Engine             │
+│            SAGE — Self-Adapting Generative Engine             │
 │  LLM Reflection · Weight Optimization · Playbook Rules    │
 │  Overfitting Guards · Context Injection                   │
 └────────────────────────┬─────────────────────────────────┘

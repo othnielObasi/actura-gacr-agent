@@ -69,12 +69,31 @@ const DEFAULT_WEIGHTS: TrustWeights = {
 
 const trustHistory = new Map<number | 'anon', TrustPolicyScorecard[]>();
 
+/* ── Rolling outcome tracker ────────────────────────────────────────── */
+const outcomeRollingScores = new Map<number | 'anon', number[]>();
+const OUTCOME_WINDOW = 20; // last N scored outcomes to average
+
+function recordOutcomeScore(agentId: number | null, score: number): void {
+  const key = agentId ?? 'anon';
+  const history = outcomeRollingScores.get(key) ?? [];
+  history.push(score);
+  if (history.length > OUTCOME_WINDOW) history.shift();
+  outcomeRollingScores.set(key, history);
+}
+
+function getRollingOutcomeScore(agentId: number | null): number | null {
+  const key = agentId ?? 'anon';
+  const history = outcomeRollingScores.get(key);
+  if (!history || history.length === 0) return null;
+  return history.reduce((a, b) => a + b, 0) / history.length;
+}
+
 export function buildTrustPolicyScorecard(input: TrustScoreInput): TrustPolicyScorecard {
   const stage = input.stage ?? (input.outcome ? 'post_execution' : 'pre_execution');
   const policy = scorePolicyCompliance(input.riskDecision?.checks ?? [], input.riskDecision?.approved ?? false);
   const risk = scoreRiskDiscipline(input.strategyOutput ?? null, input.riskDecision ?? null);
   const validation = scoreValidationCompleteness(input.artifact ?? null);
-  const outcome = scoreOutcomeQuality(input.outcome ?? null, input.riskDecision?.approved ?? false, stage);
+  const outcome = scoreOutcomeQuality(input.outcome ?? null, input.riskDecision?.approved ?? false, stage, input.agentId);
 
   const weighted =
     policy * DEFAULT_WEIGHTS.policyCompliance +
@@ -139,6 +158,7 @@ export function getLastTrustScore(agentId: number | null): number | null {
 
 export function resetTrustScorecards(): void {
   trustHistory.clear();
+  outcomeRollingScores.clear();
   resetReputationHistory();
 }
 
@@ -202,10 +222,23 @@ function scoreValidationCompleteness(artifact: ValidationArtifact | null): numbe
   return boundedScore(score);
 }
 
-function scoreOutcomeQuality(outcome: TrustOutcomeContext | null, approved: boolean, stage: TrustScoreStage): number {
-  if (stage === 'daily_summary') return 92;
-  if (!outcome) return approved ? 93 : 88;
+function scoreOutcomeQuality(outcome: TrustOutcomeContext | null, approved: boolean, stage: TrustScoreStage, agentId?: number | null): number {
+  // If we have a real outcome (post_execution or daily_summary with data), score it live
+  if (outcome && (typeof outcome.pnlPct === 'number' || typeof outcome.pnlUsd === 'number')) {
+    const score = computeOutcomeScore(outcome);
+    recordOutcomeScore(agentId ?? null, score);
+    return score;
+  }
 
+  // No immediate outcome — use rolling average from recent trade results
+  const rolling = getRollingOutcomeScore(agentId ?? null);
+  if (rolling !== null) return boundedScore(rolling);
+
+  // No history yet — use baseline
+  return approved ? 93 : 88;
+}
+
+function computeOutcomeScore(outcome: TrustOutcomeContext): number {
   let score = 88;
   if (typeof outcome.pnlPct === 'number') {
     if (outcome.pnlPct > 0.01) score += 12;

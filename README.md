@@ -391,7 +391,7 @@ The adaptive learner also computes a **bounded Bayesian context confidence bias*
 
 Every adaptation is recorded as an artifact with reasoning and before/after values.
 
-### 3. SAGE — Self-Adaptive Governance Engine (formerly ACE)
+### 3. SAGE — Self-Adapting Generative Engine (formerly ACE)
 
 SAGE is an LLM-powered self-improving layer that sits above adaptive learning, using **Gemini 2.5 Pro** to reflect on trade outcomes and auto-tune the strategy.
 
