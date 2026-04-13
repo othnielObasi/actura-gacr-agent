@@ -172,7 +172,7 @@ export function generateSignal(input: SignalInput): TradingSignal {
   // that divergence is an early signal the trend may be reversing.
   // This fires BEFORE the MA crossover, giving the agent a head start.
   const priceMaDivergence = (currentPrice - smaFast) / currentPrice; // signed: negative = price below MA
-  const divergenceScore = clamp(priceMaDivergence / 0.005, -1, 1) * 0.3; // 0.5% divergence → ±0.3 contribution
+  const divergenceScore = clamp(priceMaDivergence / 0.003, -1, 1) * 0.5; // 0.3% divergence → ±0.5 contribution (stronger reversal signal)
 
   const alphaScore =
     trendScore +
@@ -211,11 +211,11 @@ export function generateSignal(input: SignalInput): TradingSignal {
 
   // Momentum contradiction override: if 5-period return opposes SMA direction,
   // flip to follow momentum at reduced confidence instead of deadlocking to NEUTRAL.
-  // Threshold 0.8% — sensitive enough to catch reversals before stops are hit.
-  const momentumContradiction = (direction === 'SHORT' && m5 > 0.008) || (direction === 'LONG' && m5 < -0.008);
+  // Threshold 0.4% — catch reversals early before stops are hit.
+  const momentumContradiction = (direction === 'SHORT' && m5 > 0.004) || (direction === 'LONG' && m5 < -0.004);
   if (momentumContradiction) {
     direction = m5 > 0 ? 'LONG' : 'SHORT';
-    confidence = clamp(confidence * 0.7, 0, 1); // moderate reduction — reversal signals deserve reasonable confidence
+    confidence = clamp(confidence * 0.8, 0, 1); // light reduction — momentum reversals deserve decent confidence
   }
 
   // SAGE playbook rules: apply learned filters to adjust confidence

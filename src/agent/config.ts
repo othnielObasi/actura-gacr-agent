@@ -61,8 +61,8 @@ export const config = {
   
   // Strategy parameters
   strategy: {
-    smaFast: 20,
-    smaSlow: 50,
+    smaFast: 8,   // Was 20 — faster reaction to reversals
+    smaSlow: 21,  // Was 50 — 8/21 is standard fast crossover
     ewmaSpan: 20,
     atrPeriod: 14,
     basePositionPct: 0.04,  // 4% of capital per trade
