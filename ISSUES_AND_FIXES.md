@@ -634,3 +634,154 @@ The R:R bug was in the execution pipeline **after** SAGE had already approved th
 The separate adaptive-learning layer (`adaptive-learning.ts`) does tune `stopLossAtrMultiple`, but it's caged between 1.0–2.5× ATR. Since the actual problem was regime governance ignoring the percentage floor when ATR itself was tiny ($2–8 on 1-min candles), no ATR multiplier adjustment could fix it.
 
 **Lesson:** Self-adaptive systems can only fix problems within their control surface. Execution-layer bugs require execution-layer fixes — no amount of signal-layer learning can compensate for structurally broken R:R.
+
+---
+
+## Strategic Analysis: Stock Market Application
+
+**Date:** April 13, 2026
+
+### Why Actura Would Perform Better on Equities
+
+The architecture (multi-factor signals + SAGE adaptation + regime governance + risk engine) is general-purpose. The losses in crypto were driven by two factors: (1) the R:R floor bug (now fixed) and (2) 1-minute crypto noise being nearly unpredictable. Stocks solve #2 naturally.
+
+| Factor | Crypto (current) | Equities (projected) |
+|--------|------------------|----------------------|
+| Signal predictability | ~50% (coin flip on 1-min) | ~53–55% (intraday trends persist) |
+| R:R with floors | 2:1 (0.4% stop / 0.8% TP) | 2:1+ (same floors, ATR targets larger) |
+| Noise-to-signal ratio | Very high | Moderate |
+| Sentiment alpha | Near zero | Meaningful (earnings, analyst upgrades, sector rotation) |
+| Volatility regime detection | Always "normal" or "extreme" | Distinct regimes (earnings, FOMC, low-vol grinds) |
+| SAGE learning quality | Poisoned by noise | Cleaner patterns to learn from |
+
+### Break-Even Math with Fixed R:R
+
+With 2:1 R:R (risk \$1 to make \$2), the system needs **33% win rate** to break even:
+
+- At 40% win rate: +\$0.20 per dollar risked (modest positive edge)
+- At 45% win rate: +\$0.35 per dollar risked (solid edge)
+- At 50% win rate: +\$0.50 per dollar risked (strong edge)
+
+On stocks with cleaner intraday trends, 45–50% win rate is realistic. On crypto 1-min candles, 40–42% is the observed baseline.
+
+### Challenges for Equities
+
+- **Slippage**: Real exchange slippage exceeds the current 10bps model for small-cap stocks
+- **Market hours**: Must handle pre/post-market and overnight gaps; max-hold timer needs adjustment
+- **Pattern day trader rules**: High-frequency trading requires \$25K minimum account balance
+- **HFT competition**: 6–7s cycle time is acceptable for swing scalps but slow for competitive equity scalping
+
+---
+
+## Strategic Analysis: Deep Learning (BiLSTM) Integration
+
+**Date:** April 13, 2026
+
+### Why Not Now (Hackathon Context)
+
+1. **211 trades** — BiLSTMs need thousands to tens of thousands of labeled sequences to generalize
+2. **1-min crypto noise** — dominated by orderbook microstructure, not learnable sequential patterns
+3. **No GPU infrastructure** — training requires GPU, inference adds latency
+4. **The losses weren't from bad signal prediction** — they were from broken trade mechanics (R:R floor bug)
+
+### Why Yes for Production Platform
+
+At platform scale, the constraints that make BiLSTM wrong for the hackathon disappear:
+
+| Hackathon constraint | Platform reality |
+|---|---|
+| 211 trades of training data | Months/years of historical candles (millions of rows) |
+| 1-min crypto on testnet | Multiple timeframes, multiple assets, real orderflow |
+| No GPU, 6–7s cycle time | Dedicated inference server, pre-computed embeddings |
+| Single agent, single pair | Multi-asset portfolio needing cross-correlation signals |
+
+### Architecture: Augment, Don't Replace
+
+The BiLSTM should be an **additional signal contributor** feeding into the existing SAGE-governed scorecard — not a replacement for the traditional indicator stack:
+
+```
+Current signal stack:
+  SMA crossover + momentum + RSI + zscore + sentiment → alphaScore → confidence
+
+With BiLSTM added:
+  Raw OHLCV sequences (60–120 candles)
+       ↓
+  BiLSTM encoder → directional probability + volatility forecast
+       ↓
+  Fused with existing signals as additional input to alphaScore
+       ↓
+  SAGE still governs: learns optimal weight for BiLSTM vs traditional signals
+```
+
+### Implementation Path
+
+1. **Feature engineering**: Feed sequences of [close, volume, RSI, ATR, orderbook imbalance]
+2. **Output**: Probability of price being higher/lower in N candles + confidence interval
+3. **Training**: Walk-forward validation (train months 1–6, validate on 7, retrain monthly)
+4. **Runtime**: ONNX Runtime for inference in Node.js, or Python microservice behind local HTTP endpoint
+5. **Latency**: Pre-compute predictions at candle close, cache for the cycle — no synchronous inference in trading loop
+
+### Accountability Advantage
+
+Most ML trading systems are black boxes. With Actura's architecture:
+- BiLSTM prediction + confidence is stored in the IPFS artifact alongside each trade
+- SAGE tracks BiLSTM accuracy vs traditional signals in reflections
+- Model version + weights hash published on-chain (provable model governance)
+- Auto-disables BiLSTM input if SAGE detects degradation (built-in circuit breaker)
+
+**Differentiator**: "AI-powered trading with on-chain model governance" — not just "we use deep learning" (everyone says that), but "every model prediction is recorded, auditable, and the system automatically reduces model weight when it degrades."
+
+---
+
+## Platform Pivot Roadmap
+
+**Date:** April 13, 2026
+
+### Phase 1: Prove the Edge (Weeks 1–4)
+- Collect 500+ trades with proper R:R mechanics on crypto paper trading
+- Build backtest harness using historical 1-min candle data
+- Track Sharpe ratio, max drawdown, and profit factor
+- Target: >35% win rate with 2:1 R:R = provable edge
+
+### Phase 2: Real Exchange Integration (Weeks 4–8)
+- Replace Kraken paper/CLI with real Kraken REST API (live orders)
+- Add Binance/Coinbase as exchange backends (multi-exchange is table stakes)
+- Implement proper order management: limit orders, partial fills, order status polling
+- Fix `"Invalid order type 'stop-loss'"` — real stop-loss orders on exchange, not just internal
+- Add real slippage tracking (compare expected vs actual fill price)
+
+### Phase 3: Multi-Asset (Weeks 8–12)
+- Generalize beyond WETH/USDC — config-driven pair selection
+- Add stock market data feeds (Alpaca, Interactive Brokers API for execution)
+- SAGE learns per-asset patterns, not just global
+- Portfolio-level risk: correlation-aware position sizing across assets
+
+### Phase 4: Platform (Months 3–6)
+- Multi-tenant: multiple users deploy agents with different risk profiles
+- Dashboard upgrade: real-time P&L, trade replay, SAGE reflection viewer
+- Trust score as public credential — on-chain reputation that follows the agent
+- API for fund-of-funds to query agent performance and audit trail
+- Compliance module: MiFID II / SEC algorithmic trading reporting
+
+### Phase 5: Revenue Model
+- **SaaS**: Monthly fee for hosted agents (\$50–500/mo based on capital tier)
+- **Performance fee**: 10–20% of profits (standard for managed accounts)
+- **Enterprise**: White-label the accountability stack to existing trading desks
+- **Data**: Sell anonymized SAGE insights (which patterns work in which regimes)
+
+### Competitive Moat
+
+What Actura has that competitors don't:
+- **IPFS-backed audit trail** (immutable, third-party verifiable)
+- **On-chain risk attestations** (ValidationRegistry, RiskRouter)
+- **SAGE adaptive learning** (self-improving with safety guardrails)
+- **Neuro-symbolic governance** (explainable, not black-box)
+- **Multi-LLM reasoning with fallback chain** (Claude → Gemini → OpenAI)
+
+### The Thesis
+
+The market gap: hedge funds produce returns but are black boxes; robo-advisors are transparent but produce mediocre returns; DeFi vaults are on-chain but have no risk governance. Actura occupies the intersection: **verifiable alpha with provable accountability.**
+
+A fund returning 15% with a full on-chain audit trail beats a fund returning 20% with a PDF quarterly report — because institutions can underwrite the risk, regulators can verify compliance, and investors can audit in real time rather than trusting quarterly letters.
+
+**The pitch in one line**: "The only autonomous trading agent where every decision is provable, every risk check is on-chain, and the returns are real — not backtested, not cherry-picked, verifiably live."
