@@ -14,10 +14,12 @@ export interface RegimeProfile {
 }
 
 export const PROFILES: Record<RegimeProfileName, RegimeProfile> = Object.freeze({
-  LOW_VOL: { name: 'LOW_VOL', stopLossAtrMultiple: 0.5, takeProfitAtrMultiple: 0.8, basePositionPct: 0.04, confidenceThreshold: 0.03 },
-  NORMAL: { name: 'NORMAL', stopLossAtrMultiple: 0.5, takeProfitAtrMultiple: 1.0, basePositionPct: 0.04, confidenceThreshold: 0.02 },
-  HIGH_VOL: { name: 'HIGH_VOL', stopLossAtrMultiple: 0.6, takeProfitAtrMultiple: 1.2, basePositionPct: 0.03, confidenceThreshold: 0.03 },
-  EXTREME_DEFENSIVE: { name: 'EXTREME_DEFENSIVE', stopLossAtrMultiple: 0.75, takeProfitAtrMultiple: 1.0, basePositionPct: 0.02, confidenceThreshold: 0.05 },
+  // R:R targets: TP must be ≥ 1.5× stop distance so 40% win rate breaks even.
+  // Old values (0.8–1.0 TP vs 0.5 SL) created 1.2:1 risk AGAINST us.
+  LOW_VOL: { name: 'LOW_VOL', stopLossAtrMultiple: 0.5, takeProfitAtrMultiple: 1.5, basePositionPct: 0.04, confidenceThreshold: 0.05 },
+  NORMAL: { name: 'NORMAL', stopLossAtrMultiple: 0.5, takeProfitAtrMultiple: 1.5, basePositionPct: 0.04, confidenceThreshold: 0.05 },
+  HIGH_VOL: { name: 'HIGH_VOL', stopLossAtrMultiple: 0.6, takeProfitAtrMultiple: 1.8, basePositionPct: 0.03, confidenceThreshold: 0.06 },
+  EXTREME_DEFENSIVE: { name: 'EXTREME_DEFENSIVE', stopLossAtrMultiple: 0.75, takeProfitAtrMultiple: 1.5, basePositionPct: 0.02, confidenceThreshold: 0.08 },
 });
 
 export type VolRegime = LearningOutcome['regime'];

@@ -62,7 +62,7 @@ const SLIPPAGE_BPS = IS_SIM ? 3 : 10;  // 0.03% sim / 0.1% live
 // Minimum profit threshold before trailing stops activate.
 // Covers estimated round-trip cost (entry slippage + exit slippage) so that
 // break-even trailing-stop exits don't silently become losses after fees.
-const MIN_PROFIT_FOR_TRAIL_PCT = (SLIPPAGE_BPS * 2) / 10000; // 2× one-way slippage = 0.20%
+const MIN_PROFIT_FOR_TRAIL_PCT = 0.005; // 0.5% — don't trail until trade is solidly in profit
 
 // Take-profit: close position when unrealized PnL reaches this percentage.
 // Used as FALLBACK when no ATR-based TP target is set on the position.
@@ -476,17 +476,17 @@ export class RiskEngine {
 
         if (beyondCostZone) {
           // Determine effective trailing distance based on profit tier.
-          // Deeper in profit → tighter trail → more profit locked in.
+          // Let winners run — only tighten at meaningful profit levels.
           let effectiveTrailDist = pos.trailingStopDistance;
-          if (unrealizedPct >= 0.003) {
-            // >0.3% profit: trail at 30% of original distance — lock scalp gains
+          if (unrealizedPct >= 0.012) {
+            // >1.2% profit: trail at 30% of original distance — lock big gains
             effectiveTrailDist = pos.trailingStopDistance * 0.30;
-          } else if (unrealizedPct >= 0.002) {
-            // >0.2% profit: trail at 50% of original distance
+          } else if (unrealizedPct >= 0.008) {
+            // >0.8% profit: trail at 50% of original distance
             effectiveTrailDist = pos.trailingStopDistance * 0.50;
-          } else if (unrealizedPct >= 0.0012) {
-            // >0.12% profit (beyond costs): breakeven stop
-            effectiveTrailDist = Math.abs(currentPrice - pos.entryPrice) * 0.95;
+          } else if (unrealizedPct >= 0.005) {
+            // >0.5% profit: move stop to breakeven
+            effectiveTrailDist = Math.abs(currentPrice - pos.entryPrice) * 0.90;
           }
 
           if (pos.side === 'LONG' && currentPrice > pos.highWaterMark) {
