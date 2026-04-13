@@ -162,6 +162,19 @@ export function resetTrustScorecards(): void {
   resetReputationHistory();
 }
 
+/**
+ * Seed the rolling outcome tracker from historical trade PnL data.
+ * Call at startup so the trust score reflects past performance immediately
+ * instead of returning a static baseline until new trades execute.
+ */
+export function seedOutcomeHistory(agentId: number | null, trades: Array<{ pnlPct: number; slippageBps?: number }>): void {
+  const recent = trades.slice(-OUTCOME_WINDOW);
+  for (const t of recent) {
+    const score = computeOutcomeScore({ pnlPct: t.pnlPct / 100, slippageBps: t.slippageBps });
+    recordOutcomeScore(agentId, score);
+  }
+}
+
 function recordTrustScorecard(scorecard: TrustPolicyScorecard): void {
   const key = scorecard.agentId ?? 'anon';
   const history = trustHistory.get(key) ?? [];

@@ -25,7 +25,7 @@ import { runStrategy, resetStrategy, type MarketData } from '../strategy/momentu
 import { RiskEngine } from '../risk/engine.js';
 import { atr as computeATR } from '../strategy/indicators.js';
 import { buildTradeArtifact, enrichArtifact, attachGovernanceEvidence } from '../trust/artifact-emitter.js';
-import { getLastTrustScore } from '../trust/trust-policy-scorecard.js';
+import { getLastTrustScore, seedOutcomeHistory } from '../trust/trust-policy-scorecard.js';
 import { evaluateSupervisoryDecision, applySupervisorySizing, summarizeSupervisoryDecision } from './supervisory-meta-agent.js';
 import { generateReasoning } from '../strategy/ai-reasoning.js';
 import { applySymbolicReasoning, recordOutcome } from '../strategy/neuro-symbolic.js';
@@ -51,7 +51,7 @@ import { executeKrakenTrade, closeKrakenPosition, getKrakenAccountSnapshot, krak
 import { getCliStatus } from '../data/kraken-cli.js';
 import { startIndexer, getIndexerStatus, getIndexedEvents } from '../chain/event-indexer.js';
 import { getOperatorControlState, getLatestOperatorAction } from './operator-control.js';
-import { recordClosedTrade, getRecentTrades, getTradeStats, type ClosedTrade } from './trade-log.js';
+import { recordClosedTrade, getRecentTrades, getTradeStats, loadClosedTrades, type ClosedTrade } from './trade-log.js';
 
 const log = createLogger('AGENT');
 
@@ -251,6 +251,13 @@ async function initAgent(): Promise<void> {
 
   // Load SAGE (Self-Adapting Generative Engine) state — weights, playbook, reflections
   loadSAGEState();
+
+  // Seed trust score rolling outcome tracker from historical trades
+  const historicalTrades = loadClosedTrades();
+  if (historicalTrades.length > 0) {
+    seedOutcomeHistory(agentId, historicalTrades.map(t => ({ pnlPct: t.pnlPct })));
+    log.info(`Seeded trust outcome history from ${historicalTrades.length} historical trades`);
+  }
 
   log.info('Agent initialized', {
     capital: riskEngine.getCapital(),
