@@ -67,7 +67,7 @@ const MIN_PROFIT_FOR_TRAIL_PCT = 0.005; // 0.5% — don't trail until trade is s
 // Take-profit: close position when unrealized PnL reaches this percentage.
 // Used as FALLBACK when no ATR-based TP target is set on the position.
 // Dynamic TP (based on ATR at open time) is preferred and set per-position.
-const TAKE_PROFIT_PCT = parseFloat(process.env.TAKE_PROFIT_PCT || '0.2') / 100; // 0.2% scalp target — faster turnover
+const TAKE_PROFIT_PCT = parseFloat(process.env.TAKE_PROFIT_PCT || '0.8') / 100; // 0.8% fallback — must exceed stop floor (0.4%) for positive R:R
 
 // Max hold duration: close positions that have been open too long.
 // Prevents capital from being stuck in sideways markets forever.

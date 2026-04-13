@@ -547,10 +547,15 @@ async function runCycle(): Promise<void> {
 
     const atrValue = strategyOutput.indicators.atr;
     if (atrValue !== null) {
+      // Enforce 0.4% minimum stop distance — prevents regime-governance
+      // override from setting stops inside normal 1-min noise.
+      const regimeStop = regimeGov.profile.stopLossAtrMultiple * atrValue;
+      const minStopDist = strategyOutput.currentPrice * 0.004; // 0.4% floor
+      const stopDist = Math.max(regimeStop, minStopDist);
       if (strategyOutput.signal.direction === 'LONG') {
-        strategyOutput.stopLossPrice = strategyOutput.currentPrice - (regimeGov.profile.stopLossAtrMultiple * atrValue);
+        strategyOutput.stopLossPrice = strategyOutput.currentPrice - stopDist;
       } else if (strategyOutput.signal.direction === 'SHORT') {
-        strategyOutput.stopLossPrice = strategyOutput.currentPrice + (regimeGov.profile.stopLossAtrMultiple * atrValue);
+        strategyOutput.stopLossPrice = strategyOutput.currentPrice + stopDist;
       }
     }
 
@@ -944,13 +949,22 @@ async function runCycle(): Promise<void> {
     }
 
     // Calculate dynamic take-profit price based on ATR and regime profile.
+    // Enforce minimum TP distance: at least 2× stop distance AND 0.8% of price.
+    // This prevents micro-scalp TPs when ATR is small on 1-min candles.
     const atrValue = strategyOutput.indicators.atr;
     const tpAtrMult = regimeGov?.profile.takeProfitAtrMultiple ?? 2.0;
     if (atrValue !== null && atrValue > 0) {
+      const atrTpDist = tpAtrMult * atrValue;
+      const stopDist = riskDecision.stopLossPrice != null
+        ? Math.abs(strategyOutput.currentPrice - riskDecision.stopLossPrice)
+        : strategyOutput.currentPrice * 0.004;
+      const minTpFromRR = stopDist * 2.0;              // at least 2:1 R:R
+      const minTpFloor = strategyOutput.currentPrice * 0.008; // 0.8% absolute floor
+      const tpDist = Math.max(atrTpDist, minTpFromRR, minTpFloor);
       if (strategyOutput.signal.direction === 'LONG') {
-        takeProfitPrice = strategyOutput.currentPrice + (tpAtrMult * atrValue);
+        takeProfitPrice = strategyOutput.currentPrice + tpDist;
       } else if (strategyOutput.signal.direction === 'SHORT') {
-        takeProfitPrice = strategyOutput.currentPrice - (tpAtrMult * atrValue);
+        takeProfitPrice = strategyOutput.currentPrice - tpDist;
       }
     }
 
