@@ -622,3 +622,15 @@ Three changes in `src/agent/index.ts` and `src/risk/engine.ts`:
 - Stop distance: ~0.4% (floor)
 - TP distance: ≥0.8% (2:1 R:R minimum)
 - Break-even win rate: ~33% (was requiring >61% before)
+
+### Why SAGE Could Not Self-Correct This
+SAGE (Self-Adapting Generative Engine) is the agent's learning layer — it records trade outcomes, runs LLM reflections via Gemini 2.5 Pro, adjusts scorecard weights, and generates playbook rules (BLOCK / REDUCE / BOOST). However, **SAGE operates at the signal selection layer, not the trade execution layer:**
+
+- SAGE controls *which* trades to take (signal confidence, direction filters)
+- SAGE does **not** control *how* trades are managed (stop distances, TP distances, trailing stops)
+
+The R:R bug was in the execution pipeline **after** SAGE had already approved the signal. Worse, SAGE was **actively making things worse**: it saw correctly-directed trades getting stopped out by noise, concluded those signal patterns were losers, and BLOCKED or REDUCED them — punishing good signals for a plumbing bug.
+
+The separate adaptive-learning layer (`adaptive-learning.ts`) does tune `stopLossAtrMultiple`, but it's caged between 1.0–2.5× ATR. Since the actual problem was regime governance ignoring the percentage floor when ATR itself was tiny ($2–8 on 1-min candles), no ATR multiplier adjustment could fix it.
+
+**Lesson:** Self-adaptive systems can only fix problems within their control surface. Execution-layer bugs require execution-layer fixes — no amount of signal-layer learning can compensate for structurally broken R:R.
