@@ -29,6 +29,7 @@
 | Apr 8 | USD amount calculation wrong | Fixed `positionSize * 100` → `* currentPrice` | `b0134a4` |
 | Apr 8 | Self-attestation "not authorized" | Removed all self-posting (judge bot handles it) | `7c12499` |
 | Apr 8 | Trade history overwritten by git pull | Added `.actura/` to `.gitignore`, removed from tracking | `ec2925e` |
+| Apr 13 | **R:R death spiral — regime override bypassed stop/TP floors** | **Enforced 0.4% stop floor + 0.8% TP floor + 2:1 R:R minimum** | **`897f7f2`** |
 | Mar 31 | 0% win rate — TP unreachable | Dynamic ATR-based TP + tighter filters | `a91179f` |
 | Mar 31 | Positions stuck, no profit locking | Breakeven stops + retroactive TP | `5af310f` |
 
@@ -571,3 +572,53 @@ Three UI issues:
 10. **Runtime state must never be tracked in git.** `.actura/` in git caused production data loss on every `git pull`.
 11. **Hackathon rules change mid-competition.** Open validation was closed due to abuse; a judge bot replaced self-attestation.
 12. **USD calculations must use actual asset prices, not hardcoded multipliers.** `positionSize * 100` ≠ the real dollar value.
+13. **Floors must be enforced at every override point, not just the original calculation.** `momentum.ts` set a 0.4% stop floor, but `index.ts` regime governance recalculated without it — silently erasing the safety net.
+14. **ATR-based targets on 1-minute candles can be arbitrarily small.** Always enforce absolute percentage floors for both stop-loss and take-profit distances.
+
+---
+
+## Issue 13: R:R Death Spiral — Regime Override Bypassed Stop/TP Floors
+
+**Discovered:** April 13  
+**Severity:** Critical  
+**Commit:** `897f7f2`
+
+### Problem
+Capital losses accelerated from 31% to 59%. Today's 30 trades averaged +0.136% wins vs -0.215% losses — a 0.63:1 R:R working against the agent on every single trade. The agent was structurally designed to lose money regardless of signal quality.
+
+### Root Cause
+Two compounding bugs in the trade-opening pipeline:
+
+1. **Stop floor bypassed by regime governance:** `momentum.ts` (line 120) enforces a 0.4% minimum stop distance via `Math.max(atrStop, currentPrice * 0.004)`. However, `index.ts` (line 551) **recalculates** the stop using `regimeGov.profile.stopLossAtrMultiple * ATR` (0.5 × ATR) **without any floor**. On 1-minute candles with ATR of $2–$8, this set stops at 0.07–0.18% of price — well inside normal noise, causing near-100% stop-loss hit rate.
+
+2. **Take-profit had no floor at all:** TP was calculated as `1.5 × ATR`. With the same small ATR values, TP targets were 0.03–0.07% of price — micro-scalps that captured pennies while stops lost dimes.
+
+### Evidence
+```
+Today (Apr 13): 30 trades, PnL: -$4.52
+  Avg win: +0.136%, Avg loss: -0.215%
+  R:R ratio: 0.63:1 (AGAINST)
+  
+  Examples of micro-scalp TPs:
+    18:05  LONG  pnl=$+0.12 (+0.031%) take_profit  ← TP at 0.03%
+    18:47  SHORT pnl=$+0.17 (+0.043%) take_profit  ← TP at 0.04%
+    19:05  SHORT pnl=$+0.14 (+0.036%) take_profit  ← TP at 0.04%
+    
+  Examples of noise-triggered stops:
+    16:09  SHORT pnl=$-1.66 (-0.416%) stop_loss   ← 5× the TP
+    16:14  SHORT pnl=$-1.51 (-0.421%) stop_loss   ← 6× the TP
+```
+
+### Fix
+Three changes in `src/agent/index.ts` and `src/risk/engine.ts`:
+
+1. **Stop floor at regime override** (index.ts): Changed regime stop calculation from `regimeGov.profile.stopLossAtrMultiple * ATR` to `Math.max(regimeStop, currentPrice * 0.004)` — enforces 0.4% minimum.
+
+2. **TP floor with R:R guarantee** (index.ts): TP distance is now `Math.max(atrTpDist, 2 × stopDist, currentPrice * 0.008)` — guarantees ≥2:1 R:R and a 0.8% absolute floor.
+
+3. **Fallback TAKE_PROFIT_PCT raised** (engine.ts): From 0.2% to 0.8% for positions without ATR-based TP targets.
+
+### Expected Outcome
+- Stop distance: ~0.4% (floor)
+- TP distance: ≥0.8% (2:1 R:R minimum)
+- Break-even win rate: ~33% (was requiring >61% before)
