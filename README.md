@@ -59,8 +59,8 @@ Actura is **live on Ethereum Sepolia** with verifiable on-chain state:
 | **ValidationRegistry** | [`0x92bF63E5C7Ac6980f237a7164Ab413BE226187F1`](https://sepolia.etherscan.io/address/0x92bF63E5C7Ac6980f237a7164Ab413BE226187F1) |
 | **ReputationRegistry** | [`0x423a9904e39537a9997fbaF0f220d79D7d545763`](https://sepolia.etherscan.io/address/0x423a9904e39537a9997fbaF0f220d79D7d545763) |
 | **Owner Wallet** | [`0xE8684cfb...DdCD7`](https://sepolia.etherscan.io/address/0xE8684cfbA08541C607898E55BAB58302204DdCD7) |
-| **Live Dashboard** | [http://api.actura.nov-tia.com:3000](http://api.actura.nov-tia.com:3000) |
-| **Judge Mode** | [http://api.actura.nov-tia.com:3000/judge.html](http://api.actura.nov-tia.com:3000/judge.html) |
+| **Live Dashboard** | [http://app.actura.nov-tia.com:3000](http://api.actura.nov-tia.com:3000) |
+| **Judge Mode** | [http://app.actura.nov-tia.com:3000/judge.html](http://api.actura.nov-tia.com:3000/judge.html) |
 | **MCP Endpoint** | `http://api.actura.nov-tia.com:3001/mcp` (JSON-RPC) |
 
 **Current live stats (as of April 10, 2026):**
@@ -80,9 +80,9 @@ Every trading decision produces an immutable IPFS artifact containing the full r
 
 | Endpoint | Description |
 |---|---|
-| [`/api/artifacts`](http://api.actura.nov-tia.com:3000/api/artifacts) | Browse all decision artifacts with IPFS CIDs |
-| [`/api/artifact/latest`](http://api.actura.nov-tia.com:3000/api/artifact/latest) | Full JSON of the most recent decision |
-| [`/api/checkpoints`](http://api.actura.nov-tia.com:3000/api/checkpoints) | Recent trade checkpoints with signals, confidence, IPFS links |
+| [`/api/artifacts`](https://api.actura.nov-tia.com:3000/api/artifacts) | Browse all decision artifacts with IPFS CIDs |
+| [`/api/artifact/latest`](https://api.actura.nov-tia.com:3000/api/artifact/latest) | Full JSON of the most recent decision |
+| [`/api/checkpoints`](https://api.actura.nov-tia.com:3000/api/checkpoints) | Recent trade checkpoints with signals, confidence, IPFS links |
 
 **Example artifact on IPFS** (anyone can view, no keys needed):
 [`QmUVE9Px5Z58HEi8wSp8i6ZriA1rg4aQxPeDZRSq1hFaw5`](https://aqua-advisory-vicuna-831.mypinata.cloud/ipfs/QmUVE9Px5Z58HEi8wSp8i6ZriA1rg4aQxPeDZRSq1hFaw5)
