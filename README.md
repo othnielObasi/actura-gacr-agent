@@ -59,8 +59,8 @@ Actura is **live on Ethereum Sepolia** with verifiable on-chain state:
 | **ValidationRegistry** | [`0x92bF63E5C7Ac6980f237a7164Ab413BE226187F1`](https://sepolia.etherscan.io/address/0x92bF63E5C7Ac6980f237a7164Ab413BE226187F1) |
 | **ReputationRegistry** | [`0x423a9904e39537a9997fbaF0f220d79D7d545763`](https://sepolia.etherscan.io/address/0x423a9904e39537a9997fbaF0f220d79D7d545763) |
 | **Owner Wallet** | [`0xE8684cfb...DdCD7`](https://sepolia.etherscan.io/address/0xE8684cfbA08541C607898E55BAB58302204DdCD7) |
-| **Live Dashboard** | [https://app.actura.nov-tia.com:3000](https://app.actura.nov-tia.com) |
-| **Judge Mode** | [https://app.actura.nov-tia.com:3000/judge.html](https://app.actura.nov-tia.com/judge.html) |
+| **Live Dashboard** | [https://app.actura.nov-tia.com](https://app.actura.nov-tia.com) |
+| **Judge Mode** | [https://app.actura.nov-tia.com/judge.html](https://app.actura.nov-tia.com/judge.html) |
 | **MCP Endpoint** | `https://api.actura.nov-tia.com:3001/mcp` (JSON-RPC) |
 
 **Current live stats (as of April 10, 2026):**
