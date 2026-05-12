@@ -80,9 +80,9 @@ Every trading decision produces an immutable IPFS artifact containing the full r
 
 | Endpoint | Description |
 |---|---|
-| [`/api/artifacts`](https://api.actura.nov-tia.com:3000/api/artifacts) | Browse all decision artifacts with IPFS CIDs |
-| [`/api/artifact/latest`](https://api.actura.nov-tia.com:3000/api/artifact/latest) | Full JSON of the most recent decision |
-| [`/api/checkpoints`](https://api.actura.nov-tia.com:3000/api/checkpoints) | Recent trade checkpoints with signals, confidence, IPFS links |
+| [`/api/artifacts`](https://app.actura.nov-tia.com/api/artifacts) | Browse all decision artifacts with IPFS CIDs |
+| [`/api/artifact/latest`](https://app.actura.nov-tia.com/api/artifact/latest) | Full JSON of the most recent decision |
+| [`/api/checkpoints`](https://app.actura.nov-tia.com/api/checkpoints) | Recent trade checkpoints with signals, confidence, IPFS links |
 
 **Example artifact on IPFS** (anyone can view, no keys needed):
 [`QmUVE9Px5Z58HEi8wSp8i6ZriA1rg4aQxPeDZRSq1hFaw5`](https://aqua-advisory-vicuna-831.mypinata.cloud/ipfs/QmUVE9Px5Z58HEi8wSp8i6ZriA1rg4aQxPeDZRSq1hFaw5)
